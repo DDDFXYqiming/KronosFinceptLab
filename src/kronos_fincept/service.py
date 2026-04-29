@@ -30,6 +30,11 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
     predictor = DryRunPredictor() if request.dry_run else KronosPredictorWrapper(
         model_id=request.model_id,
         tokenizer_id=request.tokenizer_id,
+        max_context=request.max_context,
+        temperature=request.temperature,
+        top_k=request.top_k,
+        top_p=request.top_p,
+        sample_count=request.sample_count,
     )
     result = predictor.predict(df=df, x_timestamp=timestamps, pred_len=request.pred_len)
     return {

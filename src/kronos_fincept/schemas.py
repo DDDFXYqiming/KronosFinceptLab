@@ -83,6 +83,11 @@ class ForecastRequest:
     model_id: str = DEFAULT_MODEL_ID
     tokenizer_id: str = DEFAULT_TOKENIZER_ID
     dry_run: bool = False
+    max_context: int = 512
+    temperature: float = 1.0
+    top_k: int = 0
+    top_p: float = 0.9
+    sample_count: int = 1
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ForecastRequest":
@@ -102,6 +107,11 @@ class ForecastRequest:
             model_id=str(payload.get("model_id", DEFAULT_MODEL_ID)),
             tokenizer_id=str(payload.get("tokenizer_id", DEFAULT_TOKENIZER_ID)),
             dry_run=bool(payload.get("dry_run", False)),
+            max_context=int(payload.get("max_context", 512)),
+            temperature=float(payload.get("temperature", 1.0)),
+            top_k=int(payload.get("top_k", 0)),
+            top_p=float(payload.get("top_p", 0.9)),
+            sample_count=int(payload.get("sample_count", 1)),
         )
 
     def rows_as_dicts(self) -> list[dict[str, Any]]:

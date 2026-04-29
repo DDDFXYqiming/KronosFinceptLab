@@ -3,6 +3,11 @@
   "timeframe": "1h",
   "pred_len": 2,
   "dry_run": true,
+  "max_context": 512,
+  "temperature": 0.8,
+  "top_k": 0,
+  "top_p": 0.95,
+  "sample_count": 1,
   "rows": [
     {
       "timestamp": "2026-04-29T00:00:00Z",
