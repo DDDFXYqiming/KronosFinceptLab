@@ -1,6 +1,25 @@
+# Core
 pandas>=2.0
 numpy>=1.24
+
+# API (Phase A)
+fastapi>=0.100
+uvicorn[standard]>=0.22
+pydantic>=2.0
+python-multipart>=0.0.6
+
+# CLI (Phase B)
+click>=8.0
+rich>=13.0
+
+# A-stock data
+akshare>=1.10
+
+# Kronos model
+torch>=2.0
+huggingface-hub>=0.20
+
+# Dev / Test
 pytest>=8.0
-# Optional for real Kronos inference:
-# torch>=2.0
-# huggingface-hub>=0.20
+pytest-asyncio>=0.21
+httpx>=0.24
