@@ -29,6 +29,7 @@ Version: v0.5 (in progress)
 - MCP server (`kronos_mcp/kronos_mcp_server.py`) — exposes `forecast_ohlcv`, `batch_forecast_ohlcv`, `fetch_a_stock` as MCP tools for AI Agents.
 - FinceptTerminal integration verified: PythonWorker protocol (4-byte framing) tested end-to-end.
 - C++ service layer (`KronosForecastService.h/.cpp`) ready for FinceptTerminal build.
+- **Windows Kronos 模型服务部署完成** — 模型文件、批处理脚本、使用指南已就绪。
 
 ## Tests
 
@@ -124,6 +125,68 @@ set KRONOS_REPO_PATH=E:\AI_Projects\KronosFinceptLab\external\Kronos
 set HF_HOME=E:\AI_Projects\KronosFinceptLab\external
 python -m kronos_fincept.cli --input examples\request.real.json
 ```
+
+### Windows Kronos 模型服务部署 (已完成)
+
+Kronos 模型已成功部署到 Windows 系统，可通过以下方式使用：
+
+#### 方法 1: 使用批处理脚本 (推荐)
+
+```batch
+# 进入 FinceptTerminal 脚本目录
+cd E:\FinceptTerminal\scripts
+
+# 运行测试预测
+run_kronos_forecast.bat --test
+
+# 从文件输入
+run_kronos_forecast.bat --input request.json
+```
+
+#### 方法 2: 使用主项目脚本
+
+```batch
+# 进入项目目录
+cd E:\AI_Projects\KronosFinceptLab
+
+# 运行测试
+kronos_forecast.bat --test
+
+# 运行批量预测
+kronos_forecast.bat --batch
+
+# 启动 MCP 服务器
+kronos_forecast.bat --mcp
+```
+
+#### 方法 3: 手动设置环境变量
+
+```batch
+# 设置环境变量
+set KRONOS_REPO_PATH=E:\AI_Projects\KronosFinceptLab\external\Kronos
+set HF_HOME=E:\AI_Projects\KronosFinceptLab\external
+set PYTHONPATH=E:\AI_Projects\KronosFinceptLab\src
+
+# 进入脚本目录
+cd E:\FinceptTerminal\scripts
+
+# 运行预测
+python kronos_forecast.py --input request.json
+```
+
+#### 验证部署
+
+运行测试脚本验证部署是否成功：
+
+```batch
+# 进入项目目录
+cd E:\AI_Projects\KronosFinceptLab
+
+# 运行测试
+test_kronos_windows.bat
+```
+
+详细使用说明请参考: [Windows Kronos 模型服务使用指南](docs/WINDOWS_KRONOS_GUIDE.md)
 
 ## CLI JSON fields
 
