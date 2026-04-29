@@ -1,211 +1,120 @@
 # KronosFinceptLab
 
-Integration layer between the Kronos financial K-line foundation model and the FinceptTerminal ecosystem.
+独立的 Python + Web 金融量化分析平台，集成 Kronos K 线基础模型。
 
-## Upstream projects
+## 技术栈
 
-- **Kronos**: https://github.com/shiyu-coder/Kronos — Foundation model for financial K-line prediction.
-- **FinceptTerminal**: https://github.com/Fincept-Corporation/FinceptTerminal — Full-featured financial terminal with data connectors, AI Quant Lab, and PythonRunner.
+- **后端**: FastAPI (Python 3.11+)
+- **前端**: Next.js + Tailwind CSS + Framer Motion
+- **CLI**: Click（支持 Hermes Agent 远程调用）
+- **模型**: Kronos K 线预测模型（CPU/GPU）
+- **数据**: AkShare (A股) + 可扩展连接器
+
+## 上游项目
+
+- **Kronos**: https://github.com/shiyu-coder/Kronos — 金融 K 线基础模型
+- **FinceptTerminal**: https://github.com/Fincept-Corporation/FinceptTerminal — 金融终端（参考设计，不直接依赖）
 
 ## Current status
 
-Version: v0.5 (in progress)
+Version: v1.0 (开发中)
 
-## Implemented
+## 已实现
 
-- Python package under `src/kronos_fincept/` with schema validation, data adapter, and service layer.
-- Sampling parameters: `temperature`, `top_k`, `top_p`, `sample_count`, `max_context`.
-- Deterministic dry-run predictor for contract tests.
-- Real Kronos predictor wrapper with `KRONOS_REPO_PATH` / `external/Kronos` / `PYTHONPATH` fallback.
-- HuggingFace cache path detection and offline failure hints.
-- JSON CLI bridge: stdin/stdout and `--input`/`--output` modes.
-- FinceptTerminal PythonRunner bridge script (`kronos_forecast.py`).
-- `install_bridge.sh` — one-command bridge installation into FinceptTerminal.
-- PythonRunner integration tests (8 tests simulating subprocess + JSON contract).
-- Qlib-style adapter with predicted-return signal + batch_predict ranking.
-- AkShare data adapter for A-stock OHLCV (`fetch_a_stock_ohlcv`, `fetch_multi_stock_ohlcv`).
-- A-stock ranking backtest demo (`examples/backtest_a_stock_ranking.py`).
-- Real Kronos-small CPU inference verified (PyTorch 2.11.0, Python 3.13.6, Windows).
-- MCP server (`kronos_mcp/kronos_mcp_server.py`) — exposes `forecast_ohlcv`, `batch_forecast_ohlcv`, `fetch_a_stock` as MCP tools for AI Agents.
-- FinceptTerminal integration verified: PythonWorker protocol (4-byte framing) tested end-to-end.
-- C++ service layer (`KronosForecastService.h/.cpp`) ready for FinceptTerminal build.
-- **Windows Kronos 模型服务部署完成** — 模型文件、批处理脚本、使用指南已就绪。
+### 核心引擎
+- Python 包 `src/kronos_fincept/`：schema 验证、数据适配器、服务层
+- Kronos 推理封装：dry-run + real 模式，支持 Kronos-mini/small/base
+- 采样参数：`temperature`, `top_k`, `top_p`, `sample_count`, `max_context`
+- HuggingFace 缓存检测 + 离线失败提示
+- JSON CLI 桥接：stdin/stdout + `--input`/`--output`
 
-## Tests
+### 数据源
+- AkShare A 股 OHLCV 适配器（`akshare_adapter.py`）
+- 通用 CSV/OHLCV 适配器（`data_adapter.py`）
+
+### 量化引擎
+- Qlib-style 模型适配器 + `batch_predict` 多资产批量预测
+- 排序信号生成（predicted_return）
+- A 股排名回测示例（`examples/backtest_a_stock_ranking.py`）
+
+### MCP 服务器
+- `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
+- 支持 Claude Desktop / Cursor 等 MCP 客户端
+
+### FinceptTerminal 兼容层（保留）
+- PythonRunner 桥接脚本
+- PythonWorker 协议验证通过
+- C++ 服务层 `KronosForecastService.h/.cpp`
+
+### Windows 部署
+- Kronos-small 模型已部署（CPU 推理，PyTorch 2.11.0）
+- 批处理脚本 `kronos_forecast.bat`
+
+## 快速开始
+
+### CLI（推荐）
+
+```bash
+# 安装
+pip install -e .
+
+# 单资产预测（dry-run）
+kronos forecast --symbol 600519 --pred-len 5 --dry-run
+
+# 单资产预测（真实推理）
+kronos forecast --symbol 600519 --pred-len 5
+
+# 批量预测
+kronos batch --symbols 600519,000858,000001 --pred-len 5
+
+# 获取数据
+kronos data fetch --symbol 600519 --start 20240101 --end 20260429
+
+# 启动 API 服务
+kronos serve --port 8000
+```
+
+### API 服务
+
+```bash
+# 启动
+kronos serve --host 0.0.0.0 --port 8000
+
+# 访问 Swagger UI
+open http://localhost:8000/docs
+```
+
+### Web 前端
+
+```bash
+cd web
+npm install
+npm run dev
+# 访问 http://localhost:3000
+```
+
+## 测试
 
 ```bash
 PYTHONPATH=src python3 -m pytest tests -v
 ```
 
-Current: 18 passed, 2 skipped (real Kronos tests auto-skip without torch).
+## CLI JSON 字段
 
-### Integration tests (PythonWorker protocol)
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| symbol | string | required | 资产代码 |
+| timeframe | string | "1d" | K 线周期 |
+| pred_len | int | required | 预测 K 线数 |
+| dry_run | bool | false | 使用 dry-run 预测器 |
+| model_id | string | NeoQuasar/Kronos-small | 模型 ID |
+| temperature | float | 1.0 | 采样温度 |
+| top_k | int | 0 | Top-k 过滤 |
+| top_p | float | 0.9 | 核采样阈值 |
+| sample_count | int | 1 | 并行采样数 |
 
-```bash
-PYTHONPATH=src python3 tests/test_fincept_integration.py
-```
+## 输出格式
 
-Verifies: daemon handshake, forecast, batch_forecast, shutdown, error handling.
+成功响应：`ok`, `symbol`, `timeframe`, `model_id`, `pred_len`, `forecast`, `metadata`
 
-## MCP Server
-
-```bash
-# Install MCP dependencies
-pip install -e ".[mcp]"
-
-# Run the MCP server (stdio transport)
-PYTHONPATH=src python3 kronos_mcp/kronos_mcp_server.py
-```
-
-MCP client config (Claude Desktop, Cursor, etc.):
-
-```json
-{
-  "mcpServers": {
-    "kronos-fincept": {
-      "command": "python3",
-      "args": ["kronos_mcp/kronos_mcp_server.py"],
-      "cwd": "/path/to/KronosFinceptLab",
-      "env": {
-        "PYTHONPATH": "src",
-        "KRONOS_REPO_PATH": "external/Kronos",
-        "HF_HOME": "external"
-      }
-    }
-  }
-}
-```
-
-## Quick start
-
-```bash
-# Install
-python3 -m pip install -r requirements.txt
-
-# Dry-run forecast
-PYTHONPATH=src python3 -m kronos_fincept.cli --input examples/request.forecast.json
-```
-
-### Windows setup (with GPU-capable PyTorch)
-
-```powershell
-# Install PyTorch (CPU version, Windows Python 3.13+)
-pip install torch torchvision torchaudio
-
-# Install project dependencies
-cd E:\AI_Projects\KronosFinceptLab
-pip install -e .
-pip install transformers huggingface-hub einops
-
-# Download models via HuggingFace mirror (faster in China)
-python -c "from huggingface_hub import snapshot_download; import os; os.environ['HF_ENDPOINT']='https://hf-mirror.com'; snapshot_download('NeoQuasar/Kronos-small', local_dir='external/Kronos-small'); snapshot_download('NeoQuasar/Kronos-Tokenizer-base', local_dir='external/Kronos-Tokenizer-base')"
-```
-
-### Install bridge into FinceptTerminal
-
-```bash
-./scripts/install_bridge.sh /path/to/FinceptTerminal          # copy mode
-./scripts/install_bridge.sh /path/to/FinceptTerminal --symlink # symlink mode
-```
-
-### Real Kronos inference
-
-```bash
-# Dry-run (no model needed)
-python3 -m kronos_fincept.cli --input examples/request.forecast.json
-
-# Real inference (CPU)
-export KRONOS_REPO_PATH=external/Kronos
-export HF_HOME=external
-PYTHONPATH=src python3 -m kronos_fincept.cli --input examples/request.real.json
-
-# Windows real inference
-set PYTHONPATH=src
-set KRONOS_REPO_PATH=E:\AI_Projects\KronosFinceptLab\external\Kronos
-set HF_HOME=E:\AI_Projects\KronosFinceptLab\external
-python -m kronos_fincept.cli --input examples\request.real.json
-```
-
-### Windows Kronos 模型服务部署 (已完成)
-
-Kronos 模型已成功部署到 Windows 系统，可通过以下方式使用：
-
-#### 方法 1: 使用批处理脚本 (推荐)
-
-```batch
-# 进入 FinceptTerminal 脚本目录
-cd E:\FinceptTerminal\scripts
-
-# 运行测试预测
-run_kronos_forecast.bat --test
-
-# 从文件输入
-run_kronos_forecast.bat --input request.json
-```
-
-#### 方法 2: 使用主项目脚本
-
-```batch
-# 进入项目目录
-cd E:\AI_Projects\KronosFinceptLab
-
-# 运行测试
-kronos_forecast.bat --test
-
-# 运行批量预测
-kronos_forecast.bat --batch
-
-# 启动 MCP 服务器
-kronos_forecast.bat --mcp
-```
-
-#### 方法 3: 手动设置环境变量
-
-```batch
-# 设置环境变量
-set KRONOS_REPO_PATH=E:\AI_Projects\KronosFinceptLab\external\Kronos
-set HF_HOME=E:\AI_Projects\KronosFinceptLab\external
-set PYTHONPATH=E:\AI_Projects\KronosFinceptLab\src
-
-# 进入脚本目录
-cd E:\FinceptTerminal\scripts
-
-# 运行预测
-python kronos_forecast.py --input request.json
-```
-
-#### 验证部署
-
-运行测试脚本验证部署是否成功：
-
-```batch
-# 进入项目目录
-cd E:\AI_Projects\KronosFinceptLab
-
-# 运行测试
-test_kronos_windows.bat
-```
-
-详细使用说明请参考: [Windows Kronos 模型服务使用指南](docs/WINDOWS_KRONOS_GUIDE.md)
-
-## CLI JSON fields
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| symbol | string | required | Asset identifier |
-| timeframe | string | "unknown" | Candle interval |
-| pred_len | int | required | Number of future candles to predict |
-| dry_run | bool | false | Use deterministic dry-run predictor |
-| model_id | string | NeoQuasar/Kronos-small | HuggingFace model ID or local path |
-| tokenizer_id | string | NeoQuasar/Kronos-Tokenizer-base | HuggingFace tokenizer ID or local path |
-| max_context | int | 512 | Max context length for Kronos |
-| temperature | float | 1.0 | Sampling temperature |
-| top_k | int | 0 | Top-k filtering (0 = disabled) |
-| top_p | float | 0.9 | Nucleus sampling threshold |
-| sample_count | int | 1 | Number of parallel samples (averaged) |
-
-## Output contract
-
-Successful responses: `ok`, `symbol`, `timeframe`, `model_id`, `tokenizer_id`, `pred_len`, `forecast`, `metadata`.
-
-All outputs are research forecasts only and are not trading advice.
+所有预测结果仅为研究用途，不构成投资建议。
