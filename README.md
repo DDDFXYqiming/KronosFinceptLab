@@ -2,6 +2,11 @@
 
 Integration layer between the Kronos financial K-line foundation model and the FinceptTerminal ecosystem.
 
+## Upstream projects
+
+- **Kronos**: https://github.com/shiyu-coder/Kronos — Foundation model for financial K-line prediction.
+- **FinceptTerminal**: https://github.com/Fincept-Corporation/FinceptTerminal — Full-featured financial terminal with data connectors, AI Quant Lab, and PythonRunner.
+
 ## Current status
 
 Version: v0.3
