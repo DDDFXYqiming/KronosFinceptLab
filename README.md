@@ -27,6 +27,24 @@ Version: v0.5 (in progress)
 - A-stock ranking backtest demo (`examples/backtest_a_stock_ranking.py`).
 - Real Kronos-small CPU inference verified (PyTorch 2.11.0, Python 3.13.6, Windows).
 - MCP server (`kronos_mcp/kronos_mcp_server.py`) — exposes `forecast_ohlcv`, `batch_forecast_ohlcv`, `fetch_a_stock` as MCP tools for AI Agents.
+- FinceptTerminal integration verified: PythonWorker protocol (4-byte framing) tested end-to-end.
+- C++ service layer (`KronosForecastService.h/.cpp`) ready for FinceptTerminal build.
+
+## Tests
+
+```bash
+PYTHONPATH=src python3 -m pytest tests -v
+```
+
+Current: 18 passed, 2 skipped (real Kronos tests auto-skip without torch).
+
+### Integration tests (PythonWorker protocol)
+
+```bash
+PYTHONPATH=src python3 tests/test_fincept_integration.py
+```
+
+Verifies: daemon handshake, forecast, batch_forecast, shutdown, error handling.
 
 ## MCP Server
 
@@ -56,14 +74,6 @@ MCP client config (Claude Desktop, Cursor, etc.):
   }
 }
 ```
-
-## Tests
-
-```bash
-PYTHONPATH=src python3 -m pytest tests -v
-```
-
-Current: 18 passed, 2 skipped (real Kronos tests auto-skip without torch).
 
 ## Quick start
 
