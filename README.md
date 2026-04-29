@@ -4,61 +4,54 @@ Integration layer between the Kronos financial K-line foundation model and the F
 
 ## Current status
 
-Version: v0.2
+Version: v0.3
 
 ## Implemented
 
-- Python package structure under `src/kronos_fincept/`.
-- Forecast request schema validation with sampling parameters (temperature, top_k, top_p, sample_count, max_context).
-- OHLCV data adapter for Kronos-compatible DataFrame inputs.
-- Deterministic dry-run predictor for integration and contract tests.
-- Real Kronos predictor wrapper with `KRONOS_REPO_PATH` env var support.
+- Python package under `src/kronos_fincept/` with schema validation, data adapter, and service layer.
+- Sampling parameters: `temperature`, `top_k`, `top_p`, `sample_count`, `max_context`.
+- Deterministic dry-run predictor for contract tests.
+- Real Kronos predictor wrapper with `KRONOS_REPO_PATH` / `external/Kronos` / `PYTHONPATH` fallback.
 - HuggingFace cache path detection and offline failure hints.
-- JSON CLI bridge (stdin/stdout, `--input`/`--output`).
-- FinceptTerminal-compatible PythonRunner bridge script.
+- JSON CLI bridge: stdin/stdout and `--input`/`--output` modes.
+- FinceptTerminal PythonRunner bridge script (`kronos_forecast.py`).
+- `install_bridge.sh` — one-command bridge installation into FinceptTerminal.
+- PythonRunner integration tests (8 tests simulating subprocess + JSON contract).
 - Minimal Qlib-style adapter with predicted-return signal.
-- Example request and CSV files.
-- Unit tests for schema, adapter, CLI contract, and real Kronos smoke test (auto-skip when deps missing).
+- Real Kronos smoke test (auto-skip when torch/HuggingFace deps missing).
 
-## Usage
-
-Install dependencies:
-
-```bash
-python3 -m pip install -r requirements.txt
-```
-
-Run tests:
+## Tests
 
 ```bash
 PYTHONPATH=src python3 -m pytest tests -v
 ```
 
-Run the dry-run forecast example:
+Current: 18 passed, 2 skipped (real Kronos tests auto-skip without torch).
+
+## Quick start
 
 ```bash
+# Install
+python3 -m pip install -r requirements.txt
+
+# Dry-run forecast
 PYTHONPATH=src python3 -m kronos_fincept.cli --input examples/request.forecast.json
+```
+
+### Install bridge into FinceptTerminal
+
+```bash
+./scripts/install_bridge.sh /path/to/FinceptTerminal          # copy mode
+./scripts/install_bridge.sh /path/to/FinceptTerminal --symlink # symlink mode
 ```
 
 ### Real Kronos inference
 
-To use real Kronos models instead of dry-run, ensure:
-
-1. **Upstream Kronos** is available via one of:
-   - Set `KRONOS_REPO_PATH=/path/to/Kronos`
-   - Place Kronos at `external/Kronos` in the project root
-   - Add the Kronos root to `PYTHONPATH`
-2. **PyTorch** and **huggingface-hub** are installed:
-   ```bash
-   python3 -m pip install -e ".[kronos]"
-   ```
-3. Set `dry_run: false` in the request JSON (or omit it).
-
-Example real request:
-
 ```bash
-PYTHONPATH=src:external/Kronos python3 -m kronos_fincept.cli --input examples/request.forecast.json
-# (set "dry_run": false in the JSON first)
+export KRONOS_REPO_PATH=/path/to/Kronos
+python3 -m pip install -e ".[kronos]"
+# Set "dry_run": false in request JSON, then:
+PYTHONPATH=src python3 -m kronos_fincept.cli --input request.json
 ```
 
 ## CLI JSON fields
@@ -79,6 +72,6 @@ PYTHONPATH=src:external/Kronos python3 -m kronos_fincept.cli --input examples/re
 
 ## Output contract
 
-Successful responses contain: `ok`, `symbol`, `timeframe`, `model_id`, `tokenizer_id`, `pred_len`, `forecast`, `metadata`.
+Successful responses: `ok`, `symbol`, `timeframe`, `model_id`, `tokenizer_id`, `pred_len`, `forecast`, `metadata`.
 
 All outputs are research forecasts only and are not trading advice.
