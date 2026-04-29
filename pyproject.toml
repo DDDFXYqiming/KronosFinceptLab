@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kronos-fincept-lab"
+version = "0.1.0"
+description = "Integration layer between Kronos financial foundation models and FinceptTerminal."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+kronos = [
+    "torch>=2.0",
+    "huggingface-hub>=0.20",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+kronos-fincept = "kronos_fincept.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
