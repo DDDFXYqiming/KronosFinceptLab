@@ -8,7 +8,7 @@
 - **前端**: Next.js + Tailwind CSS + Framer Motion
 - **CLI**: Click（支持 Hermes Agent 远程调用）
 - **模型**: Kronos K 线预测模型（CPU/GPU）
-- **数据**: AkShare (A股) + 可扩展连接器
+- **数据**: 多数据源自动降级架构（AkShare → BaoStock → Yahoo Finance）
 
 ## 上游项目
 
@@ -29,7 +29,12 @@ Version: v1.0 ✅ (2026-04-30)
 - JSON CLI 桥接：stdin/stdout + `--input`/`--output`
 
 ### 数据源
+- 多数据源自动降级架构（AkShare → BaoStock → Yahoo Finance）
+- 统一数据源管理器（DataSourceManager）
+- 指数退避重试 + 熔断机制 + 内存/文件缓存
 - AkShare A 股 OHLCV 适配器（`akshare_adapter.py`）
+- BaoStock 数据源适配器（已验证可用）
+- Yahoo Finance 数据源适配器（已实现）
 - 通用 CSV/OHLCV 适配器（`data_adapter.py`）
 
 ### 量化引擎
