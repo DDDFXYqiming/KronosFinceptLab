@@ -212,6 +212,10 @@ def main():
     else:
         print(output_json)
 
+    # Exit with non-zero code on error so PythonRunner can detect failure
+    if not result.get("ok", False):
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
