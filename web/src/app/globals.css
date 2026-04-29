@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+:root {
+  --color-primary: #0052FF;
+  --color-primary-light: #4D7CFF;
+  --color-surface: #0A0E1A;
+  --color-surface-raised: #111827;
+  --color-surface-overlay: #1F2937;
+}
+
+body {
+  @apply bg-surface text-gray-100 font-sans antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4B5563;
+}
