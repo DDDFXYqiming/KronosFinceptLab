@@ -18,7 +18,7 @@ Version: v0.3
 - `install_bridge.sh` — one-command bridge installation into FinceptTerminal.
 - PythonRunner integration tests (8 tests simulating subprocess + JSON contract).
 - Minimal Qlib-style adapter with predicted-return signal.
-- Real Kronos smoke test (auto-skip when torch/HuggingFace deps missing).
+- Real Kronos-small CPU inference verified (PyTorch 2.11.0, Python 3.13.6, Windows).
 
 ## Tests
 
@@ -38,6 +38,21 @@ python3 -m pip install -r requirements.txt
 PYTHONPATH=src python3 -m kronos_fincept.cli --input examples/request.forecast.json
 ```
 
+### Windows setup (with GPU-capable PyTorch)
+
+```powershell
+# Install PyTorch (CPU version, Windows Python 3.13+)
+pip install torch torchvision torchaudio
+
+# Install project dependencies
+cd E:\AI_Projects\KronosFinceptLab
+pip install -e .
+pip install transformers huggingface-hub einops
+
+# Download models via HuggingFace mirror (faster in China)
+python -c "from huggingface_hub import snapshot_download; import os; os.environ['HF_ENDPOINT']='https://hf-mirror.com'; snapshot_download('NeoQuasar/Kronos-small', local_dir='external/Kronos-small'); snapshot_download('NeoQuasar/Kronos-Tokenizer-base', local_dir='external/Kronos-Tokenizer-base')"
+```
+
 ### Install bridge into FinceptTerminal
 
 ```bash
@@ -48,10 +63,19 @@ PYTHONPATH=src python3 -m kronos_fincept.cli --input examples/request.forecast.j
 ### Real Kronos inference
 
 ```bash
-export KRONOS_REPO_PATH=/path/to/Kronos
-python3 -m pip install -e ".[kronos]"
-# Set "dry_run": false in request JSON, then:
-PYTHONPATH=src python3 -m kronos_fincept.cli --input request.json
+# Dry-run (no model needed)
+python3 -m kronos_fincept.cli --input examples/request.forecast.json
+
+# Real inference (CPU)
+export KRONOS_REPO_PATH=external/Kronos
+export HF_HOME=external
+PYTHONPATH=src python3 -m kronos_fincept.cli --input examples/request.real.json
+
+# Windows real inference
+set PYTHONPATH=src
+set KRONOS_REPO_PATH=E:\AI_Projects\KronosFinceptLab\external\Kronos
+set HF_HOME=E:\AI_Projects\KronosFinceptLab\external
+python -m kronos_fincept.cli --input examples\request.real.json
 ```
 
 ## CLI JSON fields
