@@ -9,7 +9,7 @@ Integration layer between the Kronos financial K-line foundation model and the F
 
 ## Current status
 
-Version: v0.3
+Version: v0.4
 
 ## Implemented
 
@@ -22,7 +22,9 @@ Version: v0.3
 - FinceptTerminal PythonRunner bridge script (`kronos_forecast.py`).
 - `install_bridge.sh` — one-command bridge installation into FinceptTerminal.
 - PythonRunner integration tests (8 tests simulating subprocess + JSON contract).
-- Minimal Qlib-style adapter with predicted-return signal.
+- Qlib-style adapter with predicted-return signal + batch_predict ranking.
+- AkShare data adapter for A-stock OHLCV (`fetch_a_stock_ohlcv`, `fetch_multi_stock_ohlcv`).
+- A-stock ranking backtest demo (`examples/backtest_a_stock_ranking.py`).
 - Real Kronos-small CPU inference verified (PyTorch 2.11.0, Python 3.13.6, Windows).
 
 ## Tests

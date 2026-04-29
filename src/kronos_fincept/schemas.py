@@ -124,3 +124,39 @@ def build_error_response(message: str, symbol: str | None = None) -> dict[str, A
         response["symbol"] = symbol
     response["error"] = message
     return response
+
+
+@dataclass(frozen=True)
+class BatchForecastRequest:
+    """Batch forecast request wrapping multiple single-asset requests.
+
+    Each entry in *requests* must be a fully-formed ForecastRequest.
+    Alternatively, callers may provide *symbols_data* with shared defaults
+    to build ForecastRequest objects automatically.
+    """
+
+    requests: list[ForecastRequest]
+
+    @classmethod
+    def from_dicts(cls, payloads: list[dict[str, Any]], shared: dict[str, Any] | None = None) -> "BatchForecastRequest":
+        """Build a BatchForecastRequest from a list of per-symbol dicts.
+
+        Parameters
+        ----------
+        payloads:
+            One dict per symbol.  Each dict must contain at least *symbol* and
+            *rows*.  All other ForecastRequest fields are optional and may be
+            overridden per-symbol or via *shared* defaults.
+        shared:
+            Optional dict of defaults (e.g. ``timeframe``, ``pred_len``,
+            ``model_id``, ...) applied to every symbol unless the per-symbol
+            dict already defines that key.
+        """
+        if not payloads:
+            raise ValueError("requests list must not be empty")
+        merged = dict(shared or {})
+        requests: list[ForecastRequest] = []
+        for entry in payloads:
+            combined: dict[str, Any] = {**merged, **entry}  # per-symbol wins
+            requests.append(ForecastRequest.from_dict(combined))
+        return cls(requests=requests)

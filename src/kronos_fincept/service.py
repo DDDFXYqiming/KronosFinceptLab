@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
@@ -52,3 +53,58 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             "warning": RESEARCH_WARNING,
         },
     }
+
+
+@dataclass
+class RankedSignal:
+    """One ranked signal from batch forecast."""
+    rank: int
+    symbol: str
+    last_close: float
+    predicted_close: float
+    predicted_return: float
+    elapsed_ms: int
+    forecast: list[dict[str, Any]]
+
+
+def batch_forecast_from_requests(
+    requests: list[ForecastRequest],
+) -> list[RankedSignal]:
+    """Run forecast on multiple assets and return ranked by predicted_return.
+
+    Args:
+        requests: List of ForecastRequest, one per asset.
+
+    Returns:
+        List of RankedSignal sorted by predicted_return descending (best first).
+    """
+    signals: list[RankedSignal] = []
+
+    for req in requests:
+        response = forecast_from_request(req)
+        if not response.get("ok") or not response.get("forecast"):
+            continue
+
+        last_close = float(req.rows[-1].close)
+        forecast_close = float(response["forecast"][-1]["close"])
+        predicted_return = forecast_close / last_close - 1.0
+        elapsed_ms = response.get("metadata", {}).get("elapsed_ms", 0)
+
+        signals.append(RankedSignal(
+            rank=0,
+            symbol=req.symbol,
+            last_close=last_close,
+            predicted_close=forecast_close,
+            predicted_return=predicted_return,
+            elapsed_ms=elapsed_ms,
+            forecast=response["forecast"],
+        ))
+
+    # Sort by predicted_return descending
+    signals.sort(key=lambda s: s.predicted_return, reverse=True)
+
+    # Assign ranks
+    for i, sig in enumerate(signals):
+        sig.rank = i + 1
+
+    return signals

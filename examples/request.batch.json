@@ -1,0 +1,24 @@
+{
+  "assets": [
+    {
+      "symbol": "600519",
+      "rows": [
+        {"timestamp": "2026-04-25T00:00:00Z", "open": 1390, "high": 1410, "low": 1385, "close": 1400, "volume": 5000, "amount": 7000000},
+        {"timestamp": "2026-04-26T00:00:00Z", "open": 1400, "high": 1420, "low": 1395, "close": 1410, "volume": 5500, "amount": 7755000},
+        {"timestamp": "2026-04-27T00:00:00Z", "open": 1410, "high": 1425, "low": 1400, "close": 1415, "volume": 4800, "amount": 6792000}
+      ]
+    },
+    {
+      "symbol": "000858",
+      "rows": [
+        {"timestamp": "2026-04-25T00:00:00Z", "open": 97, "high": 99, "low": 96, "close": 98, "volume": 8000, "amount": 784000},
+        {"timestamp": "2026-04-26T00:00:00Z", "open": 98, "high": 100, "low": 97, "close": 99, "volume": 8500, "amount": 841500},
+        {"timestamp": "2026-04-27T00:00:00Z", "open": 99, "high": 101, "low": 98, "close": 100, "volume": 9000, "amount": 900000}
+      ]
+    }
+  ],
+  "pred_len": 5,
+  "timeframe": "daily",
+  "dry_run": true,
+  "top_k": 3
+}

@@ -18,6 +18,9 @@ kronos = [
     "torch>=2.0",
     "huggingface-hub>=0.20",
 ]
+astock = [
+    "akshare>=1.10",
+]
 dev = [
     "pytest>=8.0",
 ]
