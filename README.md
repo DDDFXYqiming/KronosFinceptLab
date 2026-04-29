@@ -9,7 +9,7 @@ Integration layer between the Kronos financial K-line foundation model and the F
 
 ## Current status
 
-Version: v0.4
+Version: v0.5 (in progress)
 
 ## Implemented
 
@@ -26,6 +26,36 @@ Version: v0.4
 - AkShare data adapter for A-stock OHLCV (`fetch_a_stock_ohlcv`, `fetch_multi_stock_ohlcv`).
 - A-stock ranking backtest demo (`examples/backtest_a_stock_ranking.py`).
 - Real Kronos-small CPU inference verified (PyTorch 2.11.0, Python 3.13.6, Windows).
+- MCP server (`kronos_mcp/kronos_mcp_server.py`) — exposes `forecast_ohlcv`, `batch_forecast_ohlcv`, `fetch_a_stock` as MCP tools for AI Agents.
+
+## MCP Server
+
+```bash
+# Install MCP dependencies
+pip install -e ".[mcp]"
+
+# Run the MCP server (stdio transport)
+PYTHONPATH=src python3 kronos_mcp/kronos_mcp_server.py
+```
+
+MCP client config (Claude Desktop, Cursor, etc.):
+
+```json
+{
+  "mcpServers": {
+    "kronos-fincept": {
+      "command": "python3",
+      "args": ["kronos_mcp/kronos_mcp_server.py"],
+      "cwd": "/path/to/KronosFinceptLab",
+      "env": {
+        "PYTHONPATH": "src",
+        "KRONOS_REPO_PATH": "external/Kronos",
+        "HF_HOME": "external"
+      }
+    }
+  }
+}
+```
 
 ## Tests
 

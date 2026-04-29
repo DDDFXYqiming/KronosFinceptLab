@@ -21,6 +21,9 @@ kronos = [
 astock = [
     "akshare>=1.10",
 ]
+mcp = [
+    "mcp>=1.0",
+]
 dev = [
     "pytest>=8.0",
 ]
