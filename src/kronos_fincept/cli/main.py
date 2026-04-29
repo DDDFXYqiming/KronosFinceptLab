@@ -36,9 +36,9 @@ cli.add_command(backtest.backtest_group, "backtest")
 cli.add_command(serve.serve_cmd, "serve")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Entry point for the kronos command."""
-    return cli(standalone_mode=False) or 0
+    return cli(standalone_mode=False, args=argv) or 0
 
 
 if __name__ == "__main__":
