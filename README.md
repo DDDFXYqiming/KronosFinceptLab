@@ -55,11 +55,48 @@ Version: v3.0 ✅ (2026-04-30)
 
 ### Windows 部署
 - Kronos-small 模型已部署（CPU 推理，PyTorch 2.11.0）
-- 批处理脚本 `kronos_forecast.bat`
+- 批处理脚本 `kronos.bat`（推荐用于真实推理）
+
+### WSL/Linux 部署
+- 支持 CPU 推理（PyTorch）
+- 安装脚本：`bash scripts/install_torch.sh`
+- 也可使用 Windows Python 运行真实推理（见下方）
 
 ## 快速开始
 
-### CLI（推荐）
+### Windows（推荐）
+
+```bash
+# 使用 bat 脚本（自动配置环境）
+kronos.bat forecast --symbol 600519 --pred-len 5
+
+# 或手动配置（如需）
+set PYTHONPATH=src;external\Kronos
+set KRONOS_REPO_PATH=external\Kronos
+python scripts\win_launcher.py forecast --symbol 600519 --pred-len 5
+```
+
+### WSL/Linux
+
+```bash
+# 方式 1：一键安装（推荐）
+bash scripts/install_torch.sh
+source .venv/bin/activate
+
+# 方式 2：手动安装
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -i https://mirrors.aliyun.com/pypi/simple/ torch --trusted-host mirrors.aliyun.com
+pip install -e .
+
+# 预测（dry-run，无需模型）
+kronos forecast --symbol 600519 --pred-len 5 --dry-run
+
+# 真实推理（需要模型在 external/Kronos-small/）
+kronos forecast --symbol 600519 --pred-len 5
+```
+
+### CLI（通用）
 
 ```bash
 # 安装
@@ -71,11 +108,17 @@ kronos forecast --symbol 600519 --pred-len 5 --dry-run
 # 单资产预测（真实推理）
 kronos forecast --symbol 600519 --pred-len 5
 
+# 概率预测（Monte Carlo 采样）
+kronos forecast --symbol 600519 --pred-len 5 --sample-count 10
+
 # 批量预测
 kronos batch --symbols 600519,000858,000001 --pred-len 5
 
 # 获取数据
 kronos data fetch --symbol 600519 --start 20240101 --end 20260429
+
+# 策略回测
+kronos backtest ranking --symbols 600519,000858 --start 20240101 --end 20260429
 
 # 启动 API 服务
 kronos serve --port 8000
