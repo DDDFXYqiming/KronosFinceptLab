@@ -522,3 +522,198 @@ def market_summary(ctx, output_format):
     except Exception as e:
         click.echo(f"Error: {e}")
         return 1
+
+
+@analyze_group.command()
+@click.option('--symbol', required=True, help='Stock symbol')
+@click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
+@click.pass_context
+def ai_analyze(ctx, symbol, output_format):
+    """AI-powered stock analysis using DeepSeek."""
+    try:
+        from kronos_fincept.financial import AIInvestmentAdvisor
+        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+        from kronos_fincept.financial import RiskCalculator, TechnicalIndicators
+        
+        # Get market data
+        price_data = fetch_a_stock_ohlcv(
+            symbol=symbol,
+            start_date="20250101",
+            end_date="20260430"
+        )
+        
+        if not price_data or len(price_data) == 0:
+            click.echo(f"Error: Could not get price data for {symbol}")
+            return 1
+        
+        # Prepare market data
+        closes = [row['close'] for row in price_data]
+        latest = price_data[-1]
+        
+        market_data = {
+            'current_price': latest['close'],
+            'data_points': len(price_data),
+            'price_change_1d': (latest['close'] - price_data[-2]['close']) / price_data[-2]['close'] * 100 if len(price_data) > 1 else 0,
+            'price_change_1w': (latest['close'] - price_data[-5]['close']) / price_data[-5]['close'] * 100 if len(price_data) > 5 else 0,
+            'volume': latest.get('volume', 0)
+        }
+        
+        # Calculate risk metrics
+        risk_calc = RiskCalculator()
+        risk_metrics = risk_calc.calculate_risk_metrics(symbol, closes)
+        risk_data = {
+            'var_95': risk_metrics.var_95,
+            'sharpe_ratio': risk_metrics.sharpe_ratio,
+            'max_drawdown': risk_metrics.max_drawdown,
+            'volatility': risk_metrics.volatility
+        }
+        
+        # AI Analysis
+        advisor = AIInvestmentAdvisor()
+        result = advisor.analyze_stock(symbol, market_data, risk_data)
+        
+        # Format output
+        if output_format == 'json':
+            output = {
+                'symbol': result.symbol,
+                'summary': result.summary,
+                'detailed_analysis': result.detailed_analysis,
+                'recommendation': result.recommendation,
+                'confidence': result.confidence,
+                'risk_level': result.risk_level,
+                'timestamp': result.timestamp
+            }
+            click.echo(json.dumps(output, indent=2, ensure_ascii=False))
+        else:
+            click.echo(f"AI Analysis for {symbol}")
+            click.echo("=" * 50)
+            click.echo(f"\nSummary: {result.summary}")
+            click.echo(f"\nRecommendation: {result.recommendation}")
+            click.echo(f"Confidence: {result.confidence:.0%}")
+            click.echo(f"Risk Level: {result.risk_level}")
+            click.echo(f"\nDetailed Analysis:")
+            click.echo("-" * 50)
+            click.echo(result.detailed_analysis)
+        
+        return 0
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1
+
+
+@analyze_group.command()
+@click.option('--symbol', required=True, help='Stock symbol')
+@click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
+@click.pass_context
+def ai_report(ctx, symbol, output_format):
+    """Generate AI-powered investment report."""
+    try:
+        from kronos_fincept.financial import AIInvestmentAdvisor
+        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+        from kronos_fincept.financial import TechnicalIndicators
+        
+        # Get market data
+        price_data = fetch_a_stock_ohlcv(
+            symbol=symbol,
+            start_date="20250101",
+            end_date="20260430"
+        )
+        
+        if not price_data or len(price_data) == 0:
+            click.echo(f"Error: Could not get price data for {symbol}")
+            return 1
+        
+        # Prepare data
+        closes = [row['close'] for row in price_data]
+        latest = price_data[-1]
+        
+        market_data = {
+            'current_price': latest['close'],
+            'data_points': len(price_data),
+            'price_history': price_data[-10:]
+        }
+        
+        # Calculate technical indicators
+        ti = TechnicalIndicators()
+        indicators = ti.calculate_all_indicators(closes)
+        indicators_dict = {k: v.__dict__ if hasattr(v, '__dict__') else v for k, v in indicators.items()}
+        
+        # AI Report
+        advisor = AIInvestmentAdvisor()
+        report = advisor.generate_report(symbol, market_data, indicators_dict)
+        
+        # Format output
+        if output_format == 'json':
+            output = {
+                'symbol': symbol,
+                'report': report,
+                'timestamp': datetime.now().isoformat()
+            }
+            click.echo(json.dumps(output, indent=2, ensure_ascii=False))
+        else:
+            click.echo(f"Investment Report for {symbol}")
+            click.echo("=" * 50)
+            click.echo(report)
+        
+        return 0
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1
+
+
+@analyze_group.command()
+@click.option('--question', required=True, help='Investment question')
+@click.option('--symbol', default=None, help='Related stock symbol (optional)')
+@click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
+@click.pass_context
+def ai_question(ctx, question, symbol, output_format):
+    """Ask AI investment questions."""
+    try:
+        from kronos_fincept.financial import AIInvestmentAdvisor
+        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+        
+        context = None
+        
+        if symbol:
+            # Get market data for context
+            price_data = fetch_a_stock_ohlcv(
+                symbol=symbol,
+                start_date="20250101",
+                end_date="20260430"
+            )
+            
+            if price_data and len(price_data) > 0:
+                closes = [row['close'] for row in price_data]
+                context = {
+                    'symbol': symbol,
+                    'current_price': price_data[-1]['close'],
+                    'price_history': price_data[-5:]
+                }
+        
+        # AI Question
+        advisor = AIInvestmentAdvisor()
+        answer = advisor.answer_question(question, context)
+        
+        # Format output
+        if output_format == 'json':
+            output = {
+                'question': question,
+                'symbol': symbol,
+                'answer': answer,
+                'timestamp': datetime.now().isoformat()
+            }
+            click.echo(json.dumps(output, indent=2, ensure_ascii=False))
+        else:
+            click.echo(f"Question: {question}")
+            if symbol:
+                click.echo(f"Related Symbol: {symbol}")
+            click.echo("-" * 50)
+            click.echo(answer)
+        
+        return 0
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1

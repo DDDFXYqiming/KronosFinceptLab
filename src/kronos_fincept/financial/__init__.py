@@ -17,6 +17,7 @@ from .derivatives import DerivativesPricer, OptionResult
 from .indicators import TechnicalIndicators, SMA, EMA, RSI, MACD, BollingerBands, KDJ, ATR, OBV
 from .strategies import QuantitativeStrategies, StrategyResult, Signal
 from .global_market import GlobalMarketSource
+from .ai_advisor import AIInvestmentAdvisor, AIAnalysisResult
 
 __all__ = [
     # Schemas
@@ -63,5 +64,9 @@ __all__ = [
     'Signal',
     
     # Global market
-    'GlobalMarketSource'
+    'GlobalMarketSource',
+    
+    # AI Advisor
+    'AIInvestmentAdvisor',
+    'AIAnalysisResult'
 ]

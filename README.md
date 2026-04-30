@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v5.0 (进行中)
+Version: v6.0 (已完成)
 
 ## 已实现
 
@@ -77,6 +77,13 @@ Version: v5.0 (进行中)
 - 港股数据：0700.HK, 9988.HK, etc.
 - 加密货币：BTC-USD, ETH-USD, etc.
 - CLI 命令：`kronos analyze global-data/market-summary`
+
+### AI 投资顾问 (v6.0)
+- DeepSeek LLM 集成
+- 自然语言股票分析
+- 投资建议生成
+- 风险评估报告
+- CLI 命令：`kronos analyze ai-analyze/ai-report/ai-question`
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
