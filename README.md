@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v3.0 ✅ (2026-04-30)
+Version: v4.0 ✅ (2026-04-30)
 
 ## 已实现
 
@@ -56,6 +56,15 @@ Version: v3.0 ✅ (2026-04-30)
 - Qlib-style 模型适配器 + `batch_predict` 多资产批量预测
 - 排序信号生成（predicted_return）
 - A 股排名回测示例（`examples/backtest_a_stock_ranking.py`）
+
+### CFA 级别分析 (v4.0)
+- DCF 模型（现金流折现）
+- 风险指标（VaR, Sharpe, Sortino, 最大回撤, 波动率）
+- 投资组合优化（马科维茨均值-方差, 有效前沿, 风险平价）
+- 衍生品定价（Black-Scholes, 希腊字母, 隐含波动率）
+- 财务数据获取（BaoStock + Yahoo Finance）
+- CLI 命令：`kronos analyze dcf/risk/portfolio/derivative`
+- API 路由：`/api/v1/analyze/*`
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
