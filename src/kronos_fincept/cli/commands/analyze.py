@@ -651,7 +651,7 @@ def ai_analyze(ctx, symbol, market, output_format):
                 timeframe="1d",
                 rows=forecast_rows,
                 pred_len=5,
-                sample_count=10
+                sample_count=100
             )
             
             result = forecast_from_request(request)
