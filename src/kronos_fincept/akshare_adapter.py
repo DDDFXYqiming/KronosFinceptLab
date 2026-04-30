@@ -129,6 +129,58 @@ def fetch_a_stock_ohlcv(
     return rows
 
 
+def fetch_crypto_ohlcv(
+    symbol: str = "BTCUSDT",
+    timeframe: str = "1d",
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Fetch crypto OHLCV data from Binance.
+
+    Args:
+        symbol: Crypto pair (e.g., 'BTCUSDT', 'BTC/USDT')
+        timeframe: Time interval ('1m', '5m', '15m', '1h', '4h', '1d')
+        limit: Number of bars to fetch (max 1000)
+
+    Returns:
+        List of dicts with keys: timestamp, open, high, low, close, volume, amount.
+    """
+    manager = _get_manager()
+
+    result = manager.fetch(
+        endpoint="binance_kline",
+        use_cache=True,
+        cache_ttl=300,  # 5-minute cache for crypto
+        symbol=symbol,
+        timeframe=timeframe,
+        limit=limit,
+    )
+
+    if not result.get("success"):
+        err = result.get("error", "Unknown error")
+        raise ValueError(f"Binance fetch failed for {symbol}: {err}")
+
+    data = result.get("data", [])
+    if not data:
+        raise ValueError(f"No data returned for {symbol} ({timeframe})")
+
+    # Binance returns English keys directly
+    rows = []
+    for r in data:
+        rows.append({
+            "timestamp": str(r.get("timestamp", "")),
+            "open": float(r.get("open", 0)),
+            "high": float(r.get("high", 0)),
+            "low": float(r.get("low", 0)),
+            "close": float(r.get("close", 0)),
+            "volume": float(r.get("volume", 0)),
+            "amount": float(r.get("amount", 0)),
+        })
+
+    # Ensure sorted ascending by timestamp
+    rows.sort(key=lambda r: r["timestamp"])
+    return rows
+
+
 def fetch_multi_stock_ohlcv(
     symbols: list[str],
     start_date: str = "20260101",

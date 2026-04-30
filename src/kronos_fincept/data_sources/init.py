@@ -8,12 +8,16 @@ from . import DataSourceManager, get_manager
 from .akshare_source import AkShareSource
 from .baostock_source import BaoStockSource
 from .yahoo_source import YahooFinanceSource
+from .binance_source import BinanceSource
+from .okx_source import OKXSource
 
 
 def init_data_sources(cache_dir: str = ".cache",
                       enable_akshare: bool = True,
                       enable_baostock: bool = True,
-                      enable_yahoo: bool = True) -> DataSourceManager:
+                      enable_yahoo: bool = True,
+                      enable_binance: bool = True,
+                      enable_okx: bool = True) -> DataSourceManager:
     """
     初始化数据源管理器
 
@@ -22,6 +26,8 @@ def init_data_sources(cache_dir: str = ".cache",
         enable_akshare: 是否启用 AkShare
         enable_baostock: 是否启用 BaoStock
         enable_yahoo: 是否启用 Yahoo Finance
+        enable_binance: 是否启用 Binance (加密货币)
+        enable_okx: 是否启用 OKX (加密货币，中国可用)
 
     Returns:
         数据源管理器实例
@@ -51,6 +57,20 @@ def init_data_sources(cache_dir: str = ".cache",
             manager.register(yahoo_source)
         except Exception as e:
             print(f"[DataSource] Yahoo Finance 注册失败: {e}")
+
+    if enable_binance:
+        try:
+            binance_source = BinanceSource(priority=4)
+            manager.register(binance_source)
+        except Exception as e:
+            print(f"[DataSource] Binance 注册失败: {e}")
+
+    if enable_okx:
+        try:
+            okx_source = OKXSource(priority=5)
+            manager.register(okx_source)
+        except Exception as e:
+            print(f"[DataSource] OKX 注册失败: {e}")
 
     print(f"[DataSource] 已注册 {len(manager.data_sources)} 个数据源")
     return manager

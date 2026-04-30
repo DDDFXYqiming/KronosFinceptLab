@@ -2,6 +2,7 @@
 
 Examples:
     kronos data fetch --symbol 600519 --start 20240101 --end 20260430
+    kronos data fetch --symbol BTCUSDT --type crypto --timeframe 1h
     kronos data search --q 茅台
 """
 
@@ -25,20 +26,41 @@ def data_group() -> None:
 
 
 @data_group.command("fetch")
-@click.option("--symbol", "-s", type=str, required=True, help="A-stock symbol")
-@click.option("--start", type=str, required=True, help="Start date YYYYMMDD")
-@click.option("--end", type=str, required=True, help="End date YYYYMMDD")
+@click.option("--symbol", "-s", type=str, required=True, help="Symbol (e.g., 600519 or BTCUSDT)")
+@click.option("--type", "asset_type", type=click.Choice(["stock", "crypto"]), default="stock",
+              help="Asset type: stock (A-stock) or crypto (Binance)")
+@click.option("--start", type=str, default=None, help="Start date YYYYMMDD (for stock)")
+@click.option("--end", type=str, default=None, help="End date YYYYMMDD (for stock)")
+@click.option("--timeframe", type=str, default="1d",
+              help="Timeframe for crypto: 1m, 5m, 15m, 1h, 4h, 1d")
+@click.option("--limit", type=int, default=100, help="Number of bars for crypto")
 @click.option("--adjust", type=str, default="qfq",
-              help="Price adjustment: qfq (forward), hfq (backward), '' (none)")
+              help="Price adjustment for stock: qfq (forward), hfq (backward), '' (none)")
 @click.pass_context
-def data_fetch(ctx: click.Context, symbol: str, start: str, end: str, adjust: str) -> None:
-    """Fetch A-stock historical OHLCV data."""
+def data_fetch(
+    ctx: click.Context,
+    symbol: str,
+    asset_type: str,
+    start: str | None,
+    end: str | None,
+    timeframe: str,
+    limit: int,
+    adjust: str,
+) -> None:
+    """Fetch historical OHLCV data."""
     output_format = ctx.obj.get("output_format", "json")
 
-    from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
-
     try:
-        rows = fetch_a_stock_ohlcv(symbol, start, end, adjust)
+        if asset_type == "crypto":
+            from kronos_fincept.akshare_adapter import fetch_crypto_ohlcv
+            rows = fetch_crypto_ohlcv(symbol, timeframe, limit)
+        else:
+            from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+            if not start:
+                start = "20250101"
+            if not end:
+                end = "20261231"
+            rows = fetch_a_stock_ohlcv(symbol, start, end, adjust)
     except Exception as exc:
         error = {"ok": False, "symbol": symbol, "error": str(exc)}
         if output_format == "json":
