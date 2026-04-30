@@ -17,7 +17,7 @@
 
 ## Current status
 
-Version: v2.0 ✅ (2026-04-30)
+Version: v3.0 ✅ (2026-04-30)
 
 ## 已实现
 
