@@ -7,8 +7,21 @@
 - **后端**: FastAPI (Python 3.11+)
 - **前端**: Next.js + Tailwind CSS + Framer Motion
 - **CLI**: Click（支持 Hermes Agent 远程调用）
-- **模型**: Kronos K 线预测模型（CPU/GPU）
-- **数据**: 多数据源自动降级架构（AkShare → BaoStock → Yahoo Finance）
+
+## 数据源与模型
+
+| 组件 | 名称 | 用途 |
+|---|---|---|
+| **数据源** | BaoStock | A 股日线数据（主数据源） |
+| | AkShare | A 股数据（被反爬，自动降级） |
+| | Yahoo Finance | 全球股票市场 |
+| | Binance | 加密货币（国际） |
+| | OKX | 加密货币（中国） |
+| **预测模型** | NeoQuasar/Kronos-small | K 线预测（CPU 推理，~90s） |
+| | NeoQuasar/Kronos-Tokenizer-base | Tokenizer |
+| **数据格式** | OHLCV | 开/高/低/收/量/额 |
+
+**自动降级链路**: AkShare → BaoStock → Yahoo Finance（熔断机制：连续失败 5 次禁用 5 分钟）
 
 ## 上游项目
 
