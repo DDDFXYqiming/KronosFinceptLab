@@ -43,6 +43,19 @@ class ForecastMetadataOut(BaseModel):
     warning: str
 
 
+class ForecastRangeOut(BaseModel):
+    min: float
+    max: float
+
+
+class ProbabilisticOut(BaseModel):
+    sample_count: int
+    upside_probability: float
+    volatility_amplification: float
+    forecast_range: ForecastRangeOut
+    mean_final_close: float
+
+
 class ForecastResponseOut(BaseModel):
     ok: bool
     symbol: str
@@ -51,6 +64,7 @@ class ForecastResponseOut(BaseModel):
     tokenizer_id: str
     pred_len: int
     forecast: list[dict[str, Any]]
+    probabilistic: ProbabilisticOut | None = None
     metadata: ForecastMetadataOut
 
 
