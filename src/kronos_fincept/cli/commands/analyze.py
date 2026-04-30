@@ -1,8 +1,10 @@
 """
 CLI commands for financial analysis (v4.0).
+v7.0: 支持全球股票 (港股/美股) 和大宗商品
 """
 import click
 import json
+import time
 from typing import Optional
 
 
@@ -526,23 +528,80 @@ def market_summary(ctx, output_format):
 
 @analyze_group.command()
 @click.option('--symbol', required=True, help='Stock symbol')
+@click.option('--market', type=click.Choice(['cn', 'hk', 'us', 'commodity']), default='cn', help='Market: cn=A股, hk=港股, us=美股, commodity=大宗商品')
 @click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
 @click.pass_context
-def ai_analyze(ctx, symbol, output_format):
-    """AI-powered stock analysis using DeepSeek + Kronos."""
+def ai_analyze(ctx, symbol, market, output_format):
+    """AI-powered stock analysis using DeepSeek + Kronos (支持A股/港股/美股/大宗商品)."""
     try:
         from kronos_fincept.financial import AIInvestmentAdvisor
-        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
         from kronos_fincept.financial import RiskCalculator, TechnicalIndicators
         from kronos_fincept.schemas import ForecastRequest, ForecastRow
         from kronos_fincept.service import forecast_from_request
         
-        # Get market data
-        price_data = fetch_a_stock_ohlcv(
-            symbol=symbol,
-            start_date="20250101",
-            end_date="20260430"
-        )
+        # ── 根据 market 选择数据源 ──
+        price_data = None
+        click.echo(f"Fetching data for {symbol} (market={market})...", err=True)
+        
+        # 检查是否有预获取的全球市场数据文件（使用 Windows 路径）
+        import os
+        global_data_file = None
+        
+        # 尝试常见的 Windows 临时文件位置
+        possible_paths = [
+            f"C:\\Users\\39795\\AppData\\Local\\Temp\\kronos_{symbol.replace('.', '_')}.json",
+            f"C:\\Users\\39795\\AppData\\Local\\Temp\\kronos_{symbol.replace('/', '_')}.json",
+            f"E:\\tmp\\kronos_{symbol.replace('.', '_')}.json"
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                global_data_file = path
+                click.echo(f"Found pre-fetched data at: {path}", err=True)
+                break
+        
+        if market == 'cn' or not global_data_file:
+            # A股 或 无预获取数据：使用现有数据源
+            from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+            price_data = fetch_a_stock_ohlcv(
+                symbol=symbol,
+                start_date="20250101",
+                end_date="20260430"
+            )
+        else:
+            # 港股/美股/大宗商品：使用预获取的 Yahoo Finance 数据
+            from datetime import datetime
+            
+            try:
+                with open(global_data_file, 'r') as f:
+                    data = json.load(f)
+                
+                chart_data = data.get('chart', {}).get('result', [{}])[0]
+                timestamps = chart_data.get('timestamp', [])
+                quotes = chart_data.get('indicators', {}).get('quote', [{}])[0]
+                
+                if timestamps and quotes:
+                    price_data = []
+                    for i, ts in enumerate(timestamps):
+                        dt = datetime.utcfromtimestamp(ts)
+                        price_data.append({
+                            'timestamp': dt.strftime('%Y-%m-%d'),
+                            'open': float(quotes['open'][i]) if quotes['open'][i] else 0,
+                            'high': float(quotes['high'][i]) if quotes['high'][i] else 0,
+                            'low': float(quotes['low'][i]) if quotes['low'][i] else 0,
+                            'close': float(quotes['close'][i]) if quotes['close'][i] else 0,
+                            'volume': float(quotes['volume'][i]) if quotes['volume'][i] else 0,
+                            'amount': float(quotes['volume'][i] * quotes['close'][i]) if quotes['volume'][i] and quotes['close'][i] else 0
+                        })
+                    
+                    company_name = chart_data.get('meta', {}).get('longName', symbol)
+                    click.echo(f"Got data from Yahoo Finance: {company_name}, {len(price_data)} days", err=True)
+                    
+                    # 清理临时文件
+                    os.remove(global_data_file)
+            except Exception as e:
+                click.echo(f"Failed to read pre-fetched data: {e}", err=True)
+                price_data = None
         
         if not price_data or len(price_data) == 0:
             click.echo(f"Error: Could not get price data for {symbol}")
@@ -616,6 +675,7 @@ def ai_analyze(ctx, symbol, output_format):
         if output_format == 'json':
             output = {
                 'symbol': ai_result.symbol,
+                'market': market,
                 'summary': ai_result.summary,
                 'detailed_analysis': ai_result.detailed_analysis,
                 'recommendation': ai_result.recommendation,
@@ -626,7 +686,7 @@ def ai_analyze(ctx, symbol, output_format):
             }
             click.echo(json.dumps(output, indent=2, ensure_ascii=False))
         else:
-            click.echo(f"AI Analysis for {symbol}")
+            click.echo(f"AI Analysis for {symbol} ({market})")
             click.echo("=" * 50)
             
             if prediction_data:
