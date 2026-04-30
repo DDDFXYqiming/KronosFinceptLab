@@ -30,11 +30,16 @@ if [ -z "$WIN_PYTHON" ]; then
 fi
 
 # 将 WSL 路径转换为 Windows 路径 (使用 wslpath)
-# 例如: /mnt/e/AI_Projects/... -> E:\AI_Projects\...
 WIN_SCRIPT_DIR=$(wslpath -w "$SCRIPT_DIR" 2>/dev/null || echo "$SCRIPT_DIR" | sed 's|^/mnt/\([a-z]\)/|\U\1:\\|g')
+
+# 设置 HuggingFace 环境变量（使用本地模型）
+WIN_EXTERNAL=$(wslpath -w "$SCRIPT_DIR/external" 2>/dev/null || echo "$SCRIPT_DIR/external" | sed 's|^/mnt/\([a-z]\)/|\U\1:\\|g')
 
 echo "[WSL] 使用 Windows Python: $WIN_PYTHON"
 echo "[WSL] 项目路径: $WIN_SCRIPT_DIR"
 
-# 执行
-exec "$WIN_PYTHON" "$WIN_SCRIPT_DIR\\scripts\\win_launcher.py" "$@"
+# 执行（设置 HF_HOME 和离线模式）
+exec env \
+    HF_HOME="$WIN_EXTERNAL" \
+    HF_HUB_OFFLINE=1 \
+    "$WIN_PYTHON" "$WIN_SCRIPT_DIR\\scripts\\win_launcher.py" "$@"

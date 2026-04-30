@@ -181,7 +181,7 @@ class KronosPredictorWrapper:
         device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # Try local model first (in external/ directory)
-        project_root = Path(__file__).resolve().parents[3]
+        project_root = Path(__file__).resolve().parents[2]
         local_model_dir = project_root / "external" / self.model_id.split("/")[-1]
         local_tokenizer_dir = project_root / "external" / self.tokenizer_id.split("/")[-1]
 
