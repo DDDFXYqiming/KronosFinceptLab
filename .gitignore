@@ -28,6 +28,9 @@ external/
 # Internal planning docs
 SPEC.md
 
+# Temporary / ad-hoc scripts
+scripts/*_analysis.py
+
 # OS / editor
 .DS_Store
 Thumbs.db
