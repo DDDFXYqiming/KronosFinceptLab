@@ -99,10 +99,10 @@ def forecast_cmd(
         output_table(title, headers, rows_data)
         # Print metadata
         meta = result.get("metadata", {})
-        click.echo(f"⏱  {meta.get('elapsed_ms', 0)}ms | "
+        click.echo(f"[time]  {meta.get('elapsed_ms', 0)}ms | "
                     f"Device: {meta.get('device', 'unknown')} | "
                     f"Backend: {meta.get('backend', 'unknown')}")
-        click.echo(f"⚠️  {meta.get('warning', '')}")
+        click.echo(f"[warn]  {meta.get('warning', '')}")
 
 
 def _fetch_a_stock_data(

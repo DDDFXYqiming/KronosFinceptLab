@@ -27,42 +27,43 @@ def output_table(title: str, headers: list[str], rows: list[list[str]], file=Non
     file = file or sys.stdout
 
     if HAS_RICH:
-        console = Console(file=file, force_terminal=True)
-        table = RichTable(
-            title=title,
-            box=box.ROUNDED,
-            show_lines=True,
-            title_style="bold cyan",
-        )
-        for h in headers:
-            table.add_column(h, style="white")
-        for row in rows:
-            table.add_row(*[str(v) for v in row])
-        console.print(table)
-    else:
-        # Plain text fallback
-        if title:
-            file.write(f"\n=== {title} ===\n")
-        # Calculate column widths
-        widths = [len(h) for h in headers]
-        for row in rows:
-            for i, cell in enumerate(row):
-                widths[i] = max(widths[i], len(str(cell)))
-        # Header
-        header_line = " | ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
-        file.write(header_line + "\n")
-        file.write("-+-".join("-" * w for w in widths) + "\n")
-        # Rows
-        for row in rows:
-            line = " | ".join(str(cell).ljust(widths[i]) for i, cell in enumerate(row))
-            file.write(line + "\n")
+        try:
+            console = Console(file=file, force_terminal=True, no_color=False)
+            table = RichTable(
+                title=title,
+                box=box.ROUNDED,
+                show_lines=True,
+                title_style="bold cyan",
+            )
+            for h in headers:
+                table.add_column(h, style="white")
+            for row in rows:
+                table.add_row(*[str(v) for v in row])
+            console.print(table)
+            return
+        except (UnicodeEncodeError, UnicodeError):
+            pass  # Fall through to plain text on Windows GBK encoding issues
+
+    # Plain text fallback (also used when rich fails)
+    if title:
+        file.write(f"\n=== {title} ===\n")
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(str(cell)))
+    header_line = " | ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    file.write(header_line + "\n")
+    file.write("-+-".join("-" * w for w in widths) + "\n")
+    for row in rows:
+        line = " | ".join(str(cell).ljust(widths[i]) for i, cell in enumerate(row))
+        file.write(line + "\n")
 
 
 def format_forecast_table(data: dict[str, Any]) -> tuple[str, list[str], list[list[str]]]:
     """Format forecast result as table title/headers/rows."""
     symbol = data.get("symbol", "???")
     pred_len = data.get("pred_len", 0)
-    title = f"📊 {symbol} — {pred_len}-Bar Forecast"
+    title = f"[Forecast] {symbol} - {pred_len}-Bar"
     headers = ["#", "Timestamp", "Open", "High", "Low", "Close"]
     rows = []
     for i, bar in enumerate(data.get("forecast", []), 1):
@@ -79,7 +80,7 @@ def format_forecast_table(data: dict[str, Any]) -> tuple[str, list[str], list[li
 
 def format_batch_table(data: dict[str, Any]) -> tuple[str, list[str], list[list[str]]]:
     """Format batch result as table."""
-    title = "📈 Batch Forecast Rankings"
+    title = "[Batch] Forecast Rankings"
     headers = ["Rank", "Symbol", "Last Close", "Predicted Close", "Return", "Signal"]
     rows = []
     for r in data.get("rankings", []):
@@ -100,7 +101,7 @@ def format_data_table(data: dict[str, Any]) -> tuple[str, list[str], list[list[s
     """Format data result as table."""
     symbol = data.get("symbol", "???")
     count = data.get("count", 0)
-    title = f"📋 {symbol} — {count} rows"
+    title = f"[Data] {symbol} - {count} rows"
     headers = ["Timestamp", "Open", "High", "Low", "Close", "Volume"]
     rows = []
     for row in data.get("rows", [])[-20:]:  # Show last 20
@@ -117,7 +118,7 @@ def format_data_table(data: dict[str, Any]) -> tuple[str, list[str], list[list[s
 
 def format_backtest_table(data: dict[str, Any]) -> tuple[str, list[str], list[list[str]]]:
     """Format backtest result as table."""
-    title = "📉 Backtest Results"
+    title = "[Backtest] Results"
     metrics = data.get("metrics", {})
     headers = ["Metric", "Value"]
     rows = [

@@ -195,4 +195,4 @@ def backtest_ranking(
     else:
         title, headers, rows_data = format_backtest_table(result)
         output_table(title, headers, rows_data)
-        click.echo(f"⚠️  {RESEARCH_WARNING}")
+        click.echo(f"[warn]  {RESEARCH_WARNING}")

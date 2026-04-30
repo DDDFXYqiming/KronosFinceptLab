@@ -19,7 +19,7 @@ import click
 def serve_cmd(host: str, port: int, workers: int, reload: bool) -> None:
     """Start the FastAPI API server."""
     import uvicorn
-    click.echo(f"🚀 Starting KronosFinceptLab API on {host}:{port}")
+    click.echo(f"[launch] Starting KronosFinceptLab API on {host}:{port}")
     click.echo(f"   Docs: http://{host}:{port}/docs")
     uvicorn.run(
         "kronos_fincept.api.app:app",

@@ -78,4 +78,4 @@ def data_search(ctx: click.Context, query: str) -> None:
         from kronos_fincept.cli.output import output_table as _ot
         headers = ["Code", "Name", "Market"]
         rows_data = [[r["code"], r["name"], r["market"]] for r in result["results"]]
-        _ot(f"🔍 Search: {query}", headers, rows_data)
+        _ot(f"[search] {query}", headers, rows_data)

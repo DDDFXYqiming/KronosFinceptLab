@@ -104,4 +104,4 @@ def batch_cmd(
     else:
         title, headers, rows_data = format_batch_table(result)
         output_table(title, headers, rows_data)
-        click.echo(f"⚠️  {result['metadata']['warning']}")
+        click.echo(f"[warn]  {result['metadata']['warning']}")
