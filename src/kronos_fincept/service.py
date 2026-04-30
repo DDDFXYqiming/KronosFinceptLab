@@ -14,11 +14,15 @@ from kronos_fincept.schemas import ForecastRequest, RESEARCH_WARNING
 
 def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for record in frame.to_dict(orient="records"):
+    for idx, record in enumerate(frame.to_dict(orient="records"), start=1):
         normalized: dict[str, Any] = {}
         for key, value in record.items():
             if key == "timestamp":
-                normalized[key] = str(value)
+                # 预测结果使用 D1~D5 格式，不输出具体日期
+                normalized[key] = f"D{idx}"
+            elif key == "index":
+                # 跳过原始日期索引，不输出
+                continue
             else:
                 try:
                     normalized[key] = float(value) if value is not None else 0.0
