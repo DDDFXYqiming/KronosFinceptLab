@@ -131,6 +131,8 @@ class AIInvestmentAdvisor:
         """
         prompt = f"""请分析股票 {symbol} 的投资价值。
 
+当前日期：{datetime.now().strftime('%Y年%m月%d日')}
+
 市场数据：
 {json.dumps(market_data, indent=2, ensure_ascii=False)}
 
@@ -154,6 +156,12 @@ class AIInvestmentAdvisor:
 3. 投资建议（买入/持有/卖出）
 4. 置信度（0-100%）
 5. 风险等级（低/中/高）
+
+重要提示：
+- 基本面分析请基于市场数据中提供的最新财务数据（如有的话）
+- 如果没有提供财务数据，请说明数据不足，不要编造
+- 技术面分析请基于价格走势和 Kronos 模型预测
+- 不要使用过时的历史数据（如2023年等），请基于当前市场情况分析
 
 请用JSON格式输出，包含以下字段：
 {

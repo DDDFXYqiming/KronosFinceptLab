@@ -619,6 +619,25 @@ def ai_analyze(ctx, symbol, market, output_format):
             'volume': latest.get('volume', 0)
         }
         
+        # ── 获取最新财务数据（用于 AI 分析）──
+        financial_data = None
+        try:
+            click.echo("Fetching financial data...", err=True)
+            from kronos_fincept.financial import FinancialDataManager
+            fin_manager = FinancialDataManager()
+            financial_data = fin_manager.get_financial_data(symbol)
+            if financial_data:
+                click.echo(f"Got financial data: {financial_data.symbol}", err=True)
+                # 将财务数据添加到 market_data
+                market_data['financial'] = {
+                    'revenue': financial_data.income_statements[0].revenue if financial_data.income_statements else None,
+                    'net_income': financial_data.income_statements[0].net_income if financial_data.income_statements else None,
+                    'gross_profit': financial_data.income_statements[0].gross_profit if financial_data.income_statements else None,
+                    'ebitda': financial_data.income_statements[0].ebitda if financial_data.income_statements else None,
+                }
+        except Exception as e:
+            click.echo(f"Failed to get financial data: {e}", err=True)
+        
         # Calculate risk metrics
         risk_calc = RiskCalculator()
         risk_metrics = risk_calc.calculate_risk_metrics(symbol, closes)
