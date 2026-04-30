@@ -26,7 +26,7 @@ class ForecastRequestIn(BaseModel):
     timeframe: str = Field(default="1d", description="Timeframe: 1d, 1h, etc.")
     pred_len: int = Field(default=5, ge=1, le=60, description="Number of future bars to predict")
     rows: list[ForecastRowIn] = Field(..., min_length=1, description="Historical OHLCV data")
-    model_id: str = Field(default="NeoQuasar/Kronos-small")
+    model_id: str = Field(default="NeoQuasar/Kronos-base")
     tokenizer_id: str = Field(default="NeoQuasar/Kronos-Tokenizer-base")
     dry_run: bool = Field(default=False, description="Use deterministic mock predictor")
     max_context: int = Field(default=512, ge=1)

@@ -44,7 +44,7 @@ def _item_to_forecast_request(
         timeframe=item.timeframe,
         pred_len=pred_len,
         rows=rows,
-        model_id=item.model_id or "NeoQuasar/Kronos-small",
+        model_id=item.model_id or "NeoQuasar/Kronos-base",
         tokenizer_id=item.tokenizer_id or "NeoQuasar/Kronos-Tokenizer-base",
         dry_run=dry_run,
         max_context=item.max_context or 512,

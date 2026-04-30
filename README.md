@@ -17,7 +17,7 @@
 | | Yahoo Finance | 全球股票市场 |
 | | Binance | 加密货币（国际） |
 | | OKX | 加密货币（中国） |
-| **预测模型** | NeoQuasar/Kronos-small | K 线预测（CPU 推理，~90s） |
+| **预测模型** | NeoQuasar/Kronos-base | K 线预测（CPU 推理） |
 | | NeoQuasar/Kronos-Tokenizer-base | Tokenizer |
 | **数据格式** | OHLCV | 开/高/低/收/量/额 |
 
