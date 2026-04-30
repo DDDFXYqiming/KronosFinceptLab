@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-DEFAULT_MODEL_ID = "NeoQuasar/Kronos-small"
+DEFAULT_MODEL_ID = "NeoQuasar/Kronos-base"
 DEFAULT_TOKENIZER_ID = "NeoQuasar/Kronos-Tokenizer-base"
 RESEARCH_WARNING = "Research forecast only; not trading advice."
 

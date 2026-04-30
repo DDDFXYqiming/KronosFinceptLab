@@ -180,13 +180,24 @@ class KronosPredictorWrapper:
 
         device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
 
+        # Try local model first (in external/ directory)
+        project_root = Path(__file__).resolve().parents[3]
+        local_model_dir = project_root / "external" / self.model_id.split("/")[-1]
+        local_tokenizer_dir = project_root / "external" / self.tokenizer_id.split("/")[-1]
+
         try:
-            tokenizer = KronosTokenizer.from_pretrained(self.tokenizer_id)
+            if local_tokenizer_dir.is_dir():
+                tokenizer = KronosTokenizer.from_pretrained(str(local_tokenizer_dir))
+            else:
+                tokenizer = KronosTokenizer.from_pretrained(self.tokenizer_id)
         except Exception as exc:
             raise RuntimeError(_hf_cache_hint(self.tokenizer_id)) from exc
 
         try:
-            model = Kronos.from_pretrained(self.model_id)
+            if local_model_dir.is_dir():
+                model = Kronos.from_pretrained(str(local_model_dir))
+            else:
+                model = Kronos.from_pretrained(self.model_id)
         except Exception as exc:
             raise RuntimeError(_hf_cache_hint(self.model_id)) from exc
 
