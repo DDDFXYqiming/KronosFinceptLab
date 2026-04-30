@@ -20,7 +20,10 @@ def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
             if key == "timestamp":
                 normalized[key] = str(value)
             else:
-                normalized[key] = float(value) if value is not None else 0.0
+                try:
+                    normalized[key] = float(value) if value is not None else 0.0
+                except (TypeError, ValueError):
+                    normalized[key] = str(value)
         records.append(normalized)
     return records
 
