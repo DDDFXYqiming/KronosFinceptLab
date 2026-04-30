@@ -1,0 +1,8 @@
+#!/bin/bash
+# Pre-commit hook: block emojis in CLI output code
+# Install: bash scripts/install-hooks.sh
+python3 scripts/check_no_emoji.py
+if [ $? -ne 0 ]; then
+    echo "Commit blocked: emoji found in output code. Use ASCII alternatives."
+    exit 1
+fi
