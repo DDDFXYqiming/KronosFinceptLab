@@ -75,13 +75,23 @@ class BaoStockFinancialSource(FinancialDataSource):
             
             # 取最新的数据
             row = rows[-1]
+            
+            # 字段映射：
+            # row[0] = code, row[1] = pubDate, row[2] = statDate
+            # row[3] = roeAvg, row[4] = npMargin, row[5] = gpMargin
+            # row[6] = netProfit, row[7] = epsTTM, row[8] = MBRevenue
+            revenue = float(row[8]) if len(row) > 8 and row[8] else 0
+            net_income = float(row[6]) if len(row) > 6 and row[6] else 0
+            gp_margin = float(row[5]) if len(row) > 5 and row[5] else 0
+            gross_profit = revenue * gp_margin if revenue and gp_margin else 0
+            
             return [IncomeStatement(
                 symbol=symbol,
-                period=row[1] if len(row) > 1 else "2024",
-                revenue=float(row[7]) if len(row) > 7 and row[7] else 0,
-                net_income=float(row[4]) if len(row) > 4 and row[4] else 0,
-                gross_profit=float(row[5]) if len(row) > 5 and row[5] else 0,
-                cost_of_goods_sold=0,
+                period=row[2] if len(row) > 2 else "2024",  # statDate
+                revenue=revenue,
+                net_income=net_income,
+                gross_profit=gross_profit,
+                cost_of_goods_sold=revenue - gross_profit if revenue and gross_profit else 0,
                 operating_expenses=0,
                 operating_income=0,
                 interest_expense=0,
