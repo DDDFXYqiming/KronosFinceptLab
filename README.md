@@ -79,22 +79,23 @@ python scripts\win_launcher.py forecast --symbol 600519 --pred-len 5
 ### WSL/Linux
 
 ```bash
-# 方式 1：一键安装（推荐）
+# 方式 1：一键安装（推荐，纯 WSL）
 bash scripts/install_torch.sh
 source .venv/bin/activate
 
-# 方式 2：手动安装
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -i https://mirrors.aliyun.com/pypi/simple/ torch --trusted-host mirrors.aliyun.com
-pip install -e .
+# 方式 2：使用 Windows Python（推荐，无需安装 PyTorch）
+chmod +x kronos.sh
+./kronos.sh forecast --symbol 600519 --pred-len 5 --sample-count 10
 
-# 预测（dry-run，无需模型）
-kronos forecast --symbol 600519 --pred-len 5 --dry-run
-
-# 真实推理（需要模型在 external/Kronos-small/）
-kronos forecast --symbol 600519 --pred-len 5
+# 手动指定 Python 路径（如自动检测失败）
+WIN_PYTHON=/mnt/c/Users/你的用户名/AppData/Local/Programs/Python/Python313/python.exe ./kronos.sh forecast ...
 ```
+
+**WSL 工作原理**：
+- `kronos.sh` 自动检测 Windows Python 路径
+- 将 WSL 路径转换为 Windows 路径（`/mnt/e/...` → `E:\...`）
+- 调用 `win_launcher.py` 配置环境变量后执行 CLI
+- 数据源（BaoStock/Yahoo）从 WSL 网络获取
 
 ### CLI（通用）
 
