@@ -529,11 +529,13 @@ def market_summary(ctx, output_format):
 @click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
 @click.pass_context
 def ai_analyze(ctx, symbol, output_format):
-    """AI-powered stock analysis using DeepSeek."""
+    """AI-powered stock analysis using DeepSeek + Kronos."""
     try:
         from kronos_fincept.financial import AIInvestmentAdvisor
         from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
         from kronos_fincept.financial import RiskCalculator, TechnicalIndicators
+        from kronos_fincept.schemas import ForecastRequest, ForecastRow
+        from kronos_fincept.service import forecast_from_request
         
         # Get market data
         price_data = fetch_a_stock_ohlcv(
@@ -568,32 +570,78 @@ def ai_analyze(ctx, symbol, output_format):
             'volatility': risk_metrics.volatility
         }
         
-        # AI Analysis
+        # Kronos Prediction
+        prediction_data = None
+        try:
+            click.echo("Running Kronos prediction...", err=True)
+            forecast_rows = []
+            for row in price_data[-100:]:
+                forecast_row = ForecastRow(
+                    timestamp=row['timestamp'],
+                    open=float(row['open']),
+                    high=float(row['high']),
+                    low=float(row['low']),
+                    close=float(row['close']),
+                    volume=float(row.get('volume', 0)),
+                    amount=float(row.get('amount', 0))
+                )
+                forecast_rows.append(forecast_row)
+            
+            request = ForecastRequest(
+                symbol=symbol,
+                timeframe="1d",
+                rows=forecast_rows,
+                pred_len=5,
+                sample_count=10
+            )
+            
+            result = forecast_from_request(request)
+            
+            if result['ok']:
+                prediction_data = {
+                    'model': 'Kronos-base',
+                    'prediction_days': 5,
+                    'forecast': result['forecast'],
+                    'probabilistic': result.get('probabilistic', {})
+                }
+                click.echo("Kronos prediction completed.", err=True)
+        except Exception as e:
+            click.echo(f"Kronos prediction failed: {e}", err=True)
+        
+        # AI Analysis (with Kronos data)
         advisor = AIInvestmentAdvisor()
-        result = advisor.analyze_stock(symbol, market_data, risk_data)
+        ai_result = advisor.analyze_stock(symbol, market_data, risk_data, prediction_data)
         
         # Format output
         if output_format == 'json':
             output = {
-                'symbol': result.symbol,
-                'summary': result.summary,
-                'detailed_analysis': result.detailed_analysis,
-                'recommendation': result.recommendation,
-                'confidence': result.confidence,
-                'risk_level': result.risk_level,
-                'timestamp': result.timestamp
+                'symbol': ai_result.symbol,
+                'summary': ai_result.summary,
+                'detailed_analysis': ai_result.detailed_analysis,
+                'recommendation': ai_result.recommendation,
+                'confidence': ai_result.confidence,
+                'risk_level': ai_result.risk_level,
+                'kronos_prediction': prediction_data,
+                'timestamp': ai_result.timestamp
             }
             click.echo(json.dumps(output, indent=2, ensure_ascii=False))
         else:
             click.echo(f"AI Analysis for {symbol}")
             click.echo("=" * 50)
-            click.echo(f"\nSummary: {result.summary}")
-            click.echo(f"\nRecommendation: {result.recommendation}")
-            click.echo(f"Confidence: {result.confidence:.0%}")
-            click.echo(f"Risk Level: {result.risk_level}")
+            
+            if prediction_data:
+                click.echo("\nKronos Prediction:")
+                click.echo("-" * 30)
+                for day in prediction_data['forecast']:
+                    click.echo(f"  {day['timestamp']}: {day['close']:.2f}")
+            
+            click.echo(f"\nSummary: {ai_result.summary}")
+            click.echo(f"\nRecommendation: {ai_result.recommendation}")
+            click.echo(f"Confidence: {ai_result.confidence:.0%}")
+            click.echo(f"Risk Level: {ai_result.risk_level}")
             click.echo(f"\nDetailed Analysis:")
             click.echo("-" * 50)
-            click.echo(result.detailed_analysis)
+            click.echo(ai_result.detailed_analysis)
         
         return 0
         
