@@ -432,8 +432,90 @@ def strategy(ctx, symbol, strategy, days, output_format):
                     click.echo(f"  Reason: {v['reason']}")
             else:
                 click.echo(f"Signal: {result['signal'].upper()}")
-                click.echo(f"Strength: {result['strength']:.2f}")
-                click.echo(f"Reason: {result['reason']}")
+            click.echo(f"Strength: {result['strength']:.2f}")
+            click.echo(f"Reason: {result['reason']}")
+        
+        return 0
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1
+
+
+@analyze_group.command()
+@click.option('--symbol', required=True, help='Stock symbol (e.g., AAPL, 0700.HK, BTC)')
+@click.option('--market', type=click.Choice(['us', 'hk', 'crypto', 'auto']), default='auto', help='Market type')
+@click.option('--period', type=click.Choice(['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max']), default='1y', help='Data period')
+@click.option('--output', 'output_format', type=click.Choice(['json', 'table']), default='json')
+@click.pass_context
+def global_data(ctx, symbol, market, period, output_format):
+    """Get global market data (US, HK, Crypto)."""
+    try:
+        from kronos_fincept.financial import GlobalMarketSource
+        
+        gms = GlobalMarketSource()
+        df = gms.get_stock_data(symbol, market, period)
+        
+        if df is None or df.empty:
+            click.echo(f"Error: Could not get data for {symbol}")
+            return 1
+        
+        # Convert to list of dicts
+        data = df.to_dict('records')
+        
+        # Format output
+        if output_format == 'json':
+            output = {
+                'symbol': symbol,
+                'market': market,
+                'period': period,
+                'data_points': len(data),
+                'latest': data[-1] if data else None,
+                'data': data[-10:]  # Last 10 records
+            }
+            click.echo(json.dumps(output, indent=2, default=str))
+        else:
+            click.echo(f"Global Market Data: {symbol}")
+            click.echo("-" * 40)
+            click.echo(f"Data points: {len(data)}")
+            if data:
+                latest = data[-1]
+                click.echo(f"Latest: {latest['timestamp']}")
+                click.echo(f"  Open: {latest['open']:.2f}")
+                click.echo(f"  High: {latest['high']:.2f}")
+                click.echo(f"  Low: {latest['low']:.2f}")
+                click.echo(f"  Close: {latest['close']:.2f}")
+                click.echo(f"  Volume: {latest['volume']:.0f}")
+        
+        return 0
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1
+
+
+@analyze_group.command()
+@click.option('--output', 'output_format', type=click.Choice(['json', 'table']), default='json')
+@click.pass_context
+def market_summary(ctx, output_format):
+    """Get major market indices summary."""
+    try:
+        from kronos_fincept.financial import GlobalMarketSource
+        
+        gms = GlobalMarketSource()
+        summary = gms.get_market_summary()
+        
+        # Format output
+        if output_format == 'json':
+            click.echo(json.dumps(summary, indent=2))
+        else:
+            click.echo("Global Market Summary")
+            click.echo("-" * 40)
+            for name, data in summary.items():
+                if 'error' in data:
+                    click.echo(f"{name}: {data['error']}")
+                else:
+                    click.echo(f"{name}: {data.get('price', 'N/A')}")
         
         return 0
         

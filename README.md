@@ -72,6 +72,12 @@ Version: v5.0 (进行中)
 - CLI 命令：`kronos analyze indicator/strategy`
 - 统一技术分析接口
 
+### 全球市场数据 (v5.0)
+- 美股数据：AAPL, MSFT, GOOGL, etc.
+- 港股数据：0700.HK, 9988.HK, etc.
+- 加密货币：BTC-USD, ETH-USD, etc.
+- CLI 命令：`kronos analyze global-data/market-summary`
+
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
 - 支持 Claude Desktop / Cursor 等 MCP 客户端

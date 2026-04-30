@@ -16,6 +16,7 @@ from .portfolio import PortfolioOptimizer, PortfolioResult
 from .derivatives import DerivativesPricer, OptionResult
 from .indicators import TechnicalIndicators, SMA, EMA, RSI, MACD, BollingerBands, KDJ, ATR, OBV
 from .strategies import QuantitativeStrategies, StrategyResult, Signal
+from .global_market import GlobalMarketSource
 
 __all__ = [
     # Schemas
@@ -59,5 +60,8 @@ __all__ = [
     # Trading strategies
     'QuantitativeStrategies',
     'StrategyResult',
-    'Signal'
+    'Signal',
+    
+    # Global market
+    'GlobalMarketSource'
 ]
