@@ -315,3 +315,73 @@ class KronosPredictorWrapper:
             backend="kronos",
             sample_count=self.sample_count,
         )
+
+    def predict_batch(
+        self,
+        dfs: list[pd.DataFrame],
+        x_timestamps: list[pd.Series],
+        pred_len: int,
+    ) -> list[ForecastResult]:
+        """Run batch prediction on multiple assets using upstream Kronos predict_batch.
+
+        This is more efficient than calling predict() separately for each asset,
+        as it batches the inference operations.
+
+        Args:
+            dfs: List of historical OHLCV DataFrames
+            x_timestamps: List of timestamp Series
+            pred_len: Number of bars to predict
+
+        Returns:
+            List of ForecastResult in same order as input.
+        """
+        started = time.perf_counter()
+        predictor = self._load()
+
+        # Prepare batch inputs
+        y_timestamps = [make_future_timestamps(ts, pred_len) for ts in x_timestamps]
+
+        try:
+            # Use upstream predict_batch
+            frames = predictor.predict_batch(
+                df_list=dfs,
+                x_timestamp_list=x_timestamps,
+                y_timestamp_list=y_timestamps,
+                pred_len=pred_len,
+                T=self.temperature,
+                top_k=self.top_k,
+                top_p=self.top_p,
+                sample_count=self.sample_count,
+                verbose=False,
+            )
+        except Exception:
+            # Fallback to sequential predict if batch fails
+            frames = []
+            for df, ts in zip(dfs, x_timestamps):
+                y_ts = make_future_timestamps(ts, pred_len)
+                frame = predictor.predict(
+                    df=df,
+                    x_timestamp=ts,
+                    y_timestamp=y_ts,
+                    pred_len=pred_len,
+                    T=self.temperature,
+                    top_k=self.top_k,
+                    top_p=self.top_p,
+                    sample_count=self.sample_count,
+                    verbose=False,
+                )
+                frames.append(frame)
+
+        results: list[ForecastResult] = []
+        for i, frame in enumerate(frames):
+            frame = frame.reset_index(drop=False)
+            if "timestamp" not in frame.columns:
+                frame.insert(0, "timestamp", y_timestamps[i].reset_index(drop=True))
+            results.append(ForecastResult(
+                frame=frame,
+                device=self.device or "auto",
+                elapsed_ms=int((time.perf_counter() - started) * 1000),
+                backend="kronos_batch",
+            ))
+
+        return results

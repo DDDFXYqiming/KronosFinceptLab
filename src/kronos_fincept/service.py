@@ -136,12 +136,81 @@ def batch_forecast_from_requests(
 ) -> list[RankedSignal]:
     """Run forecast on multiple assets and return ranked by predicted_return.
 
+    Uses predict_batch() when available for better performance.
+
     Args:
         requests: List of ForecastRequest, one per asset.
 
     Returns:
         List of RankedSignal sorted by predicted_return descending (best first).
     """
+    if not requests:
+        return []
+
+    # Check if we should use batch prediction
+    # Use batch when all requests are single-sample (not probabilistic)
+    use_batch = (
+        not requests[0].dry_run
+        and all(req.sample_count == 1 for req in requests)
+        and len(requests) > 1
+    )
+
+    if use_batch:
+        # Prepare batch inputs
+        from kronos_fincept.predictor import KronosPredictorWrapper
+        from kronos_fincept.data_adapter import rows_to_dataframe
+
+        predictor = KronosPredictorWrapper(
+            model_id=requests[0].model_id,
+            tokenizer_id=requests[0].tokenizer_id,
+            max_context=requests[0].max_context,
+            temperature=requests[0].temperature,
+            top_k=requests[0].top_k,
+            top_p=requests[0].top_p,
+            sample_count=requests[0].sample_count,
+        )
+
+        dfs = []
+        timestamps = []
+        for req in requests:
+            df, ts = rows_to_dataframe(req.rows_as_dicts())
+            dfs.append(df)
+            timestamps.append(ts)
+
+        try:
+            results = predictor.predict_batch(dfs, timestamps, requests[0].pred_len)
+
+            signals: list[RankedSignal] = []
+            for i, (req, result) in enumerate(zip(requests, results)):
+                forecast_records = _frame_to_records(result.frame)
+                last_close = float(req.rows[-1].close)
+                forecast_close = float(forecast_records[-1]["close"])
+                predicted_return = forecast_close / last_close - 1.0
+
+                signals.append(RankedSignal(
+                    rank=0,
+                    symbol=req.symbol,
+                    last_close=last_close,
+                    predicted_close=forecast_close,
+                    predicted_return=predicted_return,
+                    elapsed_ms=result.elapsed_ms,
+                    forecast=forecast_records,
+                ))
+
+            # Sort by predicted_return descending
+            signals.sort(key=lambda s: s.predicted_return, reverse=True)
+
+            # Assign ranks
+            for i, sig in enumerate(signals):
+                sig.rank = i + 1
+
+            return signals
+
+        except Exception:
+            # Fallback to sequential if batch fails
+            pass
+
+    # Fallback: sequential prediction
     signals: list[RankedSignal] = []
 
     for req in requests:
