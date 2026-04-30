@@ -6,11 +6,14 @@ DataSourceManager - 统一数据源管理器
 import time
 import json
 import os
+import logging
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
 import hashlib
+
+logger = logging.getLogger(__name__)
 
 
 class DataSourceStatus(Enum):
@@ -83,7 +86,7 @@ class DataSource:
             self.circuit_break_until = datetime.now() + timedelta(
                 seconds=self.config.circuit_break_duration
             )
-            print(f"[DataSourceManager] {self.config.name} 熔断，"
+            logger.debug(f" {self.config.name} 熔断，"
                   f"将在 {self.config.circuit_break_duration} 秒后恢复")
 
     def get_retry_delay(self, attempt: int) -> float:
@@ -121,14 +124,14 @@ class DataSourceManager:
     def register(self, source: DataSource):
         """注册数据源"""
         self.data_sources[source.config.name] = source
-        print(f"[DataSourceManager] 注册数据源: {source.config.name} "
+        logger.debug(f" 注册数据源: {source.config.name} "
               f"(优先级: {source.config.priority})")
 
     def unregister(self, name: str):
         """注销数据源"""
         if name in self.data_sources:
             del self.data_sources[name]
-            print(f"[DataSourceManager] 注销数据源: {name}")
+            logger.debug(f" 注销数据源: {name}")
 
     def get_sorted_sources(self) -> List[DataSource]:
         """获取按优先级排序的数据源列表"""
@@ -187,7 +190,7 @@ class DataSourceManager:
             with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(cache_entry, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[DataSourceManager] 缓存写入失败: {e}")
+            logger.debug(f" 缓存写入失败: {e}")
 
     def fetch(self, endpoint: str, use_cache: bool = True,
               cache_ttl: int = 86400, **kwargs) -> Dict[str, Any]:
@@ -221,10 +224,10 @@ class DataSourceManager:
         last_error = None
         for source in self.get_sorted_sources():
             if not source.is_available():
-                print(f"[DataSourceManager] 跳过不可用的数据源: {source.config.name}")
+                logger.debug(f" 跳过不可用的数据源: {source.config.name}")
                 continue
 
-            print(f"[DataSourceManager] 尝试数据源: {source.config.name}")
+            logger.debug(f" 尝试数据源: {source.config.name}")
 
             # 带重试的请求
             for attempt in range(source.config.max_retries):
@@ -249,7 +252,7 @@ class DataSourceManager:
                         # 等待重试
                         if attempt < source.config.max_retries - 1:
                             delay = source.get_retry_delay(attempt)
-                            print(f"[DataSourceManager] 重试 {attempt + 1}/"
+                            logger.debug(f" 重试 {attempt + 1}/"
                                   f"{source.config.max_retries}，等待 {delay} 秒...")
                             time.sleep(delay)
 
@@ -260,11 +263,11 @@ class DataSourceManager:
                     # 等待重试
                     if attempt < source.config.max_retries - 1:
                         delay = source.get_retry_delay(attempt)
-                        print(f"[DataSourceManager] 重试 {attempt + 1}/"
+                        logger.debug(f" 重试 {attempt + 1}/"
                               f"{source.config.max_retries}，等待 {delay} 秒...")
                         time.sleep(delay)
 
-            print(f"[DataSourceManager] 数据源 {source.config.name} 失败，"
+            logger.debug(f" 数据源 {source.config.name} 失败，"
                   f"尝试下一个...")
 
         # 所有数据源都失败
@@ -301,7 +304,7 @@ class DataSourceManager:
             source.status = DataSourceStatus.HEALTHY
             source.consecutive_failures = 0
             source.circuit_break_until = None
-        print("[DataSourceManager] 已重置所有数据源状态")
+        logger.debug(" 已重置所有数据源状态")
 
 
 # 全局数据源管理器实例

@@ -1,3 +1,6 @@
+import logging
+logger = logging.getLogger(__name__)
+
 """
 数据源初始化模块
 自动注册所有可用的数据源
@@ -42,37 +45,37 @@ def init_data_sources(cache_dir: str = ".cache",
             akshare_source = AkShareSource(priority=1)
             manager.register(akshare_source)
         except Exception as e:
-            print(f"[DataSource] AkShare 注册失败: {e}")
+            logger.debug(f"AkShare 注册失败: {e}")
 
     if enable_baostock:
         try:
             baostock_source = BaoStockSource(priority=2)
             manager.register(baostock_source)
         except Exception as e:
-            print(f"[DataSource] BaoStock 注册失败: {e}")
+            logger.debug(f"BaoStock 注册失败: {e}")
 
     if enable_yahoo:
         try:
             yahoo_source = YahooFinanceSource(priority=3)
             manager.register(yahoo_source)
         except Exception as e:
-            print(f"[DataSource] Yahoo Finance 注册失败: {e}")
+            logger.debug(f"Yahoo Finance 注册失败: {e}")
 
     if enable_binance:
         try:
             binance_source = BinanceSource(priority=4)
             manager.register(binance_source)
         except Exception as e:
-            print(f"[DataSource] Binance 注册失败: {e}")
+            logger.debug(f"Binance 注册失败: {e}")
 
     if enable_okx:
         try:
             okx_source = OKXSource(priority=5)
             manager.register(okx_source)
         except Exception as e:
-            print(f"[DataSource] OKX 注册失败: {e}")
+            logger.debug(f"OKX 注册失败: {e}")
 
-    print(f"[DataSource] 已注册 {len(manager.data_sources)} 个数据源")
+    logger.debug(f"已注册 {len(manager.data_sources)} 个数据源")
     return manager
 
 
