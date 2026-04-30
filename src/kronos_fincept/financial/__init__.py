@@ -14,6 +14,8 @@ from .dcf import DCFModel, DCFResult
 from .risk import RiskCalculator, RiskMetrics
 from .portfolio import PortfolioOptimizer, PortfolioResult
 from .derivatives import DerivativesPricer, OptionResult
+from .indicators import TechnicalIndicators, SMA, EMA, RSI, MACD, BollingerBands, KDJ, ATR, OBV
+from .strategies import QuantitativeStrategies, StrategyResult, Signal
 
 __all__ = [
     # Schemas
@@ -41,5 +43,21 @@ __all__ = [
     
     # Derivatives pricing
     'DerivativesPricer',
-    'OptionResult'
+    'OptionResult',
+    
+    # Technical indicators
+    'TechnicalIndicators',
+    'SMA',
+    'EMA',
+    'RSI',
+    'MACD',
+    'BollingerBands',
+    'KDJ',
+    'ATR',
+    'OBV',
+    
+    # Trading strategies
+    'QuantitativeStrategies',
+    'StrategyResult',
+    'Signal'
 ]

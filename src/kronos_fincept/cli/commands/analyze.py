@@ -293,3 +293,150 @@ def derivative(ctx, underlying, strike, expiry, volatility, rate, option_type, o
     except Exception as e:
         click.echo(f"Error: {e}")
         return 1
+
+
+@analyze_group.command()
+@click.option('--symbol', required=True, help='Stock symbol')
+@click.option('--indicator', type=click.Choice(['sma', 'ema', 'rsi', 'macd', 'bollinger', 'kdj', 'atr', 'obv', 'all']), 
+              default='all', help='Technical indicator to calculate')
+@click.option('--period', type=int, default=20, help='Indicator period')
+@click.option('--days', type=int, default=100, help='Trading days for calculation')
+@click.option('--output', 'output_format', type=click.Choice(['json', 'table']), default='json')
+@click.pass_context
+def indicator(ctx, symbol, indicator, period, days, output_format):
+    """Calculate technical indicators."""
+    try:
+        from kronos_fincept.financial import TechnicalIndicators
+        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+        
+        # Get price data
+        price_data = fetch_a_stock_ohlcv(
+            symbol=symbol,
+            start_date="20250101",
+            end_date="20260430"
+        )
+        
+        if not price_data or len(price_data) == 0:
+            click.echo(f"Error: Could not get price data for {symbol}")
+            return 1
+        
+        closes = [row['close'] for row in price_data]
+        highs = [row['high'] for row in price_data]
+        lows = [row['low'] for row in price_data]
+        volumes = [row.get('volume', 0) for row in price_data]
+        
+        # Calculate indicators
+        ti = TechnicalIndicators()
+        
+        if indicator == 'all':
+            result = ti.calculate_all_indicators(closes, highs, lows, volumes)
+            result = {k: v.__dict__ if hasattr(v, '__dict__') else v for k, v in result.items()}
+        elif indicator == 'sma':
+            sma = ti.calculate_sma(closes, period)
+            result = {'sma': sma.__dict__, 'current': sma.current}
+        elif indicator == 'ema':
+            ema = ti.calculate_ema(closes, period)
+            result = {'ema': ema.__dict__, 'current': ema.current}
+        elif indicator == 'rsi':
+            rsi = ti.calculate_rsi(closes, period)
+            result = {'rsi': rsi.__dict__, 'current': rsi.current, 'overbought': rsi.is_overbought, 'oversold': rsi.is_oversold}
+        elif indicator == 'macd':
+            macd = ti.calculate_macd(closes)
+            result = {'macd': macd.__dict__}
+        elif indicator == 'bollinger':
+            bollinger = ti.calculate_bollinger_bands(closes, period)
+            result = {'bollinger': bollinger.__dict__}
+        elif indicator == 'kdj':
+            kdj = ti.calculate_kdj(highs, lows, closes, period)
+            result = {'kdj': kdj.__dict__}
+        elif indicator == 'atr':
+            atr = ti.calculate_atr(highs, lows, closes, period)
+            result = {'atr': atr.__dict__, 'current': atr.current}
+        elif indicator == 'obv':
+            obv = ti.calculate_obv(closes, volumes)
+            result = {'obv': obv.__dict__, 'current': obv.current}
+        
+        # Format output
+        if output_format == 'json':
+            click.echo(json.dumps(result, indent=2, default=str))
+        else:
+            click.echo(f"Technical Indicators for {symbol}")
+            click.echo("-" * 40)
+            if indicator == 'all':
+                for k, v in result.items():
+                    click.echo(f"{k}: {v}")
+            else:
+                click.echo(json.dumps(result, indent=2, default=str))
+        
+        return 0
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1
+
+
+@analyze_group.command()
+@click.option('--symbol', required=True, help='Stock symbol')
+@click.option('--strategy', type=click.Choice(['ma_crossover', 'rsi', 'macd', 'bollinger', 'all']), 
+              default='all', help='Trading strategy to run')
+@click.option('--days', type=int, default=100, help='Trading days for calculation')
+@click.option('--output', 'output_format', type=click.Choice(['json', 'table']), default='json')
+@click.pass_context
+def strategy(ctx, symbol, strategy, days, output_format):
+    """Run trading strategies."""
+    try:
+        from kronos_fincept.financial import QuantitativeStrategies
+        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+        
+        # Get price data
+        price_data = fetch_a_stock_ohlcv(
+            symbol=symbol,
+            start_date="20250101",
+            end_date="20260430"
+        )
+        
+        if not price_data or len(price_data) == 0:
+            click.echo(f"Error: Could not get price data for {symbol}")
+            return 1
+        
+        closes = [row['close'] for row in price_data]
+        
+        # Run strategies
+        qs = QuantitativeStrategies()
+        
+        if strategy == 'all':
+            result = qs.run_all_strategies(closes)
+            result = {k: {'signal': v.signal.value, 'strength': v.strength, 'reason': v.reason} for k, v in result.items()}
+        elif strategy == 'ma_crossover':
+            sr = qs.ma_crossover_strategy(closes)
+            result = {'signal': sr.signal.value, 'strength': sr.strength, 'reason': sr.reason}
+        elif strategy == 'rsi':
+            sr = qs.rsi_strategy(closes)
+            result = {'signal': sr.signal.value, 'strength': sr.strength, 'reason': sr.reason}
+        elif strategy == 'macd':
+            sr = qs.macd_strategy(closes)
+            result = {'signal': sr.signal.value, 'strength': sr.strength, 'reason': sr.reason}
+        elif strategy == 'bollinger':
+            sr = qs.bollinger_breakout_strategy(closes)
+            result = {'signal': sr.signal.value, 'strength': sr.strength, 'reason': sr.reason}
+        
+        # Format output
+        if output_format == 'json':
+            click.echo(json.dumps(result, indent=2))
+        else:
+            click.echo(f"Trading Strategies for {symbol}")
+            click.echo("-" * 40)
+            if strategy == 'all':
+                for k, v in result.items():
+                    click.echo(f"{k}: {v['signal'].upper()} (strength: {v['strength']:.2f})")
+                    click.echo(f"  Reason: {v['reason']}")
+            else:
+                click.echo(f"Signal: {result['signal'].upper()}")
+                click.echo(f"Strength: {result['strength']:.2f}")
+                click.echo(f"Reason: {result['reason']}")
+        
+        return 0
+        
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1

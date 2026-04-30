@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v4.0 ✅ (2026-04-30)
+Version: v5.0 (进行中)
 
 ## 已实现
 
@@ -65,6 +65,12 @@ Version: v4.0 ✅ (2026-04-30)
 - 财务数据获取（BaoStock + Yahoo Finance）
 - CLI 命令：`kronos analyze dcf/risk/portfolio/derivative`
 - API 路由：`/api/v1/analyze/*`
+
+### 技术指标与策略 (v5.0)
+- 技术指标：SMA, EMA, RSI, MACD, Bollinger Bands, KDJ, ATR, OBV
+- 量化策略：均线交叉、RSI超买超卖、MACD金叉死叉、布林带突破
+- CLI 命令：`kronos analyze indicator/strategy`
+- 统一技术分析接口
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
