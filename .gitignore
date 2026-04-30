@@ -26,7 +26,6 @@ external/
 !.env.example
 
 # Internal planning docs
-SPEC.md
 
 # OS / editor
 .DS_Store
