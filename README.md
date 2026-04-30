@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v6.0 (已完成)
+Version: v7.0 (已完成)
 
 ## 已实现
 
