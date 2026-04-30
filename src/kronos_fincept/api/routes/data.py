@@ -21,7 +21,7 @@ async def get_a_stock_data(
     end_date: str = Query(..., description="End date YYYYMMDD"),
     adjust: str = Query(default="qfq", description="Price adjustment: qfq, hfq, or empty"),
 ) -> DataResponseOut:
-    """Fetch A-stock historical OHLCV data via AkShare."""
+    """Fetch A-stock historical OHLCV data via DataSourceManager (AkShare -> BaoStock -> Yahoo)."""
     try:
         rows = fetch_a_stock_ohlcv(
             symbol=symbol,
@@ -47,37 +47,12 @@ async def get_a_stock_data(
 async def search_stocks(
     q: str = Query(..., min_length=1, description="Search keyword (stock code or name)"),
 ) -> SearchResponseOut:
-    """Search A-stock by code or name.
-
-    Uses AkShare's stock info endpoint to find matching stocks.
-    """
+    """Search A-stock by code or name with multi-source fallback (AkShare -> BaoStock)."""
     try:
-        import akshare as ak
-        # ak.stock_zh_a_spot_em() returns all A-stock real-time quotes
-        # We use it as a lightweight stock directory
-        df = ak.stock_zh_a_spot_em()
-        # Filter by code or name
-        mask = (
-            df["代码"].str.contains(q, case=False, na=False)
-            | df["名称"].str.contains(q, case=False, na=False)
-        )
-        matches = df[mask].head(20)
+        from kronos_fincept.akshare_adapter import search_stocks
 
-        results = []
-        for _, row in matches.iterrows():
-            code = str(row["代码"])
-            name = str(row["名称"])
-            # Infer market from code prefix
-            if code.startswith("6"):
-                market = "SSE"  # Shanghai
-            elif code.startswith(("0", "3")):
-                market = "SZSE"  # Shenzhen
-            elif code.startswith(("4", "8")):
-                market = "BSE"  # Beijing
-            else:
-                market = "UNKNOWN"
-
-            results.append(SearchResultOut(code=code, name=name, market=market))
+        raw = search_stocks(q)
+        results = [SearchResultOut(**r) for r in raw]
 
         return SearchResponseOut(ok=True, results=results)
 

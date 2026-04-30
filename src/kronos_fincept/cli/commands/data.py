@@ -63,31 +63,10 @@ def data_search(ctx: click.Context, query: str) -> None:
     """Search A-stock by code or name."""
     output_format = ctx.obj.get("output_format", "json")
 
+    from kronos_fincept.akshare_adapter import search_stocks
+
     try:
-        import akshare as ak
-        import pandas as pd
-
-        df = ak.stock_zh_a_spot_em()
-        mask = (
-            df["代码"].str.contains(query, case=False, na=False)
-            | df["名称"].str.contains(query, case=False, na=False)
-        )
-        matches = df[mask].head(20)
-
-        results = []
-        for _, row in matches.iterrows():
-            code = str(row["代码"])
-            name = str(row["名称"])
-            if code.startswith("6"):
-                market = "SSE"
-            elif code.startswith(("0", "3")):
-                market = "SZSE"
-            elif code.startswith(("4", "8")):
-                market = "BSE"
-            else:
-                market = "UNKNOWN"
-            results.append({"code": code, "name": name, "market": market})
-
+        results = search_stocks(query)
         result = {"ok": True, "results": results}
     except Exception as exc:
         result = {"ok": True, "results": []}

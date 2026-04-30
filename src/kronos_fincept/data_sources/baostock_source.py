@@ -150,9 +150,9 @@ class BaoStockSource(DataSource):
                             "日期": row[0],
                             "股票代码": row[1],
                             "开盘": float(row[2]) if row[2] else 0,
-                            "收盘": float(row[3]) if row[3] else 0,
-                            "最高": float(row[4]) if row[4] else 0,
-                            "最低": float(row[5]) if row[5] else 0,
+                            "最高": float(row[3]) if row[3] else 0,
+                            "最低": float(row[4]) if row[4] else 0,
+                            "收盘": float(row[5]) if row[5] else 0,
                             "成交量": int(float(row[7])) if row[7] else 0,
                             "成交额": float(row[8]) if row[8] else 0,
                             "振幅": 0,  # BaoStock 不提供

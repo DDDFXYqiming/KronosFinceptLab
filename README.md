@@ -17,7 +17,7 @@
 
 ## Current status
 
-Version: v1.0 ✅ (2026-04-30)
+Version: v2.0 ✅ (2026-04-30)
 
 ## 已实现
 
@@ -32,9 +32,11 @@ Version: v1.0 ✅ (2026-04-30)
 - 多数据源自动降级架构（AkShare → BaoStock → Yahoo Finance）
 - 统一数据源管理器（DataSourceManager）
 - 指数退避重试 + 熔断机制 + 内存/文件缓存
-- AkShare A 股 OHLCV 适配器（`akshare_adapter.py`）
+- ✅ CLI/API **全链路降级集成** — `kronos data fetch`、`kronos forecast` 等命令自动走 DataSourceManager，AkShare 失败时无缝切换到 BaoStock
+- ✅ `akshare_adapter.py` — 统一数据入口，所有 6 个调用方（CLI、API、backtest）自动享受降级
+- AkShare A 股 OHLCV 适配器
 - BaoStock 数据源适配器（已验证可用）
-- Yahoo Finance 数据源适配器（已实现）
+- Yahoo Finance 数据源适配器（已验证可用）
 - 通用 CSV/OHLCV 适配器（`data_adapter.py`）
 
 ### 量化引擎
