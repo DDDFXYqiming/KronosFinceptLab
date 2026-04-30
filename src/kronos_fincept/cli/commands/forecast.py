@@ -2,6 +2,7 @@
 
 Examples:
     kronos forecast --symbol 600519 --pred-len 5
+    kronos forecast --symbol 600519 --pred-len 5 --sample-count 10
     kronos forecast --symbol 600519 --pred-len 5 --dry-run
     kronos forecast --symbol 600519 --pred-len 5 --output table
     kronos forecast --input request.json
@@ -26,6 +27,7 @@ from kronos_fincept.cli.output import (
 @click.command("forecast")
 @click.option("--symbol", "-s", type=str, help="A-stock symbol, e.g. 600519")
 @click.option("--pred-len", "-p", type=int, default=5, help="Prediction length (bars)")
+@click.option("--sample-count", type=int, default=1, help="Number of Monte Carlo samples (1=point, >1=probabilistic)")
 @click.option("--start", type=str, default=None, help="Start date YYYYMMDD (optional)")
 @click.option("--end", type=str, default=None, help="End date YYYYMMDD (optional)")
 @click.option("--dry-run", is_flag=True, default=False, help="Use mock predictor")
@@ -39,6 +41,7 @@ def forecast_cmd(
     ctx: click.Context,
     symbol: str | None,
     pred_len: int,
+    sample_count: int,
     start: str | None,
     end: str | None,
     dry_run: bool,
@@ -74,6 +77,7 @@ def forecast_cmd(
             "temperature": temperature,
             "top_k": top_k,
             "top_p": top_p,
+            "sample_count": sample_count,
         }
 
     # Run forecast
@@ -102,6 +106,14 @@ def forecast_cmd(
         click.echo(f"[time]  {meta.get('elapsed_ms', 0)}ms | "
                     f"Device: {meta.get('device', 'unknown')} | "
                     f"Backend: {meta.get('backend', 'unknown')}")
+        # Print probabilistic stats if available
+        if "probabilistic" in result:
+            prob = result["probabilistic"]
+            click.echo(f"[prob]  Samples: {prob['sample_count']}")
+            click.echo(f"[prob]  Upside Probability: {prob['upside_probability']:.1%}")
+            click.echo(f"[prob]  Volatility Amplification: {prob['volatility_amplification']:.2f}x")
+            click.echo(f"[prob]  Forecast Range: {prob['forecast_range']['min']:.2f} - {prob['forecast_range']['max']:.2f}")
+            click.echo(f"[prob]  Mean Final Close: {prob['mean_final_close']:.2f}")
         click.echo(f"[warn]  {meta.get('warning', '')}")
 
 

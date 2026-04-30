@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from kronos_fincept.data_adapter import make_future_timestamps
@@ -66,6 +67,29 @@ class ForecastResult:
     device: str
     elapsed_ms: int
     backend: str
+
+
+@dataclass(frozen=True)
+class ProbabilisticForecastResult:
+    """Probabilistic forecast output from Monte Carlo sampling.
+
+    Contains statistics computed from multiple sample paths.
+    """
+
+    # Single mean path (same as ForecastResult.frame)
+    mean_frame: pd.DataFrame
+    # Raw sample paths: list of DataFrames, one per sample
+    samples: list[pd.DataFrame]
+    # Statistics
+    upside_probability: float  # P(final close > current close)
+    volatility_amplification: float  # predicted vol / historical vol
+    forecast_range: tuple[float, float]  # (min_final_close, max_final_close)
+    mean_final_close: float
+    # Metadata
+    device: str
+    elapsed_ms: int
+    backend: str
+    sample_count: int
 
 
 class DryRunPredictor:
@@ -192,3 +216,102 @@ class KronosPredictorWrapper:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         device = self.device or "auto"
         return ForecastResult(frame=frame, device=device, elapsed_ms=elapsed_ms, backend="kronos")
+
+    def predict_probabilistic(
+        self,
+        df: pd.DataFrame,
+        x_timestamp: pd.Series,
+        pred_len: int,
+        historical_volatility: float | None = None,
+    ) -> ProbabilisticForecastResult:
+        """Run Monte Carlo sampling and compute probabilistic statistics.
+
+        Args:
+            df: Historical OHLCV data
+            x_timestamp: Timestamps for historical data
+            pred_len: Number of bars to predict
+            historical_volatility: Pre-computed historical volatility (annualized).
+                                   If None, computed from df['close'].
+
+        Returns:
+            ProbabilisticForecastResult with statistics from multiple sample paths.
+        """
+        started = time.perf_counter()
+        predictor = self._load()
+        y_timestamp = make_future_timestamps(x_timestamp, pred_len)
+
+        # Compute historical volatility if not provided
+        if historical_volatility is None:
+            returns = df["close"].pct_change().dropna()
+            if len(returns) > 1:
+                historical_volatility = float(returns.std() * np.sqrt(252))
+            else:
+                historical_volatility = 0.0
+
+        # Run multiple samples
+        samples: list[pd.DataFrame] = []
+        final_closes: list[float] = []
+
+        for i in range(self.sample_count):
+            frame = predictor.predict(
+                df=df,
+                x_timestamp=x_timestamp,
+                y_timestamp=y_timestamp,
+                pred_len=pred_len,
+                T=self.temperature,
+                top_k=self.top_k,
+                top_p=self.top_p,
+                sample_count=1,  # Run one sample at a time for diversity
+                verbose=False,
+            )
+            frame = frame.reset_index(drop=False)
+            if "timestamp" not in frame.columns:
+                frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
+            samples.append(frame)
+            final_closes.append(float(frame.iloc[-1]["close"]))
+
+        # Compute statistics
+        current_close = float(df.iloc[-1]["close"])
+        final_closes_arr = np.array(final_closes)
+
+        # Upside Probability: fraction of paths ending above current close
+        upside_probability = float(np.mean(final_closes_arr > current_close))
+
+        # Forecast Range: min and max final closes
+        forecast_range = (float(np.min(final_closes_arr)), float(np.max(final_closes_arr)))
+
+        # Mean final close
+        mean_final_close = float(np.mean(final_closes_arr))
+
+        # Volatility Amplification: predicted vol / historical vol
+        if historical_volatility > 0:
+            # Use returns from mean path
+            mean_closes = np.mean([s["close"].values for s in samples], axis=0)
+            mean_returns = np.diff(mean_closes) / mean_closes[:-1]
+            predicted_volatility = float(np.std(mean_returns) * np.sqrt(252))
+            volatility_amplification = predicted_volatility / historical_volatility
+        else:
+            volatility_amplification = 0.0
+
+        # Mean path DataFrame
+        mean_data: dict[str, Any] = {"timestamp": samples[0]["timestamp"].values}
+        for col in ["open", "high", "low", "close", "volume", "amount"]:
+            if col in samples[0].columns:
+                mean_data[col] = np.mean([s[col].values for s in samples], axis=0)
+        mean_frame = pd.DataFrame(mean_data)
+
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        device = self.device or "auto"
+
+        return ProbabilisticForecastResult(
+            mean_frame=mean_frame,
+            samples=samples,
+            upside_probability=upside_probability,
+            volatility_amplification=volatility_amplification,
+            forecast_range=forecast_range,
+            mean_final_close=mean_final_close,
+            device=device,
+            elapsed_ms=elapsed_ms,
+            backend="kronos",
+            sample_count=self.sample_count,
+        )
