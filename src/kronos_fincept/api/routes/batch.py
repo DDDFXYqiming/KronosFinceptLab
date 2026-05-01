@@ -1,12 +1,11 @@
-"""POST /api/batch — Multi-asset batch prediction with ranking."""
+"""POST /api/batch -- Multi-asset batch prediction with ranking."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
-
 from fastapi import APIRouter
-
 from kronos_fincept.api.models import (
     BatchForecastItemIn,
     BatchForecastRequestIn,
@@ -14,7 +13,7 @@ from kronos_fincept.api.models import (
     ForecastMetadataOut,
     RankedSignalOut,
 )
-from kronos_fincept.schemas import ForecastRequest, ForecastRow
+from kronos_fincept.schemas import ForecastRequest
 from kronos_fincept.service import batch_forecast_from_requests
 
 logger = logging.getLogger(__name__)
@@ -51,7 +50,7 @@ async def batch_predict(req: BatchForecastRequestIn) -> BatchForecastResponseOut
         for item in req.assets
     ]
 
-    signals = batch_forecast_from_requests(requests)
+    signals = await asyncio.to_thread(batch_forecast_from_requests, requests)
 
     rankings = [
         RankedSignalOut(

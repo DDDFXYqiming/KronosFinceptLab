@@ -1,7 +1,8 @@
-"""POST /api/backtest/ranking — Ranking-based strategy backtest."""
+"""POST /api/backtest/ranking -- Ranking-based strategy backtest."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import time
@@ -219,13 +220,16 @@ async def backtest_ranking(req: BacktestRequestIn) -> BacktestResponseOut:
     started = time.perf_counter()
     predictor = DryRunPredictor() if req.dry_run else None
 
-    dfs, valid_symbols = _fetch_and_prepare_data(
-        req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
-    )
+    def _run():
+        dfs, symbols = _fetch_and_prepare_data(
+            req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
+        )
+        curve, trades, wins = _run_ranking_backtest(
+            dfs, symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
+        )
+        return dfs, symbols, curve, trades, wins
 
-    equity_curve, total_trades, winning_trades = _run_ranking_backtest(
-        dfs, valid_symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
-    )
+    dfs, valid_symbols, equity_curve, total_trades, winning_trades = await asyncio.to_thread(_run)
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     metrics = _calculate_metrics(equity_curve, total_trades, winning_trades)
@@ -255,13 +259,16 @@ async def backtest_report(req: BacktestReportRequestIn) -> BacktestReportRespons
     started = time.perf_counter()
     predictor = DryRunPredictor() if req.dry_run else None
 
-    dfs, valid_symbols = _fetch_and_prepare_data(
-        req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
-    )
+    def _run():
+        dfs, symbols = _fetch_and_prepare_data(
+            req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
+        )
+        curve, trades, wins = _run_ranking_backtest(
+            dfs, symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
+        )
+        return dfs, symbols, curve, trades, wins
 
-    equity_curve, total_trades, winning_trades = _run_ranking_backtest(
-        dfs, valid_symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
-    )
+    dfs, valid_symbols, equity_curve, total_trades, winning_trades = await asyncio.to_thread(_run)
 
     metrics = _calculate_metrics(equity_curve, total_trades, winning_trades)
     metrics_dict = metrics.model_dump()
@@ -270,7 +277,9 @@ async def backtest_report(req: BacktestReportRequestIn) -> BacktestReportRespons
     benchmark_data = None
     if req.benchmark:
         try:
-            bench_rows = fetch_a_stock_ohlcv(req.benchmark, req.start_date, req.end_date)
+            bench_rows = await asyncio.to_thread(
+                fetch_a_stock_ohlcv, req.benchmark, req.start_date, req.end_date,
+            )
             if bench_rows:
                 benchmark_data = bench_rows
         except Exception as exc:

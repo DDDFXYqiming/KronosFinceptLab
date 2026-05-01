@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 from fastapi import APIRouter
@@ -25,7 +26,7 @@ async def predict(req: ForecastRequestIn) -> ForecastResponseOut:
     use the CLI's `--symbol` flag which auto-fetches via AkShare.
     """
     internal_req = ForecastRequest.from_pydantic(req)
-    result = forecast_from_request(internal_req)
+    result = await asyncio.to_thread(forecast_from_request, internal_req)
 
     if not result.get("ok"):
         from kronos_fincept.schemas import build_error_response

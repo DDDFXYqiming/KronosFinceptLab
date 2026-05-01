@@ -1,12 +1,11 @@
-"""GET /api/data — A-stock data retrieval endpoints."""
+"""GET /api/data -- A-stock data retrieval endpoints."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
-
 from fastapi import APIRouter, HTTPException, Query
-
 from kronos_fincept.api.models import DataResponseOut, SearchResponseOut, SearchResultOut
 from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
 
@@ -25,11 +24,15 @@ async def get_global_market_data(
     """Fetch global market (HK/US/Commodity) OHLCV data via Yahoo Finance."""
     try:
         from kronos_fincept.financial import GlobalMarketSource
-        gms = GlobalMarketSource()
-        yahoo_suffix = {"hk": ".HK", "us": "", "commodity": ""}
-        suff = yahoo_suffix.get(market, "")
-        yahoo_symbol = f"{symbol}{suff}" if suff else symbol
-        raw_data = gms.fetch_data(yahoo_symbol, start_date, end_date)
+
+        def _fetch():
+            gms = GlobalMarketSource()
+            yahoo_suffix = {"hk": ".HK", "us": "", "commodity": ""}
+            suff = yahoo_suffix.get(market, "")
+            yahoo_symbol = f"{symbol}{suff}" if suff else symbol
+            return gms.fetch_data(yahoo_symbol, start_date, end_date)
+
+        raw_data = await asyncio.to_thread(_fetch)
         if not raw_data or len(raw_data) == 0:
             raise HTTPException(status_code=404, detail=f"No data for {symbol} ({market})")
         return DataResponseOut(
@@ -52,18 +55,19 @@ async def get_technical_indicators(
 ) -> dict:
     """Calculate technical indicators for a symbol (SMA, EMA, RSI, MACD, Bollinger, KDJ)."""
     try:
-        from kronos_fincept.financial import TechnicalIndicators
+        from kronos_fincept.financial import TechnicalIndicators, GlobalMarketSource
 
-        # Fetch price data
-        if market == "cn":
-            rows = fetch_a_stock_ohlcv(symbol, "20250101", "20260430")
-        else:
-            from kronos_fincept.financial import GlobalMarketSource
-            gms = GlobalMarketSource()
-            yahoo_suffix = {"hk": ".HK", "us": "", "commodity": ""}
-            suff = yahoo_suffix.get(market, "")
-            yahoo_symbol = f"{symbol}{suff}" if suff else symbol
-            rows = gms.fetch_data(yahoo_symbol, "20250101", "20260430")
+        def _fetch_data():
+            if market == "cn":
+                return fetch_a_stock_ohlcv(symbol, "20250101", "20260430")
+            else:
+                gms = GlobalMarketSource()
+                yahoo_suffix = {"hk": ".HK", "us": "", "commodity": ""}
+                suff = yahoo_suffix.get(market, "")
+                yahoo_symbol = f"{symbol}{suff}" if suff else symbol
+                return gms.fetch_data(yahoo_symbol, "20250101", "20260430")
+
+        rows = await asyncio.to_thread(_fetch_data)
 
         if not rows or len(rows) < 30:
             raise HTTPException(status_code=404, detail=f"Insufficient data for {symbol}")
@@ -76,7 +80,6 @@ async def get_technical_indicators(
         ti = TechnicalIndicators()
         indicators = ti.calculate_all_indicators(closes, highs, lows, volumes)
 
-        # Convert to serializable dict
         result = {}
         for name, obj in indicators.items():
             if hasattr(obj, "__dict__"):
@@ -110,11 +113,9 @@ async def get_a_stock_data(
 ) -> DataResponseOut:
     """Fetch A-stock historical OHLCV data via DataSourceManager (AkShare -> BaoStock -> Yahoo)."""
     try:
-        rows = fetch_a_stock_ohlcv(
-            symbol=symbol,
-            start_date=start_date,
-            end_date=end_date,
-            adjust=adjust,
+        rows = await asyncio.to_thread(
+            fetch_a_stock_ohlcv, symbol=symbol, start_date=start_date,
+            end_date=end_date, adjust=adjust,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -136,14 +137,13 @@ async def search_stocks(
 ) -> SearchResponseOut:
     """Search A-stock by code or name with multi-source fallback (AkShare -> BaoStock)."""
     try:
-        from kronos_fincept.akshare_adapter import search_stocks
+        from kronos_fincept.akshare_adapter import search_stocks as search_stocks_fn
 
-        raw = search_stocks(q)
+        raw = await asyncio.to_thread(search_stocks_fn, q)
         results = [SearchResultOut(**r) for r in raw]
 
         return SearchResponseOut(ok=True, results=results)
 
     except Exception as exc:
         logger.exception("Stock search failed for query: %s", q)
-        # Return empty results on failure rather than 500
         return SearchResponseOut(ok=True, results=[])
