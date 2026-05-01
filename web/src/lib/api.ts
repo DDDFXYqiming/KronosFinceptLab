@@ -27,6 +27,8 @@ export interface ForecastResponse {
   forecast: ForecastRow[];
   metadata: { device: string; elapsed_ms: number; backend: string; warning: string };
   error?: string;
+  probability?: number;
+  signal?: string;
 }
 
 export interface RankedSignal {
@@ -84,6 +86,53 @@ export interface HealthResponse {
   uptime_seconds: number;
 }
 
+export interface GlobalDataResponse {
+  ok: boolean;
+  symbol: string;
+  market: string;
+  count: number;
+  rows: ForecastRow[];
+}
+
+// ── v8.0 New Types ───────────────────────────────────────────────
+
+export interface AIAnalyzeRequest {
+  symbol: string;
+  market: string;
+}
+
+export interface AIAnalyzeResponse {
+  ok: boolean;
+  symbol: string;
+  market: string;
+  summary: string;
+  detailed_analysis: string;
+  recommendation: string;
+  confidence: number;
+  risk_level: string;
+  current_price: number;
+  risk_metrics: Record<string, number> | null;
+  kronos_prediction: {
+    model: string;
+    prediction_days: number;
+    forecast: ForecastRow[];
+    probabilistic: Record<string, any> | null;
+  } | null;
+  timestamp: string;
+  error?: string;
+}
+
+export interface IndicatorResponse {
+  ok: boolean;
+  symbol: string;
+  market: string;
+  current_price: number;
+  indicators: Record<string, any>;
+  data_points: number;
+}
+
+// ── Fetch Helper ─────────────────────────────────────────────────
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -95,6 +144,8 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   }
   return res.json();
 }
+
+// ── API Client ───────────────────────────────────────────────────
 
 export const api = {
   health: () => fetchApi<HealthResponse>("/health"),
@@ -128,5 +179,47 @@ export const api = {
     fetchApi<BacktestResponse>("/backtest/ranking", {
       method: "POST",
       body: JSON.stringify(params),
+    }),
+
+  // v8.0: Global market data
+  getGlobalData: (symbol: string, market: string, startDate: string, endDate: string) =>
+    fetchApi<DataResponse>(
+      `/data/global/${symbol}?market=${market}&start_date=${startDate}&end_date=${endDate}`
+    ),
+
+  // v8.0: Technical indicators
+  getIndicators: (symbol: string, market: string = "cn") =>
+    fetchApi<IndicatorResponse>(`/data/indicator/${symbol}?market=${market}`),
+
+  // v8.0: AI-powered analysis
+  aiAnalyze: (req: AIAnalyzeRequest) =>
+    fetchApi<AIAnalyzeResponse>("/v1/analyze/ai", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  // CFA analysis endpoints
+  analyzeDcf: (symbol: string, market: string) =>
+    fetchApi<any>("/v1/analyze/dcf", {
+      method: "POST",
+      body: JSON.stringify({ symbol, market }),
+    }),
+
+  analyzeRisk: (symbol: string, market: string) =>
+    fetchApi<any>("/v1/analyze/risk", {
+      method: "POST",
+      body: JSON.stringify({ symbol, market }),
+    }),
+
+  analyzePortfolio: (symbols: string[], market: string) =>
+    fetchApi<any>("/v1/analyze/portfolio", {
+      method: "POST",
+      body: JSON.stringify({ symbols, market }),
+    }),
+
+  analyzeDerivative: (symbol: string, market: string) =>
+    fetchApi<any>("/v1/analyze/derivative", {
+      method: "POST",
+      body: JSON.stringify({ symbol, market }),
     }),
 };

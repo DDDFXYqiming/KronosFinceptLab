@@ -5,11 +5,14 @@ import { usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: "📊" },
-  { href: "/forecast", label: "Forecast", icon: "🔮" },
-  { href: "/backtest", label: "Backtest", icon: "📈" },
-  { href: "/data", label: "Data", icon: "📋" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
+  { href: "/", label: "Dashboard" },
+  { href: "/forecast", label: "Forecast" },
+  { href: "/analysis", label: "Analysis" },
+  { href: "/watchlist", label: "Watchlist" },
+  { href: "/batch", label: "Batch" },
+  { href: "/backtest", label: "Backtest" },
+  { href: "/data", label: "Data" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Sidebar() {
@@ -24,7 +27,7 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center h-16 px-4 border-b border-gray-800">
-        <span className="text-xl">⚡</span>
+        <span className="text-xl font-bold text-primary-light">K</span>
         {sidebarOpen && (
           <span className="ml-3 font-display text-lg bg-gradient-primary bg-clip-text text-transparent">
             KronosFinceptLab
@@ -46,8 +49,9 @@ export function Sidebar() {
                   : "text-gray-400 hover:bg-surface-overlay hover:text-gray-200"
               }`}
             >
-              <span className="text-lg">{item.icon}</span>
-              {sidebarOpen && <span className="ml-3 text-sm font-medium">{item.label}</span>}
+              <span className="text-sm font-medium">
+                {sidebarOpen ? item.label : item.label.charAt(0)}
+              </span>
             </Link>
           );
         })}
@@ -57,7 +61,7 @@ export function Sidebar() {
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
           <div className="text-xs text-gray-500 text-center">
-            v2.0.0 — Research Only
+            v8.0 -- Research Only
           </div>
         </div>
       )}
