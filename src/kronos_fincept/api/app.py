@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from kronos_fincept.api.routes import backtest, batch, data, forecast, health, analyze
+from kronos_fincept.api.routes import backtest, batch, data, forecast, health, analyze, ai_analyze
 
 logger = logging.getLogger("kronos_fincept.api")
 
@@ -88,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(data.router, prefix="/api", tags=["data"])
     app.include_router(backtest.router, prefix="/api", tags=["backtest"])
     app.include_router(analyze.router, tags=["analysis"])
+    app.include_router(ai_analyze.router, tags=["analysis"])
 
     # Expose start_time for health endpoint
     app.state.start_time = _start_time
