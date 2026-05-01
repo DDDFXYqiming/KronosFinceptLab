@@ -21,7 +21,7 @@ class TestFinancialSchemas:
     def test_income_statement_properties(self):
         """Test IncomeStatement properties."""
         stmt = IncomeStatement(
-            symbol="600519",
+            symbol="600036",
             period="2025-12-31",
             revenue=1000000.0,
             cost_of_goods_sold=600000.0,
@@ -40,7 +40,7 @@ class TestFinancialSchemas:
     def test_balance_sheet_properties(self):
         """Test BalanceSheet properties."""
         bs = BalanceSheet(
-            symbol="600519",
+            symbol="600036",
             period="2025-12-31",
             total_assets=5000000.0,
             current_assets=2000000.0,
@@ -60,7 +60,7 @@ class TestFinancialSchemas:
     def test_cash_flow_statement_properties(self):
         """Test CashFlowStatement properties."""
         cf = CashFlowStatement(
-            symbol="600519",
+            symbol="600036",
             period="2025-12-31",
             operating_cash_flow=300000.0,
             capital_expenditures=100000.0,
@@ -77,14 +77,14 @@ class TestFinancialSchemas:
     def test_financial_data_getters(self):
         """Test FinancialData getter methods."""
         income1 = IncomeStatement(
-            symbol="600519", period="2025-12-31",
+            symbol="600036", period="2025-12-31",
             revenue=1000000, cost_of_goods_sold=600000,
             gross_profit=400000, operating_expenses=200000,
             operating_income=200000, interest_expense=10000,
             net_income=150000, ebit=210000, ebitda=250000
         )
         income2 = IncomeStatement(
-            symbol="600519", period="2025-09-30",
+            symbol="600036", period="2025-09-30",
             revenue=900000, cost_of_goods_sold=540000,
             gross_profit=360000, operating_expenses=180000,
             operating_income=180000, interest_expense=10000,
@@ -92,7 +92,7 @@ class TestFinancialSchemas:
         )
         
         financial_data = FinancialData(
-            symbol="600519",
+            symbol="600036",
             income_statements=[income2, income1],  # Note: income2 is more recent
             balance_sheets=[],
             cash_flow_statements=[]
@@ -122,8 +122,8 @@ class TestFinancialDataManager:
     def test_cache_key_generation(self):
         """Test cache key generation."""
         manager = FinancialDataManager()
-        key = manager._get_cache_key("600519")
-        assert "600519" in key
+        key = manager._get_cache_key("600036")
+        assert "600036" in key
         assert len(key) > 10  # Should include date
 
 

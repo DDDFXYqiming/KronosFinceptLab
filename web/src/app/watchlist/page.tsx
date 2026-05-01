@@ -5,20 +5,12 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useAppStore } from "@/stores/app";
-
-type Market = "cn" | "us" | "hk" | "commodity";
-
-const MARKET_OPTIONS: { value: Market; label: string }[] = [
-  { value: "cn", label: "A股" },
-  { value: "us", label: "美股" },
-  { value: "hk", label: "港股" },
-  { value: "commodity", label: "大宗商品" },
-];
+import { DEFAULT_MARKET, DEFAULT_SYMBOL, MARKET_OPTIONS, type Market } from "@/lib/defaults";
 
 export default function WatchlistPage() {
   const { watchlist, addToWatchlist, removeFromWatchlist } = useAppStore();
   const [symbol, setSymbol] = useState("");
-  const [market, setMarket] = useState<Market>("cn");
+  const [market, setMarket] = useState<Market>(DEFAULT_MARKET);
 
   const handleAdd = () => {
     const trimmed = symbol.trim().toUpperCase();
@@ -47,7 +39,7 @@ export default function WatchlistPage() {
               onChange={(e) => setSymbol(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
-              placeholder="例如 600519"
+              placeholder={`例如 ${DEFAULT_SYMBOL}`}
             />
           </div>
           <div>

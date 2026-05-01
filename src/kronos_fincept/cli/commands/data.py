@@ -1,9 +1,9 @@
 """kronos data — Data fetching and search commands.
 
 Examples:
-    kronos data fetch --symbol 600519 --start 20240101 --end 20260430
+    kronos data fetch --symbol 600036 --start 20240101 --end 20260430
     kronos data fetch --symbol BTCUSDT --type crypto --timeframe 1h
-    kronos data search --q 茅台
+    kronos data search --q 招商银行
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def data_group() -> None:
 
 
 @data_group.command("fetch")
-@click.option("--symbol", "-s", type=str, required=True, help="Symbol (e.g., 600519 or BTCUSDT)")
+@click.option("--symbol", "-s", type=str, required=True, help="Symbol (e.g., 600036 or BTCUSDT)")
 @click.option("--type", "asset_type", type=click.Choice(["stock", "crypto"]), default="stock",
               help="Asset type: stock (A-stock) or crypto (Binance)")
 @click.option("--start", type=str, default=None, help="Start date YYYYMMDD (for stock)")

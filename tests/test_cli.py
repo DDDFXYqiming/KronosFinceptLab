@@ -95,7 +95,7 @@ class TestForecastCommand:
                 "amount": 100000000,
             })
         payload = {
-            "symbol": "600519",
+            "symbol": "600036",
             "timeframe": "1d",
             "pred_len": 5,
             "rows": rows,
@@ -134,7 +134,7 @@ class TestForecastCommand:
                 "amount": 100000000,
             })
         payload = {
-            "symbol": "600519",
+            "symbol": "600036",
             "timeframe": "1d",
             "pred_len": 3,
             "rows": rows,
@@ -149,7 +149,7 @@ class TestForecastCommand:
         try:
             result = runner.invoke(cli, ["--output", "table", "forecast", "--input", tmp_path])
             assert result.exit_code == 0
-            assert "600519" in result.output
+            assert "600036" in result.output
         finally:
             os.unlink(tmp_path)
 
@@ -174,7 +174,7 @@ class TestBatchCommand:
             })
 
         with patch("kronos_fincept.akshare_adapter.fetch_a_stock_ohlcv", return_value=mock_rows):
-            result = runner.invoke(cli, ["batch", "--symbols", "600519,000858",
+            result = runner.invoke(cli, ["batch", "--symbols", "600036,000858",
                                           "--pred-len", "5", "--dry-run"])
         assert result.exit_code == 0
         import json
@@ -193,23 +193,23 @@ class TestDataCommand:
              "low": 99.0, "close": 100.5, "volume": 1000000, "amount": 100000000},
         ]
         with patch("kronos_fincept.akshare_adapter.fetch_a_stock_ohlcv", return_value=mock_rows):
-            result = runner.invoke(cli, ["data", "fetch", "--symbol", "600519",
+            result = runner.invoke(cli, ["data", "fetch", "--symbol", "600036",
                                           "--start", "20260101", "--end", "20260430"])
         assert result.exit_code == 0
         import json
         data = json.loads(result.output)
         assert data["ok"] is True
-        assert data["symbol"] == "600519"
+        assert data["symbol"] == "600036"
 
     def test_data_search(self, runner):
         """Test data search with mocked AkShare."""
         import pandas as pd
         mock_df = pd.DataFrame({
-            "代码": ["600519", "000858"],
-            "名称": ["贵州茅台", "五粮液"],
+            "代码": ["600036", "000858"],
+            "名称": ["招商银行", "五粮液"],
         })
         with patch("akshare.stock_zh_a_spot_em", return_value=mock_df):
-            result = runner.invoke(cli, ["data", "search", "--q", "茅台"])
+            result = runner.invoke(cli, ["data", "search", "--q", "招商银行"])
         assert result.exit_code == 0
         import json
         data = json.loads(result.output)
@@ -236,7 +236,7 @@ class TestBacktestCommand:
         with patch("kronos_fincept.akshare_adapter.fetch_a_stock_ohlcv", return_value=mock_rows):
             result = runner.invoke(cli, [
                 "backtest", "ranking",
-                "--symbols", "600519,000858",
+                "--symbols", "600036,000858",
                 "--start", "20250101", "--end", "20260430",
                 "--top-k", "1", "--dry-run",
             ])
@@ -264,7 +264,7 @@ class TestOutputFormat:
                 "open": 100.0, "high": 100.5, "low": 99.5, "close": 100.2,
                 "volume": 1000000, "amount": 100000000,
             })
-        payload = {"symbol": "600519", "timeframe": "1d", "pred_len": 3, "rows": rows, "dry_run": True}
+        payload = {"symbol": "600036", "timeframe": "1d", "pred_len": 3, "rows": rows, "dry_run": True}
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(payload, f)

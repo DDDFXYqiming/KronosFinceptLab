@@ -108,7 +108,7 @@ class AlertEngine:
     Usage::
 
         engine = AlertEngine()
-        rule = price_change_rule("600519", threshold_pct=5.0)
+        rule = price_change_rule("600036", threshold_pct=5.0)
         engine.register_rule(rule)
         events = engine.check_all()
         for event in events:

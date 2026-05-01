@@ -12,7 +12,7 @@ Usage:
     PYTHONPATH=src python examples/backtest_a_stock_ranking.py --real
 
     # Custom symbols
-    PYTHONPATH=src python examples/backtest_a_stock_ranking.py --symbols 600519 000858 601318
+    PYTHONPATH=src python examples/backtest_a_stock_ranking.py --symbols 600036 000858 601318
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--symbols",
         nargs="+",
-        default=["600519", "000858", "601318", "600036", "002594"],
-        help="A-stock codes (default: 000001 600519 000858 601318 600036)",
+        default=["600036", "000858", "601318", "002594", "000001"],
+        help="A-stock codes (default: 600036 000858 601318 002594 000001)",
     )
     parser.add_argument(
         "--start-date", default="20260101", help="Start date YYYYMMDD (default: 20260101)"

@@ -19,7 +19,7 @@ class YahooFinanceFinancialSource(FinancialDataSource):
         self.yahoo = YahooFinanceSource()
     
     def _convert_symbol(self, symbol: str) -> str:
-        """Convert symbol to Yahoo Finance format (600519.SS or 000858.SZ)."""
+        """Convert symbol to Yahoo Finance format (600036.SS or 000858.SZ)."""
         if '.' in symbol:
             return symbol
         if symbol.startswith('6'):

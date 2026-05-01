@@ -66,7 +66,7 @@ if "%~1"=="" (
     echo 示例:
     echo   %0 --test
     echo   %0 --input request.json
-    echo   echo {"symbol":"600519",...} ^| %0 --stdin
+    echo   echo {"symbol":"600036",...} ^| %0 --stdin
     pause
     exit /b 0
 )
@@ -90,16 +90,16 @@ if "%~1"=="--help" (
 if "%~1"=="--test" (
     echo 运行测试预测...
     echo.
-    
+
     REM 创建测试输入文件
-    echo {"symbol":"600519","timeframe":"1d","pred_len":5,"dry_run":false,"rows":[{"timestamp":"2026-04-01","open":1400,"high":1420,"low":1390,"close":1410},{"timestamp":"2026-04-02","open":1410,"high":1430,"low":1400,"close":1420},{"timestamp":"2026-04-03","open":1420,"high":1440,"low":1410,"close":1430},{"timestamp":"2026-04-04","open":1430,"high":1450,"low":1420,"close":1440},{"timestamp":"2026-04-07","open":1440,"high":1460,"low":1430,"close":1450},{"timestamp":"2026-04-08","open":1450,"high":1470,"low":1440,"close":1460},{"timestamp":"2026-04-09","open":1460,"high":1480,"low":1450,"close":1470},{"timestamp":"2026-04-10","open":1470,"high":1490,"low":1460,"close":1480},{"timestamp":"2026-04-11","open":1480,"high":1500,"low":1470,"close":1490},{"timestamp":"2026-04-14","open":1490,"high":1510,"low":1480,"close":1500}]} > temp_test_input.json
-    
+    echo {"symbol":"600036","timeframe":"1d","pred_len":5,"dry_run":false,"rows":[{"timestamp":"2026-04-01","open":1400,"high":1420,"low":1390,"close":1410},{"timestamp":"2026-04-02","open":1410,"high":1430,"low":1400,"close":1420},{"timestamp":"2026-04-03","open":1420,"high":1440,"low":1410,"close":1430},{"timestamp":"2026-04-04","open":1430,"high":1450,"low":1420,"close":1440},{"timestamp":"2026-04-07","open":1440,"high":1460,"low":1430,"close":1450},{"timestamp":"2026-04-08","open":1450,"high":1470,"low":1440,"close":1460},{"timestamp":"2026-04-09","open":1460,"high":1480,"low":1450,"close":1470},{"timestamp":"2026-04-10","open":1470,"high":1490,"low":1460,"close":1480},{"timestamp":"2026-04-11","open":1480,"high":1500,"low":1470,"close":1490},{"timestamp":"2026-04-14","open":1490,"high":1510,"low":1480,"close":1500}]} > temp_test_input.json
+
     REM 运行预测
     python -m kronos_fincept.cli --input temp_test_input.json
-    
+
     REM 清理临时文件
     del temp_test_input.json >nul 2>&1
-    
+
     pause
     exit /b 0
 )
@@ -110,7 +110,7 @@ if "%~1"=="--input" (
         pause
         exit /b 1
     )
-    
+
     echo 从文件 %~2 读取输入...
     python -m kronos_fincept.cli --input "%~2"
     pause
@@ -127,16 +127,16 @@ if "%~1"=="--stdin" (
 if "%~1"=="--batch" (
     echo 运行批量预测...
     echo.
-    
+
     REM 创建批量测试输入文件
-    echo {"assets":[{"symbol":"600519","rows":[{"timestamp":"2026-04-01","open":1400,"high":1420,"low":1390,"close":1410},{"timestamp":"2026-04-02","open":1410,"high":1430,"low":1400,"close":1420},{"timestamp":"2026-04-03","open":1420,"high":1440,"low":1410,"close":1430},{"timestamp":"2026-04-04","open":1430,"high":1450,"low":1420,"close":1440},{"timestamp":"2026-04-07","open":1440,"high":1460,"low":1430,"close":1450},{"timestamp":"2026-04-08","open":1450,"high":1470,"low":1440,"close":1460},{"timestamp":"2026-04-09","open":1460,"high":1480,"low":1450,"close":1470},{"timestamp":"2026-04-10","open":1470,"high":1490,"low":1460,"close":1480},{"timestamp":"2026-04-11","open":1480,"high":1500,"low":1470,"close":1490},{"timestamp":"2026-04-14","open":1490,"high":1510,"low":1480,"close":1500}]},{"symbol":"000858","rows":[{"timestamp":"2026-04-01","open":100,"high":105,"low":95,"close":102},{"timestamp":"2026-04-02","open":102,"high":107,"low":100,"close":105},{"timestamp":"2026-04-03","open":105,"high":110,"low":103,"close":108},{"timestamp":"2026-04-04","open":108,"high":113,"low":106,"close":110},{"timestamp":"2026-04-07","open":110,"high":115,"low":108,"close":112},{"timestamp":"2026-04-08","open":112,"high":117,"low":110,"close":114},{"timestamp":"2026-04-09","open":114,"high":119,"low":112,"close":116},{"timestamp":"2026-04-10","open":116,"high":121,"low":114,"close":118},{"timestamp":"2026-04-11","open":118,"high":123,"low":116,"close":120},{"timestamp":"2026-04-14","open":120,"high":125,"low":118,"close":122}]}],"pred_len":5,"dry_run":false} > temp_batch_input.json
-    
+    echo {"assets":[{"symbol":"600036","rows":[{"timestamp":"2026-04-01","open":1400,"high":1420,"low":1390,"close":1410},{"timestamp":"2026-04-02","open":1410,"high":1430,"low":1400,"close":1420},{"timestamp":"2026-04-03","open":1420,"high":1440,"low":1410,"close":1430},{"timestamp":"2026-04-04","open":1430,"high":1450,"low":1420,"close":1440},{"timestamp":"2026-04-07","open":1440,"high":1460,"low":1430,"close":1450},{"timestamp":"2026-04-08","open":1450,"high":1470,"low":1440,"close":1460},{"timestamp":"2026-04-09","open":1460,"high":1480,"low":1450,"close":1470},{"timestamp":"2026-04-10","open":1470,"high":1490,"low":1460,"close":1480},{"timestamp":"2026-04-11","open":1480,"high":1500,"low":1470,"close":1490},{"timestamp":"2026-04-14","open":1490,"high":1510,"low":1480,"close":1500}]},{"symbol":"000858","rows":[{"timestamp":"2026-04-01","open":100,"high":105,"low":95,"close":102},{"timestamp":"2026-04-02","open":102,"high":107,"low":100,"close":105},{"timestamp":"2026-04-03","open":105,"high":110,"low":103,"close":108},{"timestamp":"2026-04-04","open":108,"high":113,"low":106,"close":110},{"timestamp":"2026-04-07","open":110,"high":115,"low":108,"close":112},{"timestamp":"2026-04-08","open":112,"high":117,"low":110,"close":114},{"timestamp":"2026-04-09","open":114,"high":119,"low":112,"close":116},{"timestamp":"2026-04-10","open":116,"high":121,"low":114,"close":118},{"timestamp":"2026-04-11","open":118,"high":123,"low":116,"close":120},{"timestamp":"2026-04-14","open":120,"high":125,"low":118,"close":122}]}],"pred_len":5,"dry_run":false} > temp_batch_input.json
+
     REM 运行批量预测
     python -m kronos_fincept.cli --input temp_batch_input.json
-    
+
     REM 清理临时文件
     del temp_batch_input.json >nul 2>&1
-    
+
     pause
     exit /b 0
 )

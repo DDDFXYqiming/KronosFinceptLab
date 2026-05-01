@@ -1,8 +1,9 @@
 import { create } from "zustand";
+import { type Market } from "@/lib/defaults";
 
 interface WatchlistItem {
   symbol: string;
-  market: "cn" | "hk" | "us" | "commodity";
+  market: Market;
   addedAt: string;
 }
 

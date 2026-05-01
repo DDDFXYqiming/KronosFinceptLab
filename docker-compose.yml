@@ -9,7 +9,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - KRONOS_MODEL_ID=NeoQuasar/Kronos-small
+      - KRONOS_MODEL_ID=NeoQuasar/Kronos-base
       - KRONOS_DEVICE=cpu
     volumes:
       - ./external:/app/external:ro

@@ -62,7 +62,7 @@ KRONOS_REPO_PATH=/path/to/Kronos python3 kronos_forecast.py --input request.real
 | timeframe | string | "unknown" | Candle interval |
 | pred_len | int | required | Number of future candles to predict |
 | dry_run | bool | false | Use deterministic dry-run predictor |
-| model_id | string | NeoQuasar/Kronos-small | HuggingFace model ID or local path |
+| model_id | string | NeoQuasar/Kronos-base | HuggingFace model ID or local path |
 | tokenizer_id | string | NeoQuasar/Kronos-Tokenizer-base | HuggingFace tokenizer ID or local path |
 | max_context | int | 512 | Max context length for Kronos |
 | temperature | float | 1.0 | Sampling temperature |

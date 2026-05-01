@@ -20,7 +20,7 @@ npm run dev
 
 ### CLI
 ```bash
-kronos forecast --symbol 600519 --pred-len 5 --dry-run
+kronos forecast --symbol 600036 --pred-len 5 --dry-run
 ```
 
 ## Docker
@@ -29,7 +29,7 @@ docker-compose up --build
 ```
 
 ## Environment Variables
-- `KRONOS_MODEL_ID`: Model ID (default: NeoQuasar/Kronos-small)
+- `KRONOS_MODEL_ID`: Model ID (default: NeoQuasar/Kronos-base)
 - `KRONOS_DEVICE`: cpu/cuda/rocm
 - `KRONOS_REPO_PATH`: Path to upstream Kronos repo
 

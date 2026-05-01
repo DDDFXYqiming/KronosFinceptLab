@@ -25,7 +25,7 @@ class TestDCFModel:
         
         # Create sample financial data
         self.sample_cf = CashFlowStatement(
-            symbol="600519",
+            symbol="600036",
             period="2025-12-31",
             operating_cash_flow=3000000000.0,
             capital_expenditures=1000000000.0,
@@ -37,7 +37,7 @@ class TestDCFModel:
         )
         
         self.sample_bs = BalanceSheet(
-            symbol="600519",
+            symbol="600036",
             period="2025-12-31",
             total_assets=100000000000.0,
             current_assets=30000000000.0,
@@ -51,7 +51,7 @@ class TestDCFModel:
         )
         
         self.sample_financial_data = FinancialData(
-            symbol="600519",
+            symbol="600036",
             income_statements=[],
             balance_sheets=[self.sample_bs],
             cash_flow_statements=[self.sample_cf]
@@ -146,7 +146,7 @@ class TestDCFModel:
         
         assert result is not None
         assert isinstance(result, DCFResult)
-        assert result.symbol == "600519"
+        assert result.symbol == "600036"
         assert result.enterprise_value > 0
         assert result.equity_value > 0
         assert result.per_share_value > 0

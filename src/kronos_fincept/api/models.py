@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
+
 
 # ── Forecast ──────────────────────────────────────────────
 
@@ -22,12 +24,12 @@ class ForecastRowIn(BaseModel):
 
 class ForecastRequestIn(BaseModel):
     """POST /api/forecast request body."""
-    symbol: str = Field(..., description="Stock symbol, e.g. '600519'")
+    symbol: str = Field(..., description="Stock symbol, e.g. '600036'")
     timeframe: str = Field(default="1d", description="Timeframe: 1d, 1h, etc.")
     pred_len: int = Field(default=5, ge=1, le=60, description="Number of future bars to predict")
     rows: list[ForecastRowIn] = Field(..., min_length=1, description="Historical OHLCV data")
-    model_id: str = Field(default="NeoQuasar/Kronos-base")
-    tokenizer_id: str = Field(default="NeoQuasar/Kronos-Tokenizer-base")
+    model_id: str = Field(default=DEFAULT_MODEL_ID)
+    tokenizer_id: str = Field(default=DEFAULT_TOKENIZER_ID)
     dry_run: bool = Field(default=False, description="Use deterministic mock predictor")
     max_context: int = Field(default=512, ge=1)
     temperature: float = Field(default=1.0, gt=0)

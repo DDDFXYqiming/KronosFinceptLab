@@ -1,9 +1,9 @@
 """kronos backtest — Strategy backtest commands.
 
 Examples:
-    kronos backtest ranking --symbols 600519,000858 --start 20250101 --end 20260430 --top-k 1
-    kronos backtest ranking --symbols 600519,000858 --start 20250101 --end 20260430 --dry-run --output table
-    kronos backtest ranking --symbols 600519,000858 --start 20250101 --end 20260430 --report
+    kronos backtest ranking --symbols 600036,000858 --start 20250101 --end 20260430 --top-k 1
+    kronos --output table backtest ranking --symbols 600036,000858 --start 20250101 --end 20260430 --dry-run
+    kronos backtest ranking --symbols 600036,000858 --start 20250101 --end 20260430 --report
     kronos backtest report ./backtest_report.html
 """
 

@@ -1,8 +1,8 @@
 """kronos batch — Multi-asset batch prediction with ranking.
 
 Examples:
-    kronos batch --symbols 600519,000858,000001 --pred-len 5
-    kronos batch --symbols 600519,000858 --pred-len 5 --dry-run --output table
+    kronos batch --symbols 600036,000858,000001 --pred-len 5
+    kronos --output table batch --symbols 600036,000858 --pred-len 5 --dry-run
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from kronos_fincept.cli.output import (
 
 @click.command("batch")
 @click.option("--symbols", "-s", type=str, required=True,
-              help="Comma-separated stock symbols, e.g. 600519,000858")
+              help="Comma-separated stock symbols, e.g. 600036,000858")
 @click.option("--pred-len", "-p", type=int, default=5, help="Prediction length (bars)")
 @click.option("--dry-run", is_flag=True, default=False, help="Use mock predictor")
 @click.pass_context

@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { api, ForecastRow, ForecastResponse } from "@/lib/api";
+import { DEFAULT_MARKET, DEFAULT_SYMBOL, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { useSessionState } from "@/lib/useSessionState";
 import {
   createChart,
   IChartApi,
@@ -14,15 +16,6 @@ import {
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
-
-type Market = "cn" | "us" | "hk" | "commodity";
-
-const MARKET_OPTIONS: { value: Market; label: string }[] = [
-  { value: "cn", label: "A股" },
-  { value: "us", label: "美股" },
-  { value: "hk", label: "港股" },
-  { value: "commodity", label: "大宗商品" },
-];
 
 function toChartTime(ts: string, baseDate?: string): string {
   // Handle relative dates like "D1", "D2", etc.
@@ -38,18 +31,26 @@ function toChartTime(ts: string, baseDate?: string): string {
 
 function ForecastContent() {
   const searchParams = useSearchParams();
-  const [symbol, setSymbol] = useState(searchParams.get("symbol") || "600519");
-  const [market, setMarket] = useState<Market>(
-    (searchParams.get("market") as Market) || "cn"
+  const symbolParam = searchParams.get("symbol");
+  const marketParam = searchParams.get("market") as Market | null;
+  const [symbol, setSymbol] = useSessionState(
+    "kronos-forecast-symbol",
+    symbolParam || DEFAULT_SYMBOL,
+    { preferInitial: Boolean(symbolParam) }
   );
-  const [startDate, setStartDate] = useState("20250101");
-  const [endDate, setEndDate] = useState("20260430");
-  const [data, setData] = useState<ForecastRow[]>([]);
-  const [prediction, setPrediction] = useState<ForecastRow[] | null>(null);
+  const [market, setMarket] = useSessionState<Market>(
+    "kronos-forecast-market",
+    marketParam || DEFAULT_MARKET,
+    { preferInitial: Boolean(marketParam) }
+  );
+  const [startDate, setStartDate] = useSessionState("kronos-forecast-start-date", "20250101");
+  const [endDate, setEndDate] = useSessionState("kronos-forecast-end-date", "20260430");
+  const [data, setData] = useSessionState<ForecastRow[]>("kronos-forecast-data", []);
+  const [prediction, setPrediction] = useSessionState<ForecastRow[] | null>("kronos-forecast-prediction", null);
   const [loading, setLoading] = useState(false);
   const [predLoading, setPredLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [predResult, setPredResult] = useState<ForecastResponse | null>(null);
+  const [error, setError] = useSessionState("kronos-forecast-error", "");
+  const [predResult, setPredResult] = useSessionState<ForecastResponse | null>("kronos-forecast-result", null);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -179,7 +180,7 @@ function ForecastContent() {
     }));
     lineSeriesRef.current.setData(lineData);
     chartRef.current?.timeScale().fitContent();
-  }, [prediction]);
+  }, [prediction, data]);
 
   const handleRunPrediction = async () => {
     if (data.length === 0) {
@@ -232,7 +233,7 @@ function ForecastContent() {
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
               className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
-              placeholder="例如 600519"
+              placeholder={`例如 ${DEFAULT_SYMBOL}`}
             />
           </div>
           <div>

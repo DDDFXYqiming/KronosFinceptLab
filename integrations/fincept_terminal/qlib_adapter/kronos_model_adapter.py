@@ -20,7 +20,7 @@ class KronosModelAdapter:
 
     def __init__(
         self,
-        model_id: str = "NeoQuasar/Kronos-small",
+        model_id: str = "NeoQuasar/Kronos-base",
         tokenizer_id: str = "NeoQuasar/Kronos-Tokenizer-base",
     ) -> None:
         self.model_id = model_id
@@ -88,7 +88,7 @@ class KronosModelAdapter:
                 "signals": [
                     {
                         "rank": 1,
-                        "symbol": "600519",
+                        "symbol": "600036",
                         "last_close": 1500.0,
                         "predicted_close": 1550.0,
                         "predicted_return": 0.033,

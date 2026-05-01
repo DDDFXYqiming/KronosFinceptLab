@@ -16,7 +16,7 @@ POST /api/forecast
 Content-Type: application/json
 
 {
-  "symbol": "600519",
+  "symbol": "600036",
   "timeframe": "1d",
   "pred_len": 5,
   "rows": [
@@ -33,7 +33,7 @@ Content-Type: application/json
 
 {
   "assets": [
-    { "symbol": "600519", "rows": [...] },
+    { "symbol": "600036", "rows": [...] },
     { "symbol": "000858", "rows": [...] }
   ],
   "pred_len": 5,
@@ -44,7 +44,7 @@ Content-Type: application/json
 ### Data
 ```
 GET /api/data/a-stock/{symbol}?start_date=20250101&end_date=20260430
-GET /api/data/search?q=茅台
+GET /api/data/search?q=招商银行
 ```
 
 ### Backtest
@@ -53,7 +53,7 @@ POST /api/backtest/ranking
 Content-Type: application/json
 
 {
-  "symbols": ["600519", "000858"],
+  "symbols": ["600036", "000858"],
   "start_date": "20250101",
   "end_date": "20260430",
   "top_k": 1,

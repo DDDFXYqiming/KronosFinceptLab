@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { api, ForecastRow } from "@/lib/api";
+import { DEFAULT_BATCH_SYMBOLS, DEFAULT_MARKET, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { useSessionState } from "@/lib/useSessionState";
 import {
   BarChart,
   Bar,
@@ -14,15 +16,6 @@ import {
   CartesianGrid,
 } from "recharts";
 
-type Market = "cn" | "us" | "hk" | "commodity";
-
-const MARKET_OPTIONS: { value: Market; label: string }[] = [
-  { value: "cn", label: "A股" },
-  { value: "us", label: "美股" },
-  { value: "hk", label: "港股" },
-  { value: "commodity", label: "大宗商品" },
-];
-
 interface BatchResult {
   symbol: string;
   last_close: number;
@@ -32,12 +25,12 @@ interface BatchResult {
 }
 
 export default function BatchPage() {
-  const [input, setInput] = useState("600519,000858,000001");
-  const [market, setMarket] = useState<Market>("cn");
-  const [predLen, setPredLen] = useState(5);
-  const [results, setResults] = useState<BatchResult[]>([]);
+  const [input, setInput] = useSessionState("kronos-batch-input", DEFAULT_BATCH_SYMBOLS);
+  const [market, setMarket] = useSessionState<Market>("kronos-batch-market", DEFAULT_MARKET);
+  const [predLen, setPredLen] = useSessionState("kronos-batch-pred-len", 5);
+  const [results, setResults] = useSessionState<BatchResult[]>("kronos-batch-results", []);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useSessionState("kronos-batch-error", "");
 
   const handleCompare = async () => {
     const symbols = input
@@ -141,7 +134,7 @@ export default function BatchPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
-              placeholder="例如 600519,000858,000001"
+              placeholder={`例如 ${DEFAULT_BATCH_SYMBOLS}`}
             />
           </div>
           <div>

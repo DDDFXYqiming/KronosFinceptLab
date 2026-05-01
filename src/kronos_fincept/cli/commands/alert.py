@@ -1,10 +1,10 @@
 """kronos alert — Alert rule management and monitoring.
 
 Examples:
-    kronos alert add --type price_change --symbol 600519 --threshold 3.0
-    kronos alert add --type rsi_oversold --symbol 600519 --period 14
+    kronos alert add --type price_change --symbol 600036 --threshold 3.0
+    kronos alert add --type rsi_oversold --symbol 600036 --period 14
     kronos alert add --type price_above --symbol AAPL --market us --level 200
-    kronos alert add --type prediction_deviation --symbol 600519 --deviation 8.0 --channel email --email-to user@example.com
+    kronos alert add --type prediction_deviation --symbol 600036 --deviation 8.0 --channel email --email-to user@example.com
     kronos alert list
     kronos alert remove abc123def456
     kronos alert check

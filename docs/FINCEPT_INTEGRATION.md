@@ -87,7 +87,7 @@ python -c "
 from huggingface_hub import snapshot_download
 import os
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-snapshot_download('NeoQuasar/Kronos-small', local_dir='external/Kronos-small')
+snapshot_download('NeoQuasar/Kronos-base', local_dir='external/Kronos-base')
 snapshot_download('NeoQuasar/Kronos-Tokenizer-base', local_dir='external/Kronos-Tokenizer-base')
 "
 ```
@@ -114,7 +114,7 @@ row1["close"] = 1410;
 rows.append(row1);
 // ... 添加更多行
 
-kronos.forecast("600519", "1d", 5, rows,
+kronos.forecast("600036", "1d", 5, rows,
     [](fincept::kronos::ForecastResult result) {
         if (result.ok) {
             qDebug() << "Forecast:" << result.data;
@@ -129,7 +129,7 @@ kronos.forecast("600519", "1d", 5, rows,
 ```cpp
 QJsonArray assets;
 QJsonObject asset1;
-asset1["symbol"] = "600519";
+asset1["symbol"] = "600036";
 asset1["rows"] = rows1;
 assets.append(asset1);
 // ... 更多资产
@@ -148,7 +148,7 @@ kronos.batch_forecast(assets, 5,
 ### 获取 A 股数据
 
 ```cpp
-kronos.fetch_a_stock("600519", "20250101", "20260429",
+kronos.fetch_a_stock("600036", "20250101", "20260429",
     [](fincept::kronos::ForecastResult result) {
         if (result.ok) {
             int count = result.data.value("count").toInt();

@@ -1,11 +1,11 @@
 """Click CLI entry point for KronosFinceptLab.
 
 Usage:
-    kronos forecast --symbol 600519 --pred-len 5 --output json
-    kronos batch --symbols 600519,000858 --pred-len 5
-    kronos data fetch --symbol 600519 --start 20240101 --end 20260430
-    kronos data search --q 茅台
-    kronos backtest ranking --symbols 600519,000858 --start 20250101 --end 20260430
+    kronos --output json forecast --symbol 600036 --pred-len 5
+    kronos batch --symbols 600036,000858 --pred-len 5
+    kronos data fetch --symbol 600036 --start 20240101 --end 20260430
+    kronos data search --q 招商银行
+    kronos backtest ranking --symbols 600036,000858 --start 20250101 --end 20260430
     kronos serve --host 0.0.0.0 --port 8000
 """
 

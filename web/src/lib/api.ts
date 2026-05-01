@@ -16,6 +16,8 @@ export interface ForecastRequest {
   pred_len: number;
   rows: ForecastRow[];
   dry_run?: boolean;
+  model_id?: string;
+  tokenizer_id?: string;
   temperature?: number;
   top_k?: number;
   top_p?: number;

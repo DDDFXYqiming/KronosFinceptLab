@@ -19,7 +19,7 @@ class BaoStockFinancialSource(FinancialDataSource):
         self.baostock = BaoStockSource()
     
     def _convert_symbol(self, symbol: str) -> str:
-        """Convert symbol to BaoStock format (sh.600519 or sz.000858)."""
+        """Convert symbol to BaoStock format (sh.600036 or sz.000858)."""
         if symbol.startswith('sh') or symbol.startswith('sz'):
             return symbol
         if symbol.startswith('6'):

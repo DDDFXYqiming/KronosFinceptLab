@@ -5,15 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { api, AIAnalyzeResponse } from "@/lib/api";
-
-type Market = "cn" | "us" | "hk" | "commodity";
-
-const MARKET_OPTIONS: { value: Market; label: string }[] = [
-  { value: "cn", label: "A股" },
-  { value: "us", label: "美股" },
-  { value: "hk", label: "港股" },
-  { value: "commodity", label: "大宗商品" },
-];
+import { DEFAULT_MARKET, DEFAULT_SYMBOL, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { useSessionState } from "@/lib/useSessionState";
 
 function getConfidenceColor(value: number): string {
   const pct = value * 100;
@@ -59,13 +52,21 @@ function RiskBadge({ level }: { level: string }) {
 
 function AnalysisContent() {
   const searchParams = useSearchParams();
-  const [symbol, setSymbol] = useState(searchParams.get("symbol") || "600519");
-  const [market, setMarket] = useState<Market>(
-    (searchParams.get("market") as Market) || "cn"
+  const symbolParam = searchParams.get("symbol");
+  const marketParam = searchParams.get("market") as Market | null;
+  const [symbol, setSymbol] = useSessionState(
+    "kronos-analysis-symbol",
+    symbolParam || DEFAULT_SYMBOL,
+    { preferInitial: Boolean(symbolParam) }
+  );
+  const [market, setMarket] = useSessionState<Market>(
+    "kronos-analysis-market",
+    marketParam || DEFAULT_MARKET,
+    { preferInitial: Boolean(marketParam) }
   );
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<AIAnalyzeResponse | null>(null);
+  const [error, setError] = useSessionState("kronos-analysis-error", "");
+  const [result, setResult] = useSessionState<AIAnalyzeResponse | null>("kronos-analysis-result", null);
 
   const handleAnalyze = async () => {
     if (!symbol) return;
@@ -103,7 +104,7 @@ function AnalysisContent() {
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
               className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
-              placeholder="例如 600519"
+              placeholder={`例如 ${DEFAULT_SYMBOL}`}
             />
           </div>
           <div>

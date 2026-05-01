@@ -1,10 +1,10 @@
 """kronos forecast — Single-asset OHLCV prediction.
 
 Examples:
-    kronos forecast --symbol 600519 --pred-len 5
-    kronos forecast --symbol 600519 --pred-len 5 --sample-count 10
-    kronos forecast --symbol 600519 --pred-len 5 --dry-run
-    kronos forecast --symbol 600519 --pred-len 5 --output table
+    kronos forecast --symbol 600036 --pred-len 5
+    kronos forecast --symbol 600036 --pred-len 5 --sample-count 10
+    kronos forecast --symbol 600036 --pred-len 5 --dry-run
+    kronos --output table forecast --symbol 600036 --pred-len 5
     kronos forecast --input request.json
 """
 
@@ -25,7 +25,7 @@ from kronos_fincept.cli.output import (
 
 
 @click.command("forecast")
-@click.option("--symbol", "-s", type=str, help="A-stock symbol, e.g. 600519")
+@click.option("--symbol", "-s", type=str, help="A-stock symbol, e.g. 600036")
 @click.option("--pred-len", "-p", type=int, default=5, help="Prediction length (bars)")
 @click.option("--sample-count", type=int, default=1, help="Number of Monte Carlo samples (1=point, >1=probabilistic)")
 @click.option("--start", type=str, default=None, help="Start date YYYYMMDD (optional)")

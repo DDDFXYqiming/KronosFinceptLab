@@ -5,15 +5,17 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { api, BacktestResponse } from "@/lib/api";
 import { formatPercent, formatNumber } from "@/lib/utils";
+import { DEFAULT_BACKTEST_SYMBOLS } from "@/lib/defaults";
+import { useSessionState } from "@/lib/useSessionState";
 
 export default function BacktestPage() {
-  const [symbols, setSymbols] = useState("600519,000858");
-  const [startDate, setStartDate] = useState("20250101");
-  const [endDate, setEndDate] = useState("20260430");
-  const [topK, setTopK] = useState(1);
-  const [result, setResult] = useState<BacktestResponse | null>(null);
+  const [symbols, setSymbols] = useSessionState("kronos-backtest-symbols", DEFAULT_BACKTEST_SYMBOLS);
+  const [startDate, setStartDate] = useSessionState("kronos-backtest-start-date", "20250101");
+  const [endDate, setEndDate] = useSessionState("kronos-backtest-end-date", "20260430");
+  const [topK, setTopK] = useSessionState("kronos-backtest-top-k", 1);
+  const [result, setResult] = useSessionState<BacktestResponse | null>("kronos-backtest-result", null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useSessionState("kronos-backtest-error", "");
 
   const handleBacktest = async () => {
     setLoading(true);

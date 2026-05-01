@@ -66,7 +66,7 @@ def rule_price_change() -> AlertRule:
         id="test_rule_001",
         name="Test Price Change",
         alert_type=AlertType.PRICE_CHANGE,
-        symbol="600519",
+        symbol="600036",
         market="cn",
         params={"threshold_pct": 5.0},
         enabled=True,
@@ -80,7 +80,7 @@ def rule_rsi_overbought() -> AlertRule:
         id="test_rule_002",
         name="Test RSI Overbought",
         alert_type=AlertType.RSI_OVERBOUGHT,
-        symbol="600519",
+        symbol="600036",
         market="cn",
         params={"rsi_period": 14, "overbought": 70},
         enabled=True,
@@ -94,7 +94,7 @@ def rule_volume_spike() -> AlertRule:
         id="test_rule_003",
         name="Test Volume Spike",
         alert_type=AlertType.VOLUME_SPIKE,
-        symbol="600519",
+        symbol="600036",
         market="cn",
         params={"multiplier": 3.0},
         enabled=True,
@@ -147,10 +147,10 @@ class TestAlertRule:
 
 class TestRuleFactories:
     def test_price_change_rule(self):
-        rule = price_change_rule("600519", threshold_pct=5.0)
+        rule = price_change_rule("600036", threshold_pct=5.0)
         assert rule.alert_type == AlertType.PRICE_CHANGE
         assert rule.params["threshold_pct"] == 5.0
-        assert rule.symbol == "600519"
+        assert rule.symbol == "600036"
 
     def test_price_above_rule(self):
         rule = price_above_rule("AAPL", level=200.0, market="us")
@@ -164,27 +164,27 @@ class TestRuleFactories:
         assert rule.params["level"] == 100.0
 
     def test_rsi_overbought_rule(self):
-        rule = rsi_overbought_rule("600519", period=14)
+        rule = rsi_overbought_rule("600036", period=14)
         assert rule.alert_type == AlertType.RSI_OVERBOUGHT
         assert rule.params["rsi_period"] == 14
         assert rule.params["overbought"] == 70
 
     def test_rsi_oversold_rule(self):
-        rule = rsi_oversold_rule("600519", period=14)
+        rule = rsi_oversold_rule("600036", period=14)
         assert rule.alert_type == AlertType.RSI_OVERSOLD
         assert rule.params["oversold"] == 30
 
     def test_macd_crossover_rule(self):
-        rule = macd_crossover_rule("600519")
+        rule = macd_crossover_rule("600036")
         assert rule.alert_type == AlertType.MACD_CROSSOVER
 
     def test_prediction_deviation_rule(self):
-        rule = prediction_deviation_rule("600519", deviation_pct=8.0)
+        rule = prediction_deviation_rule("600036", deviation_pct=8.0)
         assert rule.alert_type == AlertType.PREDICTION_DEVIATION
         assert rule.params["deviation_pct"] == 8.0
 
     def test_volume_spike_rule(self):
-        rule = volume_spike_rule("600519", multiplier=5.0)
+        rule = volume_spike_rule("600036", multiplier=5.0)
         assert rule.alert_type == AlertType.VOLUME_SPIKE
         assert rule.params["multiplier"] == 5.0
 
@@ -207,9 +207,9 @@ class TestAlertEngineManagement:
 
     def test_register_multiple_rules(self, engine):
         rules = [
-            price_change_rule("600519"),
+            price_change_rule("600036"),
             rsi_overbought_rule("000001"),
-            volume_spike_rule("600519"),
+            volume_spike_rule("600036"),
         ]
         for r in rules:
             engine.register_rule(r)
@@ -237,13 +237,13 @@ class TestAlertEngineManagement:
     def test_persistence(self, tmp_path):
         storage = tmp_path / "alerts.json"
         eng1 = AlertEngine(storage_path=str(storage))
-        eng1.register_rule(price_change_rule("600519"))
+        eng1.register_rule(price_change_rule("600036"))
 
         # Re-create engine (loads from file)
         eng2 = AlertEngine(storage_path=str(storage))
         rules = eng2.list_rules()
         assert len(rules) == 1
-        assert rules[0].symbol == "600519"
+        assert rules[0].symbol == "600036"
 
 
 # ===================================================================
@@ -257,7 +257,7 @@ class TestAlertEngineChecks:
             id="pc_test",
             name="PC Test",
             alert_type=AlertType.PRICE_CHANGE,
-            symbol="600519",
+            symbol="600036",
             params={"threshold_pct": 50.0},
         )
         engine.register_rule(rule)
@@ -280,7 +280,7 @@ class TestAlertEngineChecks:
             id="pc_test2",
             name="PC Test Trigger",
             alert_type=AlertType.PRICE_CHANGE,
-            symbol="600519",
+            symbol="600036",
             params={"threshold_pct": 1.0},
         )
         engine.register_rule(rule)
@@ -301,7 +301,7 @@ class TestAlertEngineChecks:
 
     def test_check_price_above_trigger(self, engine):
         """Should trigger when price is above level."""
-        rule = price_above_rule("600519", level=103.0)
+        rule = price_above_rule("600036", level=103.0)
         engine.register_rule(rule)
 
         with patch(
@@ -319,7 +319,7 @@ class TestAlertEngineChecks:
 
     def test_check_price_below_no_trigger(self, engine):
         """Should not trigger when price is above level."""
-        rule = price_below_rule("600519", level=100.0)
+        rule = price_below_rule("600036", level=100.0)
         engine.register_rule(rule)
 
         with patch(
@@ -336,7 +336,7 @@ class TestAlertEngineChecks:
 
     def test_check_volume_spike_trigger(self, engine):
         """Should trigger on volume spike."""
-        rule = volume_spike_rule("600519", multiplier=2.0)
+        rule = volume_spike_rule("600036", multiplier=2.0)
         engine.register_rule(rule)
 
         rows = []
@@ -361,7 +361,7 @@ class TestAlertEngineChecks:
 
     def test_check_rsi_overbought_trigger(self, engine):
         """Should trigger on RSI overbought."""
-        rule = rsi_overbought_rule("600519", period=14)
+        rule = rsi_overbought_rule("600036", period=14)
         engine.register_rule(rule)
 
         # Create data with strong uptrend to make RSI > 70
@@ -389,7 +389,7 @@ class TestAlertEngineChecks:
 
     def test_check_rsi_oversold_trigger(self, engine):
         """Should trigger on RSI oversold."""
-        rule = rsi_oversold_rule("600519", period=14)
+        rule = rsi_oversold_rule("600036", period=14)
         engine.register_rule(rule)
 
         # Create data with strong downtrend to make RSI < 30
@@ -430,7 +430,7 @@ class TestAlertEngineChecks:
 
     def test_check_prediction_deviation_no_prediction(self, engine):
         """Should not crash when prediction is unavailable."""
-        rule = prediction_deviation_rule("600519", deviation_pct=5.0)
+        rule = prediction_deviation_rule("600036", deviation_pct=5.0)
         engine.register_rule(rule)
 
         with patch(
@@ -457,7 +457,7 @@ class TestAlertEvent:
             rule_id="r1",
             rule_name="Test Event",
             alert_type=AlertType.PRICE_CHANGE,
-            symbol="600519",
+            symbol="600036",
             message="Price changed",
             current_value=105.0,
             threshold_value=5.0,
@@ -472,7 +472,7 @@ class TestAlertEvent:
             rule_id="r1",
             rule_name="Test Event",
             alert_type=AlertType.PRICE_CHANGE,
-            symbol="600519",
+            symbol="600036",
             message="Price changed",
             current_value=105.0,
             threshold_value=5.0,
@@ -496,7 +496,7 @@ class TestNotifications:
             rule_id=rule_price_change.id,
             rule_name=rule_price_change.name,
             alert_type=AlertType.PRICE_CHANGE,
-            symbol="600519",
+            symbol="600036",
             message="Test",
             current_value=100.0,
             threshold_value=5.0,
@@ -513,7 +513,7 @@ class TestNotifications:
             id="test_feishu",
             name="Feishu Test",
             alert_type=AlertType.PRICE_CHANGE,
-            symbol="600519",
+            symbol="600036",
             channel=NotificationChannel.FEISHU,
             webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx",
         )
@@ -523,7 +523,7 @@ class TestNotifications:
             rule_id="test_feishu",
             rule_name="Feishu Test",
             alert_type=AlertType.PRICE_CHANGE,
-            symbol="600519",
+            symbol="600036",
             message="Test message",
             current_value=100.0,
             threshold_value=5.0,
@@ -547,7 +547,7 @@ class TestNotifications:
             rule_id=rule_volume_spike.id,
             rule_name=rule_volume_spike.name,
             alert_type=AlertType.VOLUME_SPIKE,
-            symbol="600519",
+            symbol="600036",
             message="Test",
             current_value=100.0,
             threshold_value=3.0,
@@ -630,7 +630,7 @@ class TestAlertAPI:
         resp = client.post("/api/alert/rules", json={
             "name": "Test API Rule",
             "alert_type": "price_change",
-            "symbol": "600519",
+            "symbol": "600036",
             "market": "cn",
             "params": {"threshold_pct": 3.0},
             "channel": "feishu",
@@ -638,14 +638,14 @@ class TestAlertAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert data["alert_type"] == "price_change"
-        assert data["symbol"] == "600519"
+        assert data["symbol"] == "600036"
         assert "id" in data
 
     def test_create_rule_invalid_type(self, client):
         resp = client.post("/api/alert/rules", json={
             "name": "Bad Type",
             "alert_type": "nonexistent",
-            "symbol": "600519",
+            "symbol": "600036",
         })
         assert resp.status_code == 400
 
@@ -654,7 +654,7 @@ class TestAlertAPI:
         create_resp = client.post("/api/alert/rules", json={
             "name": "To Delete",
             "alert_type": "price_change",
-            "symbol": "600519",
+            "symbol": "600036",
             "params": {"threshold_pct": 5.0},
         })
         rule_id = create_resp.json()["id"]

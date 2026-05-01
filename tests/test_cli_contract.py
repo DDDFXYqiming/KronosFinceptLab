@@ -67,7 +67,7 @@ def test_cli_passes_sampling_fields_in_response_metadata():
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert payload["ok"] is True
-    assert payload["model_id"] == "NeoQuasar/Kronos-small"
+    assert payload["model_id"] == "NeoQuasar/Kronos-base"
 
 
 def test_cli_returns_error_for_invalid_request():

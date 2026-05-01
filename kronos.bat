@@ -2,7 +2,7 @@
 chcp 65001 >nul 2>&1
 REM Kronos CLI Launcher for Windows
 REM Usage: kronos.bat forecast --symbol 601398 --pred-len 5
-REM Usage: kronos.bat forecast --symbol 601398 --pred-len 5 --output table
+REM Usage: kronos.bat --output table forecast --symbol 601398 --pred-len 5
 
 set PROJECT_ROOT=E:\AI_Projects\KronosFinceptLab
 set KRONOS_REPO_PATH=%PROJECT_ROOT%\external\Kronos

@@ -84,7 +84,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "description": "Asset symbol, e.g. '600519' (A-share), 'BTC/USDT' (crypto)",
+                        "description": "Asset symbol, e.g. '600036' (A-share), 'BTC/USDT' (crypto)",
                     },
                     "timeframe": {
                         "type": "string",
@@ -124,7 +124,7 @@ async def list_tools() -> list[Tool]:
                     "model_id": {
                         "type": "string",
                         "description": "HuggingFace model ID",
-                        "default": "NeoQuasar/Kronos-small",
+                        "default": "NeoQuasar/Kronos-base",
                     },
                 },
                 "required": ["symbol", "rows", "pred_len"],
@@ -180,7 +180,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "model_id": {
                         "type": "string",
-                        "default": "NeoQuasar/Kronos-small",
+                        "default": "NeoQuasar/Kronos-base",
                     },
                 },
                 "required": ["assets", "pred_len"],
@@ -191,14 +191,14 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Fetch real A-share (Chinese stock market) daily OHLCV data via AkShare. "
                 "Returns historical candlestick data suitable for Kronos forecasting. "
-                "Symbol format: 6-digit code, e.g. '600519' (Kweichow Moutai), '000858' (Wuliangye)."
+                "Symbol format: 6-digit code, e.g. '600036' (China Merchants Bank), '000858' (Wuliangye)."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "description": "6-digit A-share stock code, e.g. '600519'",
+                        "description": "6-digit A-share stock code, e.g. '600036'",
                     },
                     "start_date": {
                         "type": "string",
@@ -243,7 +243,7 @@ def _handle_forecast(args: dict[str, Any]) -> list[TextContent]:
         "pred_len": args["pred_len"],
         "rows": args["rows"],
         "dry_run": args.get("dry_run", False),
-        "model_id": args.get("model_id", "NeoQuasar/Kronos-small"),
+        "model_id": args.get("model_id", "NeoQuasar/Kronos-base"),
     })
     result = svc["forecast"](req)
     return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
@@ -254,7 +254,7 @@ def _handle_batch_forecast(args: dict[str, Any]) -> list[TextContent]:
     assets = args["assets"]
     pred_len = args["pred_len"]
     dry_run = args.get("dry_run", False)
-    model_id = args.get("model_id", "NeoQuasar/Kronos-small")
+    model_id = args.get("model_id", "NeoQuasar/Kronos-base")
 
     requests = []
     for asset in assets:

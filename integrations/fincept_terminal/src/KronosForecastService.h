@@ -52,7 +52,7 @@ class KronosForecastService : public QObject {
     static KronosForecastService& instance();
 
     /// Forecast future K-line candles for a single asset.
-    /// \param symbol    Asset symbol (e.g. "600519", "BTC/USDT")
+    /// \param symbol    Asset symbol (e.g. "600036", "BTC/USDT")
     /// \param timeframe Data interval ("1d", "1h", etc.)
     /// \param pred_len  Number of future candles to predict
     /// \param rows_json JSON array of OHLCV rows [{timestamp, open, high, low, close, volume, amount}]
@@ -76,7 +76,7 @@ class KronosForecastService : public QObject {
                         bool dry_run = false);
 
     /// Fetch real A-share data via AkShare.
-    /// \param symbol     6-digit A-share code (e.g. "600519")
+    /// \param symbol     6-digit A-share code (e.g. "600036")
     /// \param start_date YYYYMMDD
     /// \param end_date   YYYYMMDD
     /// \param cb         Callback with OHLCV data

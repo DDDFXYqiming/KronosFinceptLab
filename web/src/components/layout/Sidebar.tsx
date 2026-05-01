@@ -12,7 +12,6 @@ const navItems = [
   { href: "/batch", label: "批量对比" },
   { href: "/backtest", label: "回测" },
   { href: "/data", label: "数据" },
-  { href: "/settings", label: "设置" },
 ];
 
 export function Sidebar() {
@@ -61,7 +60,7 @@ export function Sidebar() {
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
           <div className="text-xs text-muted-foreground text-center font-mono">
-            v8.0 — 仅供研究
+            v8.6 — 仅供研究
           </div>
         </div>
       )}

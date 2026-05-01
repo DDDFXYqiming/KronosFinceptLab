@@ -77,7 +77,7 @@ class TestForecast:
     def test_forecast_dry_run(self, client):
         rows = _make_ohlcv_rows(60)
         resp = client.post("/api/forecast", json={
-            "symbol": "600519",
+            "symbol": "600036",
             "timeframe": "1d",
             "pred_len": 5,
             "rows": rows,
@@ -86,14 +86,14 @@ class TestForecast:
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
-        assert data["symbol"] == "600519"
+        assert data["symbol"] == "600036"
         assert len(data["forecast"]) == 5
         assert data["metadata"]["backend"] == "dry_run"
         assert data["metadata"]["warning"] != ""
 
     def test_forecast_validates_missing_rows(self, client):
         resp = client.post("/api/forecast", json={
-            "symbol": "600519",
+            "symbol": "600036",
             "pred_len": 5,
             "rows": [],
         })
@@ -110,7 +110,7 @@ class TestForecast:
     def test_forecast_validates_pred_len(self, client):
         rows = _make_ohlcv_rows(60)
         resp = client.post("/api/forecast", json={
-            "symbol": "600519",
+            "symbol": "600036",
             "pred_len": 0,
             "rows": rows,
         })
@@ -119,7 +119,7 @@ class TestForecast:
     def test_forecast_output_has_ohlc(self, client):
         rows = _make_ohlcv_rows(60)
         resp = client.post("/api/forecast", json={
-            "symbol": "600519",
+            "symbol": "600036",
             "pred_len": 3,
             "rows": rows,
             "dry_run": True,
@@ -141,7 +141,7 @@ class TestBatch:
         rows2 = _make_ohlcv_rows(60, base_price=200.0)
         resp = client.post("/api/batch", json={
             "assets": [
-                {"symbol": "600519", "rows": rows},
+                {"symbol": "600036", "rows": rows},
                 {"symbol": "000858", "rows": rows2},
             ],
             "pred_len": 5,
@@ -170,32 +170,32 @@ class TestData:
         """Test data endpoint with mocked AkShare."""
         mock_rows = _make_ohlcv_rows(30)
         with patch("kronos_fincept.api.routes.data.fetch_a_stock_ohlcv", return_value=mock_rows):
-            resp = client.get("/api/data/a-stock/600519?start_date=20260101&end_date=20260430")
+            resp = client.get("/api/data/a-stock/600036?start_date=20260101&end_date=20260430")
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
-        assert data["symbol"] == "600519"
+        assert data["symbol"] == "600036"
         assert data["count"] == 30
 
     def test_get_a_stock_data_missing_params(self, client):
-        resp = client.get("/api/data/a-stock/600519")
+        resp = client.get("/api/data/a-stock/600036")
         assert resp.status_code == 422  # Missing required query params
 
     def test_search_stocks(self, client):
         """Test search endpoint with mocked AkShare."""
         import pandas as pd
         mock_df = pd.DataFrame({
-            "代码": ["600519", "600518", "000858"],
-            "名称": ["贵州茅台", "贵州百灵", "五粮液"],
+            "代码": ["600036", "600518", "000858"],
+            "名称": ["招商银行", "贵州百灵", "五粮液"],
         })
         with patch("akshare.stock_zh_a_spot_em", return_value=mock_df):
-            resp = client.get("/api/data/search?q=茅台")
+            resp = client.get("/api/data/search?q=招商银行")
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
-        # "贵州茅台" should match
+        # "招商银行" should match
         assert len(data["results"]) >= 1
-        assert any(r["code"] == "600519" for r in data["results"])
+        assert any(r["code"] == "600036" for r in data["results"])
 
 
 # ── Backtest tests ────────────────────────────────────────
@@ -206,7 +206,7 @@ class TestBacktest:
         mock_rows = _make_ohlcv_rows(200, base_price=100.0)
         with patch("kronos_fincept.api.routes.backtest.fetch_a_stock_ohlcv", return_value=mock_rows):
             resp = client.post("/api/backtest/ranking", json={
-                "symbols": ["600519", "000858"],
+                "symbols": ["600036", "000858"],
                 "start_date": "20250101",
                 "end_date": "20260430",
                 "top_k": 1,
@@ -227,7 +227,7 @@ class TestBacktest:
         short_rows = _make_ohlcv_rows(10)
         with patch("kronos_fincept.api.routes.backtest.fetch_a_stock_ohlcv", return_value=short_rows):
             resp = client.post("/api/backtest/ranking", json={
-                "symbols": ["600519"],
+                "symbols": ["600036"],
                 "start_date": "20250101",
                 "end_date": "20260430",
                 "top_k": 1,

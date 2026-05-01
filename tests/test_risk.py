@@ -135,13 +135,13 @@ class TestRiskCalculator:
     def test_calculate_risk_metrics(self):
         """Test comprehensive risk metrics."""
         metrics = self.calculator.calculate_risk_metrics(
-            symbol="600519",
+            symbol="600036",
             prices=self.sample_prices,
             market_prices=self.market_prices
         )
         
         assert isinstance(metrics, RiskMetrics)
-        assert metrics.symbol == "600519"
+        assert metrics.symbol == "600036"
         assert metrics.var_95 > 0
         assert metrics.var_99 > 0
         assert -2 < metrics.sharpe_ratio < 5

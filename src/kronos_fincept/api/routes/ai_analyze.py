@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 
 class AIAnalyzeRequest(BaseModel):
-    symbol: str = Field(..., description="Stock symbol, e.g. '600519', 'AAPL', '0700.HK'")
+    symbol: str = Field(..., description="Stock symbol, e.g. '600036', 'AAPL', '0700.HK'")
     market: str = Field(default="cn", description="Market: cn=A股, hk=港股, us=美股, commodity=大宗商品")
 
 

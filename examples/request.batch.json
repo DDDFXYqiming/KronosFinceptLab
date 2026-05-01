@@ -1,7 +1,7 @@
 {
   "assets": [
     {
-      "symbol": "600519",
+      "symbol": "600036",
       "rows": [
         {"timestamp": "2026-04-25T00:00:00Z", "open": 1390, "high": 1410, "low": 1385, "close": 1400, "volume": 5000, "amount": 7000000},
         {"timestamp": "2026-04-26T00:00:00Z", "open": 1400, "high": 1420, "low": 1395, "close": 1410, "volume": 5500, "amount": 7755000},
