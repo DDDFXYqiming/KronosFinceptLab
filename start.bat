@@ -9,6 +9,23 @@ echo.
 
 cd /d "%~dp0"
 
+REM 检查并安装 Python 依赖
+echo [0/2] 检查 Python 依赖...
+python -c "import fastapi" >nul 2>&1
+if errorlevel 1 (
+    echo   正在安装缺失的依赖...
+    pip install fastapi "uvicorn[standard]" pydantic python-multipart --quiet
+    if errorlevel 1 (
+        echo   依赖安装失败！请手动运行: pip install fastapi "uvicorn[standard]" pydantic python-multipart
+        pause
+        exit /b 1
+    )
+    echo   依赖安装完成！
+) else (
+    echo   依赖已就绪
+)
+echo.
+
 echo [1/2] 启动 API 后端...
 echo.
 
