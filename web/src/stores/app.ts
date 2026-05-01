@@ -8,10 +8,8 @@ interface WatchlistItem {
 
 interface AppState {
   sidebarOpen: boolean;
-  theme: "dark" | "light";
   watchlist: WatchlistItem[];
   toggleSidebar: () => void;
-  setTheme: (theme: "dark" | "light") => void;
   addToWatchlist: (item: WatchlistItem) => void;
   removeFromWatchlist: (symbol: string) => void;
   isInWatchlist: (symbol: string) => boolean;
@@ -34,12 +32,8 @@ function saveWatchlist(items: WatchlistItem[]) {
 
 export const useAppStore = create<AppState>((set, get) => ({
   sidebarOpen: true,
-  theme: "dark",
   watchlist: loadWatchlist(),
-
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-  setTheme: (theme) => set({ theme }),
-
   addToWatchlist: (item) => {
     const current = get().watchlist;
     if (current.some((w) => w.symbol === item.symbol)) return;

@@ -3,7 +3,7 @@
 import { useAppStore } from "@/stores/app";
 import { useEffect, useState } from "react";
 import { api, HealthResponse } from "@/lib/api";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+
 
 export function Header() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
@@ -42,7 +42,7 @@ export function Header() {
             <span className="text-muted-foreground font-mono">{health.device}</span>
           </>
         )}
-        <ThemeToggle />
+
       </div>
     </header>
   );

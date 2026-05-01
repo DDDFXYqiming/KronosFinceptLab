@@ -15,15 +15,15 @@ export default function Dashboard() {
   }, []);
 
   const quickLinks = [
-    { href: "/forecast", label: "Forecast", desc: "Predict stock price movements" },
-    { href: "/analysis", label: "Analysis", desc: "AI-powered stock analysis" },
-    { href: "/batch", label: "Batch", desc: "Compare multiple assets" },
+    { href: "/forecast", label: "预测", desc: "预测股票价格走势" },
+    { href: "/analysis", label: "分析", desc: "AI 智能分析" },
+    { href: "/batch", label: "批量对比", desc: "多标的对比" },
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-display">Dashboard</h1>
+        <h1 className="text-3xl font-display">仪表盘</h1>
         <div className="flex items-center gap-2 text-sm">
           <div
             className={`w-2 h-2 rounded-full animate-pulse-dot ${
@@ -31,7 +31,7 @@ export default function Dashboard() {
             }`}
           />
           <span className="text-muted-foreground">
-            {health?.status === "ok" ? "API Online" : "API Offline"}
+            {health?.status === "ok" ? "API 在线" : "API 离线"}
           </span>
         </div>
       </div>
@@ -39,21 +39,21 @@ export default function Dashboard() {
       {/* System Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
-          <CardStat
-            label="API Status"
-            value={health?.status === "ok" ? "Online" : "Offline"}
+            <CardStat
+              label="API 状态"
+              value={health?.status === "ok" ? "在线" : "离线"}
             color={health?.status === "ok" ? "text-success" : "text-error"}
           />
         </Card>
         <Card>
-          <CardStat label="Model" value={health?.model_id?.split("/").pop() || "-"} />
+          <CardStat label="模型" value={health?.model_id?.split("/").pop() || "-"} />
         </Card>
         <Card>
-          <CardStat label="Device" value={health?.device || "-"} />
+          <CardStat label="设备" value={health?.device || "-"} />
         </Card>
         <Card>
           <CardStat
-            label="Uptime"
+            label="运行时间"
             value={health ? `${Math.floor(health.uptime_seconds / 60)}m` : "-"}
           />
         </Card>
@@ -61,12 +61,12 @@ export default function Dashboard() {
 
       {/* Watchlist */}
       <Card>
-        <CardTitle>Watchlist</CardTitle>
+        <CardTitle>自选股</CardTitle>
         {watchlist.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            <p className="mb-2">No stocks in watchlist</p>
+            <p className="mb-2">暂无自选股</p>
             <Link href="/watchlist" className="text-accent hover:underline text-sm">
-              Add stocks to your watchlist
+              点击添加自选股
             </Link>
           </div>
         ) : (
@@ -74,9 +74,9 @@ export default function Dashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
-                  <th className="py-2 text-left">Symbol</th>
-                  <th className="py-2 text-left">Market</th>
-                  <th className="py-2 text-right">Actions</th>
+                  <th className="py-2 text-left">代码</th>
+                  <th className="py-2 text-left">市场</th>
+                  <th className="py-2 text-right">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -93,7 +93,7 @@ export default function Dashboard() {
                         href={`/forecast?symbol=${item.symbol}`}
                         className="text-accent hover:underline text-xs"
                       >
-                        Forecast
+                        预测
                       </Link>
                     </td>
                   </tr>
@@ -106,7 +106,7 @@ export default function Dashboard() {
 
       {/* Quick Links */}
       <Card>
-        <CardTitle>Quick Links</CardTitle>
+        <CardTitle>快捷入口</CardTitle>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {quickLinks.map((link) => (
             <Link
@@ -123,7 +123,7 @@ export default function Dashboard() {
 
       {/* Disclaimer */}
       <div className="text-center text-xs text-muted-foreground py-4">
-        Research forecast only; not trading advice.
+        仅供研究参考，不构成投资建议。
       </div>
     </div>
   );

@@ -5,14 +5,14 @@ import { usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app";
 
 const navItems = [
-  { href: "/", label: "Dashboard" },
-  { href: "/forecast", label: "Forecast" },
-  { href: "/analysis", label: "Analysis" },
-  { href: "/watchlist", label: "Watchlist" },
-  { href: "/batch", label: "Batch" },
-  { href: "/backtest", label: "Backtest" },
-  { href: "/data", label: "Data" },
-  { href: "/settings", label: "Settings" },
+  { href: "/", label: "仪表盘" },
+  { href: "/forecast", label: "预测" },
+  { href: "/analysis", label: "分析" },
+  { href: "/watchlist", label: "自选股" },
+  { href: "/batch", label: "批量对比" },
+  { href: "/backtest", label: "回测" },
+  { href: "/data", label: "数据" },
+  { href: "/settings", label: "设置" },
 ];
 
 export function Sidebar() {
@@ -61,7 +61,7 @@ export function Sidebar() {
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
           <div className="text-xs text-muted-foreground text-center font-mono">
-            v8.0 -- Research Only
+            v8.0 — 仅供研究
           </div>
         </div>
       )}

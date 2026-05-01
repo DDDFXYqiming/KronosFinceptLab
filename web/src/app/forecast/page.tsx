@@ -18,10 +18,10 @@ import {
 type Market = "cn" | "us" | "hk" | "commodity";
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
-  { value: "cn", label: "A-Share" },
-  { value: "us", label: "US Stock" },
-  { value: "hk", label: "HK Stock" },
-  { value: "commodity", label: "Commodity" },
+  { value: "cn", label: "A股" },
+  { value: "us", label: "美股" },
+  { value: "hk", label: "港股" },
+  { value: "commodity", label: "大宗商品" },
 ];
 
 function toChartTime(ts: string): string {
@@ -63,7 +63,7 @@ function ForecastContent() {
       if (res.rows && res.rows.length > 0) {
         setData(res.rows);
       } else {
-        setError("No data returned for this symbol/date range.");
+        setError("该代码/日期范围无数据返回。");
         setData([]);
       }
     } catch (e: any) {
@@ -173,7 +173,7 @@ function ForecastContent() {
 
   const handleRunPrediction = async () => {
     if (data.length === 0) {
-      setError("Load data first before running prediction.");
+      setError("请先加载数据再运行预测。");
       return;
     }
     setPredLoading(true);
@@ -189,7 +189,7 @@ function ForecastContent() {
         setPrediction(res.forecast);
         setPredResult(res);
       } else {
-        setError("No prediction data returned.");
+        setError("未返回预测数据。");
       }
     } catch (e: any) {
       setError(e.message);
@@ -210,23 +210,23 @@ function ForecastContent() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-display">Forecast</h1>
+      <h1 className="text-3xl font-display">价格预测</h1>
 
       {/* Controls */}
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div>
-            <label className="text-sm text-gray-400">Symbol</label>
+            <label className="text-sm text-gray-400">代码</label>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
               className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
-              placeholder="e.g. 600519"
+              placeholder="例如 600519"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">Market</label>
+            <label className="text-sm text-gray-400">市场</label>
             <select
               value={market}
               onChange={(e) => setMarket(e.target.value as Market)}
@@ -240,7 +240,7 @@ function ForecastContent() {
             </select>
           </div>
           <div>
-            <label className="text-sm text-gray-400">Start Date</label>
+            <label className="text-sm text-gray-400">开始日期</label>
             <input
               type="text"
               value={startDate}
@@ -250,7 +250,7 @@ function ForecastContent() {
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">End Date</label>
+            <label className="text-sm text-gray-400">结束日期</label>
             <input
               type="text"
               value={endDate}
@@ -265,7 +265,7 @@ function ForecastContent() {
               loading={loading}
               className="w-full"
             >
-              Fetch Data
+              获取数据
             </Button>
           </div>
           <div className="flex items-end">
@@ -275,7 +275,7 @@ function ForecastContent() {
               className="w-full"
               disabled={data.length === 0}
             >
-              Run Prediction
+              运行预测
             </Button>
           </div>
         </div>
@@ -290,10 +290,10 @@ function ForecastContent() {
       {/* Chart */}
       <Card>
         <CardTitle>
-          {symbol} -- {data.length} bars
+          {symbol} — {data.length} 根K线
           {predResult && (
             <span className="text-sm font-normal text-gray-400 ml-4">
-              Prediction: {predResult.forecast?.length || 0} steps
+              预测: {predResult.forecast?.length || 0} 步
               {predResult.metadata.elapsed_ms &&
                 ` (${predResult.metadata.elapsed_ms}ms)`}
             </span>
@@ -306,18 +306,18 @@ function ForecastContent() {
       {predResult && predictedClose !== null && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
-            <p className="text-sm text-gray-400">Last Close</p>
+            <p className="text-sm text-gray-400">最新收盘</p>
             <p className="text-xl font-bold">{lastClose.toFixed(2)}</p>
           </Card>
           <Card>
-            <p className="text-sm text-gray-400">Predicted Close</p>
+            <p className="text-sm text-gray-400">预测收盘</p>
             <p className="text-xl font-bold text-blue-400">
               {predictedClose.toFixed(2)}
             </p>
           </Card>
           {changePct !== null && (
             <Card>
-              <p className="text-sm text-gray-400">Change %</p>
+              <p className="text-sm text-gray-400">涨跌幅</p>
               <p
                 className={`text-xl font-bold ${
                   changePct >= 0 ? "text-green-400" : "text-red-400"
@@ -334,17 +334,17 @@ function ForecastContent() {
       {/* Data Table */}
       {data.length > 0 && (
         <Card>
-          <CardTitle>Historical Data</CardTitle>
+          <CardTitle>历史数据</CardTitle>
           <div className="overflow-x-auto max-h-64 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-surface-raised">
                 <tr className="border-b border-gray-700 text-gray-400">
-                  <th className="py-2 text-left">Date</th>
-                  <th className="py-2 text-right">Open</th>
-                  <th className="py-2 text-right">High</th>
-                  <th className="py-2 text-right">Low</th>
-                  <th className="py-2 text-right">Close</th>
-                  <th className="py-2 text-right">Volume</th>
+                  <th className="py-2 text-left">日期</th>
+                  <th className="py-2 text-right">开盘</th>
+                  <th className="py-2 text-right">最高</th>
+                  <th className="py-2 text-right">最低</th>
+                  <th className="py-2 text-right">收盘</th>
+                  <th className="py-2 text-right">成交量</th>
                 </tr>
               </thead>
               <tbody>
@@ -378,7 +378,7 @@ function ForecastContent() {
           </div>
           {data.length > 50 && (
             <p className="text-xs text-gray-500 mt-2">
-              Showing last 50 of {data.length} rows
+              显示最近50条，共{data.length}条
             </p>
           )}
         </Card>
@@ -391,7 +391,7 @@ export default function ForecastPage() {
   return (
     <Suspense
       fallback={
-        <div className="p-12 text-center text-gray-500">Loading...</div>
+        <div className="p-12 text-center text-gray-500">加载中...</div>
       }
     >
       <ForecastContent />

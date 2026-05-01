@@ -36,13 +36,13 @@ export default function BacktestPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-display">📈 Backtest</h1>
+      <h1 className="text-3xl font-display">📈 策略回测</h1>
 
       <Card>
-        <CardTitle>Strategy Configuration</CardTitle>
+        <CardTitle>策略配置</CardTitle>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="text-sm text-gray-400">Symbols (comma-separated)</label>
+            <label className="text-sm text-gray-400">股票代码（逗号分隔）</label>
             <input
               type="text"
               value={symbols}
@@ -51,7 +51,7 @@ export default function BacktestPage() {
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">Start Date</label>
+            <label className="text-sm text-gray-400">开始日期</label>
             <input
               type="text"
               value={startDate}
@@ -60,7 +60,7 @@ export default function BacktestPage() {
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">End Date</label>
+            <label className="text-sm text-gray-400">结束日期</label>
             <input
               type="text"
               value={endDate}
@@ -80,7 +80,7 @@ export default function BacktestPage() {
           </div>
         </div>
         <div className="mt-4">
-          <Button onClick={handleBacktest} loading={loading}>Run Backtest</Button>
+          <Button onClick={handleBacktest} loading={loading}>运行回测</Button>
         </div>
       </Card>
 
@@ -91,28 +91,28 @@ export default function BacktestPage() {
           {/* Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
-              <p className="text-sm text-gray-400">Total Return</p>
+              <p className="text-sm text-gray-400">总收益率</p>
               <p className={`text-2xl font-bold ${result.metrics.total_return >= 0 ? "text-accent-green" : "text-accent-red"}`}>
                 {formatPercent(result.metrics.total_return)}
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-gray-400">Sharpe Ratio</p>
+              <p className="text-sm text-gray-400">夏普比率</p>
               <p className="text-2xl font-bold">{formatNumber(result.metrics.sharpe_ratio, 4)}</p>
             </Card>
             <Card>
-              <p className="text-sm text-gray-400">Max Drawdown</p>
+              <p className="text-sm text-gray-400">最大回撤</p>
               <p className="text-2xl font-bold text-accent-red">{formatPercent(result.metrics.max_drawdown)}</p>
             </Card>
             <Card>
-              <p className="text-sm text-gray-400">Win Rate</p>
+              <p className="text-sm text-gray-400">胜率</p>
               <p className="text-2xl font-bold">{formatPercent(result.metrics.win_rate)}</p>
             </Card>
           </div>
 
           {/* Equity curve */}
           <Card>
-            <CardTitle>Equity Curve</CardTitle>
+            <CardTitle>权益曲线</CardTitle>
             <div className="h-64 overflow-x-auto">
               <div className="flex items-end gap-1 h-full min-w-max">
                 {result.equity_curve.map((point, i) => {

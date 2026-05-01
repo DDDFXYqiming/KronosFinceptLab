@@ -9,10 +9,10 @@ import { api, AIAnalyzeResponse } from "@/lib/api";
 type Market = "cn" | "us" | "hk" | "commodity";
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
-  { value: "cn", label: "A-Share" },
-  { value: "us", label: "US Stock" },
-  { value: "hk", label: "HK Stock" },
-  { value: "commodity", label: "Commodity" },
+  { value: "cn", label: "A股" },
+  { value: "us", label: "美股" },
+  { value: "hk", label: "港股" },
+  { value: "commodity", label: "大宗商品" },
 ];
 
 function getConfidenceColor(value: number): string {
@@ -76,7 +76,7 @@ function AnalysisContent() {
       const res = await api.aiAnalyze({ symbol, market });
       setResult(res);
     } catch (e: any) {
-      setError(e.message || "Analysis request failed");
+      setError(e.message || "分析请求失败");
     } finally {
       setLoading(false);
     }
@@ -91,23 +91,23 @@ function AnalysisContent() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-display">AI Analysis</h1>
+      <h1 className="text-3xl font-display">AI 分析</h1>
 
       {/* Input Controls */}
       <Card>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="text-sm text-gray-400">Symbol</label>
+            <label className="text-sm text-gray-400">代码</label>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
               className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
-              placeholder="e.g. 600519"
+              placeholder="例如 600519"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">Market</label>
+            <label className="text-sm text-gray-400">市场</label>
             <select
               value={market}
               onChange={(e) => setMarket(e.target.value as Market)}
@@ -122,7 +122,7 @@ function AnalysisContent() {
           </div>
           <div className="flex items-end">
             <Button onClick={handleAnalyze} loading={loading} className="w-full">
-              Analyze
+              开始分析
             </Button>
           </div>
         </div>
@@ -158,7 +158,7 @@ function AnalysisContent() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
               {/* Confidence */}
               <div>
-                <p className="text-sm text-gray-400 mb-1">Confidence</p>
+                <p className="text-sm text-gray-400 mb-1">置信度</p>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
                     <div
@@ -176,13 +176,13 @@ function AnalysisContent() {
 
               {/* Risk Level */}
               <div>
-                <p className="text-sm text-gray-400 mb-1">Risk Level</p>
+                <p className="text-sm text-gray-400 mb-1">风险等级</p>
                 <RiskBadge level={result.risk_level} />
               </div>
 
               {/* Current Price */}
               <div>
-                <p className="text-sm text-gray-400 mb-1">Current Price</p>
+                <p className="text-sm text-gray-400 mb-1">当前价格</p>
                 <p className="text-lg font-bold text-white">
                   {result.current_price.toFixed(2)}
                 </p>
@@ -192,7 +192,7 @@ function AnalysisContent() {
 
           {/* Detailed Analysis */}
           <Card>
-            <CardTitle>Detailed Analysis</CardTitle>
+            <CardTitle>详细分析</CardTitle>
             <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto pr-2">
               {result.detailed_analysis}
             </div>
@@ -201,7 +201,7 @@ function AnalysisContent() {
           {/* Risk Metrics Card */}
           {result.risk_metrics && (
             <Card>
-              <CardTitle>Risk Metrics</CardTitle>
+              <CardTitle>风险指标</CardTitle>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {Object.entries(result.risk_metrics).map(([key, value]) => {
                   let displayValue = "";
@@ -245,7 +245,7 @@ function AnalysisContent() {
           {result.kronos_prediction && (
             <Card>
               <CardTitle>
-                Kronos Prediction
+                Kronos 预测
                 <span className="text-sm font-normal text-gray-400 ml-3">
                   {result.kronos_prediction.model} -- {result.kronos_prediction.prediction_days} days
                 </span>
@@ -256,11 +256,11 @@ function AnalysisContent() {
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-surface-raised">
                         <tr className="border-b border-gray-700 text-gray-400">
-                          <th className="py-2 text-left">Date</th>
-                          <th className="py-2 text-right">Open</th>
-                          <th className="py-2 text-right">High</th>
-                          <th className="py-2 text-right">Low</th>
-                          <th className="py-2 text-right">Close</th>
+                          <th className="py-2 text-left">日期</th>
+                          <th className="py-2 text-right">开盘</th>
+                          <th className="py-2 text-right">最高</th>
+                          <th className="py-2 text-right">最低</th>
+                          <th className="py-2 text-right">收盘</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -293,7 +293,7 @@ function AnalysisContent() {
               {result.kronos_prediction.probabilistic && (
                 <div className="mt-4 p-3 bg-surface-overlay rounded-lg">
                   <p className="text-sm text-gray-400 mb-1">
-                    Probabilistic Forecast Available
+                    概率预测可用
                   </p>
                   <pre className="text-xs text-gray-500 overflow-x-auto">
                     {JSON.stringify(result.kronos_prediction.probabilistic, null, 2)}
@@ -309,9 +309,9 @@ function AnalysisContent() {
       {!result && !error && !loading && (
         <Card>
           <div className="text-center py-12 text-gray-500">
-            <p className="text-lg mb-2">AI-Powered Stock Analysis</p>
+            <p className="text-lg mb-2">AI 智能股票分析</p>
             <p className="text-sm">
-              Enter a stock symbol and click Analyze to get AI-driven analysis.
+              输入股票代码，点击分析获取 AI 驱动的分析报告。
             </p>
           </div>
         </Card>
@@ -324,7 +324,7 @@ export default function AnalysisPage() {
   return (
     <Suspense
       fallback={
-        <div className="p-12 text-center text-gray-500">Loading...</div>
+        <div className="p-12 text-center text-gray-500">加载中...</div>
       }
     >
       <AnalysisContent />

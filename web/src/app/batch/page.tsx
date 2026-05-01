@@ -17,10 +17,10 @@ import {
 type Market = "cn" | "us" | "hk" | "commodity";
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
-  { value: "cn", label: "A-Share" },
-  { value: "us", label: "US Stock" },
-  { value: "hk", label: "HK Stock" },
-  { value: "commodity", label: "Commodity" },
+  { value: "cn", label: "A股" },
+  { value: "us", label: "美股" },
+  { value: "hk", label: "港股" },
+  { value: "commodity", label: "大宗商品" },
 ];
 
 interface BatchResult {
@@ -45,11 +45,11 @@ export default function BatchPage() {
       .map((s) => s.trim())
       .filter(Boolean);
     if (symbols.length === 0) {
-      setError("Enter at least one symbol.");
+      setError("请至少输入一个股票代码。");
       return;
     }
     if (symbols.length > 20) {
-      setError("Maximum 20 symbols per batch.");
+      setError("每批最多20个股票代码。");
       return;
     }
 
@@ -112,7 +112,7 @@ export default function BatchPage() {
 
       setResults(collected);
     } catch (e: any) {
-      setError(e.message || "Batch comparison failed");
+      setError(e.message || "批量对比失败");
     } finally {
       setLoading(false);
     }
@@ -126,26 +126,26 @@ export default function BatchPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-display">Batch Comparison</h1>
+      <h1 className="text-3xl font-display">批量对比</h1>
 
       {/* Controls */}
       <Card>
-        <CardTitle>Compare Multiple Assets</CardTitle>
+        <CardTitle>多标的对比</CardTitle>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="md:col-span-2">
             <label className="text-sm text-gray-400">
-              Symbols (comma-separated)
+              股票代码（逗号分隔）
             </label>
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
-              placeholder="e.g. 600519,000858,000001"
+              placeholder="例如 600519,000858,000001"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">Market</label>
+            <label className="text-sm text-gray-400">市场</label>
             <select
               value={market}
               onChange={(e) => setMarket(e.target.value as Market)}
@@ -160,7 +160,7 @@ export default function BatchPage() {
           </div>
           <div>
             <label className="text-sm text-gray-400">
-              Prediction Length
+              预测天数
             </label>
             <input
               type="number"
@@ -174,7 +174,7 @@ export default function BatchPage() {
         </div>
         <div className="mt-4">
           <Button onClick={handleCompare} loading={loading}>
-            Compare
+            开始对比
           </Button>
         </div>
       </Card>
@@ -190,7 +190,7 @@ export default function BatchPage() {
         <>
           {/* Bar Chart */}
           <Card>
-            <CardTitle>Predicted Return Comparison</CardTitle>
+            <CardTitle>预测收益率对比</CardTitle>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
@@ -215,7 +215,7 @@ export default function BatchPage() {
                     }}
                     formatter={(value: number) => [
                       `${value.toFixed(2)}%`,
-                      "Predicted Return",
+                      "预测收益率",
                     ]}
                   />
                   <Bar dataKey="return" radius={[4, 4, 0, 0]}>
@@ -233,16 +233,16 @@ export default function BatchPage() {
 
           {/* Results Table */}
           <Card>
-            <CardTitle>Rankings</CardTitle>
+            <CardTitle>排名</CardTitle>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-700 text-gray-400">
-                    <th className="py-2 text-left w-12">Rank</th>
-                    <th className="py-2 text-left">Symbol</th>
-                    <th className="py-2 text-right">Last Close</th>
-                    <th className="py-2 text-right">Predicted Close</th>
-                    <th className="py-2 text-right">Predicted Return</th>
+                    <th className="py-2 text-left w-12">排名</th>
+                    <th className="py-2 text-left">代码</th>
+                    <th className="py-2 text-right">最新收盘</th>
+                    <th className="py-2 text-right">预测收盘</th>
+                    <th className="py-2 text-right">预测收益率</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -307,10 +307,9 @@ export default function BatchPage() {
       {results.length === 0 && !loading && !error && (
         <Card>
           <div className="text-center py-12 text-gray-500">
-            <p className="text-lg mb-2">Batch Asset Comparison</p>
+            <p className="text-lg mb-2">批量标的对比</p>
             <p className="text-sm">
-              Enter multiple symbols to compare predicted returns side by
-              side.
+              输入多个股票代码，对比预测收益率。
             </p>
           </div>
         </Card>
