@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul 2>&1
 REM Kronos Forecast - Windows 批处理脚本
 REM 用于在 FinceptTerminal 中运行 Kronos 模型推理
 
