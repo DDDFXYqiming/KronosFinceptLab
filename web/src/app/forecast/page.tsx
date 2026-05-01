@@ -24,7 +24,15 @@ const MARKET_OPTIONS: { value: Market; label: string }[] = [
   { value: "commodity", label: "大宗商品" },
 ];
 
-function toChartTime(ts: string): string {
+function toChartTime(ts: string, baseDate?: string): string {
+  // Handle relative dates like "D1", "D2", etc.
+  const match = ts.match(/^D(\d+)$/);
+  if (match) {
+    const days = parseInt(match[1], 10);
+    const base = baseDate ? new Date(baseDate) : new Date();
+    base.setDate(base.getDate() + days);
+    return base.toISOString().slice(0, 10);
+  }
   return ts.slice(0, 10);
 }
 
@@ -163,8 +171,10 @@ function ForecastContent() {
       lineSeriesRef.current?.setData([]);
       return;
     }
+    // Use the last date from historical data as base for relative dates
+    const baseDate = data.length > 0 ? data[data.length - 1].timestamp : undefined;
     const lineData: LineData[] = prediction.map((row) => ({
-      time: toChartTime(row.timestamp),
+      time: toChartTime(row.timestamp, baseDate),
       value: row.close,
     }));
     lineSeriesRef.current.setData(lineData);
