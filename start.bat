@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul 2>&1
 title KronosFinceptLab
 
 echo ========================================
@@ -11,14 +12,14 @@ cd /d "%~dp0"
 echo [1/2] 启动 API 后端...
 echo.
 
-start "KronosFinceptLab API" cmd /k "cd /d "%~dp0" && set PYTHONPATH=src && python -m kronos_fincept.api.app"
+start "KronosFinceptLab API" cmd /k "cd /d %~dp0 && set PYTHONPATH=src && python -m kronos_fincept.api.app"
 
 timeout /t 2 /nobreak >nul
 
 echo [2/2] 启动 Web 前端...
 echo.
 
-start "KronosFinceptLab Web" cmd /k "cd /d "%~dp0web" && npm run dev"
+start "KronosFinceptLab Web" cmd /k "cd /d %~dp0web && npm run dev"
 
 timeout /t 3 /nobreak >nul
 
