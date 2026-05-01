@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from scipy import stats
+from kronos_fincept import native
 
 
 @dataclass
@@ -102,6 +103,10 @@ class RiskCalculator:
         Returns:
             VaR value (positive number representing loss)
         """
+        rust_var = native.calculate_var_historical(returns, confidence_level, holding_period)
+        if rust_var is not None:
+            return rust_var
+
         if len(returns) == 0:
             return 0.0
         

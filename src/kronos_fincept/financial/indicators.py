@@ -4,6 +4,7 @@ Technical indicators module for quantitative analysis.
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 import numpy as np
+from kronos_fincept import native
 
 
 @dataclass
@@ -231,6 +232,10 @@ class TechnicalIndicators:
         Returns:
             RSI result
         """
+        rust_values = native.calculate_rsi(prices, period)
+        if rust_values is not None:
+            return RSI(values=rust_values, period=period)
+
         if len(prices) < period + 1:
             return RSI(values=[], period=period)
         
@@ -282,6 +287,14 @@ class TechnicalIndicators:
         Returns:
             MACD result
         """
+        rust_result = native.calculate_macd(prices, fast_period, slow_period, signal_period)
+        if rust_result is not None:
+            return MACD(
+                macd_line=rust_result["macd_line"],
+                signal_line=rust_result["signal_line"],
+                histogram=rust_result["histogram"],
+            )
+
         if len(prices) < slow_period + signal_period:
             return MACD(macd_line=[], signal_line=[], histogram=[])
         

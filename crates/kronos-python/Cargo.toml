@@ -1,0 +1,15 @@
+[package]
+name = "kronos-fincept-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "kronos_fincept_native"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+kronos-kernel.workspace = true
+pyo3.workspace = true

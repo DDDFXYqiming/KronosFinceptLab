@@ -9,6 +9,7 @@ venv/
 *.egg-info/
 build/
 dist/
+target/
 
 # Local data and model caches
 .cache/
@@ -28,6 +29,7 @@ external/
 # Internal planning docs
 .hermes/
 SPEC.md
+docs/RUST_REFACTORING_ASSESSMENT.md
 
 # Temporary / ad-hoc scripts
 scripts/*_analysis.py

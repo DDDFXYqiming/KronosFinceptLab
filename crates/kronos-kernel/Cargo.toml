@@ -1,0 +1,10 @@
+[package]
+name = "kronos-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "kronos_kernel"
+path = "src/lib.rs"

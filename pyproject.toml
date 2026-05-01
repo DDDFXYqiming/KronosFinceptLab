@@ -39,6 +39,9 @@ dev = [
     "pytest-asyncio>=0.21",
     "httpx>=0.24",
 ]
+rust = [
+    "maturin>=1.8,<2",
+]
 
 [project.scripts]
 kronos-api = "kronos_fincept.api.app:main"

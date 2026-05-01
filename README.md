@@ -1,10 +1,11 @@
 # KronosFinceptLab
 
-独立的 Python + Web 金融量化分析平台，集成 Kronos K 线基础模型。
+独立的 Python + Rust + Web 金融量化分析平台，集成 Kronos K 线基础模型。
 
 ## 技术栈
 
 - **后端**: FastAPI (Python 3.11+)
+- **Rust 加速**: Cargo workspace + PyO3/maturin（可选 native extension）
 - **前端**: Next.js + Tailwind CSS + Framer Motion + TradingView Lightweight Charts
 - **CLI**: Click（支持 Hermes Agent 远程调用）
 
@@ -17,7 +18,8 @@
 | | Yahoo Finance | 全球股票市场 |
 | | Binance | 加密货币（国际） |
 | | OKX | 加密货币（中国） |
-| **预测模型** | NeoQuasar/Kronos-base | K 线预测（CPU 推理） |
+| **预测模型** | NeoQuasar/Kronos-small | 默认 K 线预测模型（CPU 推理） |
+| | NeoQuasar/Kronos-mini/base | 可选模型 |
 | | NeoQuasar/Kronos-Tokenizer-base | Tokenizer |
 | **数据格式** | OHLCV | 开/高/低/收/量/额 |
 
@@ -30,7 +32,7 @@
 
 ## Current status
 
-Version: v8.3
+Version: v8.4-dev
 
 ## 已实现
 
@@ -45,8 +47,8 @@ Version: v8.3
 - 多数据源自动降级架构（AkShare → BaoStock → Yahoo Finance）
 - 统一数据源管理器（DataSourceManager）
 - 指数退避重试 + 熔断机制 + 内存/文件缓存
-- ✅ CLI/API **全链路降级集成** — `kronos data fetch`、`kronos forecast` 等命令自动走 DataSourceManager，AkShare 失败时无缝切换到 BaoStock
-- ✅ `akshare_adapter.py` — 统一数据入口，所有 6 个调用方（CLI、API、backtest）自动享受降级
+- CLI/API **全链路降级集成** — `kronos data fetch`、`kronos forecast` 等命令自动走 DataSourceManager，AkShare 失败时无缝切换到 BaoStock
+- `akshare_adapter.py` — 统一数据入口，所有 6 个调用方（CLI、API、backtest）自动享受降级
 - AkShare A 股 OHLCV 适配器
 - BaoStock 数据源适配器（已验证可用）
 - Yahoo Finance 数据源适配器（已验证可用）
@@ -124,6 +126,13 @@ Version: v8.3
 ### 异步性能优化 (v8.3)
 - 所有 API 路由 handler 使用 `asyncio.to_thread()` 包装同步阻塞调用
 - 事件循环不再被数据获取、预测计算、回测循环阻塞
+
+### Rust-first 重构 Phase 0 (v8.4-dev)
+- 新增 Cargo workspace：`crates/kronos-kernel` + `crates/kronos-python`
+- 新增 PyO3 native extension：`kronos_fincept_native`
+- 已接入可选 Rust POC kernel：RSI、MACD、Historical VaR
+- Python fallback 默认保留，设置 `USE_RUST_ENGINE=1` 或 `USE_RUST_ENGINE=auto` 后才尝试 Rust 路径
+- 当前不迁移数据源、Kronos 推理、LLM 分析和前端
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
@@ -250,6 +259,38 @@ npm run dev
 
 ```bash
 PYTHONPATH=src python3 -m pytest tests -v
+```
+
+### Rust native 加速（可选）
+
+首次配置 Windows Rust 环境：
+
+```powershell
+# 安装 Rust 工具链
+Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile $env:TEMP\rustup-init.exe
+& $env:TEMP\rustup-init.exe -y --profile minimal --default-host x86_64-pc-windows-gnu --default-toolchain stable-x86_64-pc-windows-gnu
+
+# 安装 GNU linker（如系统没有 gcc）
+winget install --id BrechtSanders.WinLibs.POSIX.MSVCRT -e --accept-source-agreements --accept-package-agreements --silent
+
+# 安装 Python 构建工具
+python -m pip install maturin
+```
+
+构建并启用 native extension：
+
+```powershell
+$mingwBin = (Get-ChildItem -Path $env:LOCALAPPDATA\Microsoft\WinGet\Packages -Recurse -Filter gcc.exe | Select-Object -First 1).Directory.FullName
+$env:Path="$env:USERPROFILE\.cargo\bin;$mingwBin;$env:Path"
+
+cargo test --workspace
+cargo clippy --workspace -- -D warnings
+python -m maturin build --manifest-path crates/kronos-python/Cargo.toml --release --out dist/native
+python -m pip install --force-reinstall (Get-ChildItem -LiteralPath dist\native -Filter *.whl | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+
+$env:USE_RUST_ENGINE="1"
+python -m pytest tests/test_rust_native_bridge.py -v
+python scripts/benchmark_rust_native.py
 ```
 
 ## CLI JSON 字段

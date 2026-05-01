@@ -67,7 +67,7 @@ class KronosConfig:
     """Kronos model configuration."""
     repo_path: str = field(default_factory=lambda: _get("KRONOS_REPO_PATH"))
     hf_home: str = field(default_factory=lambda: _get("HF_HOME"))
-    model_id: str = "NeoQuasar/Kronos-base"
+    model_id: str = field(default_factory=lambda: _get("KRONOS_MODEL_ID", "NeoQuasar/Kronos-small"))
     tokenizer_id: str = "NeoQuasar/Kronos-Tokenizer-base"
 
 
