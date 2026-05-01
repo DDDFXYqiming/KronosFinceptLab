@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v8.0
+Version: v8.1
 
 ## 已实现
 
@@ -90,7 +90,6 @@ Version: v8.0
 - **AI 分析面板** — DeepSeek + Kronos 全量分析
 - **自选股管理** — localStorage 持久化，Zustand 状态管理
 - **批量预测对比** — 多股票排序，Recharts 可视化
-- **深浅色主题切换** — 支持系统偏好检测
 - **设计系统** — 渐变文字、圆角卡片、入场动画
 
 ### 实时监控与告警 (v8.0)
@@ -110,6 +109,11 @@ Version: v8.0
 - 基准对比（沪深300、标普500 等）
 - CLI 命令：`kronos backtest ranking --report`
 - API 路由：`POST /api/backtest/report`
+
+### Bug 修复与稳定性 (v8.1)
+- `start.bat` 换行符 LF→CRLF + UTF-8 编码 + 自动安装依赖
+- 预测 API 返回缺少 `model_id`/`tokenizer_id` 导致前端 `KeyError`
+- 前端图表 `D1`~`D5` 相对日期无法解析
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
