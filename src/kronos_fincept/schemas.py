@@ -49,6 +49,19 @@ class ForecastRow:
         row.validate_ohlc()
         return row
 
+    @classmethod
+    def from_pydantic(cls, pydantic_row: Any) -> "ForecastRow":
+        """Convert a Pydantic ForecastRowIn to a dataclass ForecastRow."""
+        return cls(
+            timestamp=pydantic_row.timestamp,
+            open=pydantic_row.open,
+            high=pydantic_row.high,
+            low=pydantic_row.low,
+            close=pydantic_row.close,
+            volume=pydantic_row.volume,
+            amount=pydantic_row.amount,
+        )
+
     def validate_ohlc(self) -> None:
         """Validate basic OHLC constraints."""
         if self.high < max(self.open, self.close):
@@ -112,6 +125,56 @@ class ForecastRequest:
             top_k=int(payload.get("top_k", 0)),
             top_p=float(payload.get("top_p", 0.9)),
             sample_count=int(payload.get("sample_count", 1)),
+        )
+
+    @classmethod
+    def from_pydantic(cls, pydantic_req: Any) -> "ForecastRequest":
+        """Convert a Pydantic ForecastRequestIn to a dataclass ForecastRequest."""
+        return cls(
+            symbol=pydantic_req.symbol,
+            timeframe=pydantic_req.timeframe,
+            pred_len=pydantic_req.pred_len,
+            rows=[ForecastRow.from_pydantic(r) for r in pydantic_req.rows],
+            model_id=pydantic_req.model_id,
+            tokenizer_id=pydantic_req.tokenizer_id,
+            dry_run=pydantic_req.dry_run,
+            max_context=pydantic_req.max_context,
+            temperature=pydantic_req.temperature,
+            top_k=pydantic_req.top_k,
+            top_p=pydantic_req.top_p,
+            sample_count=pydantic_req.sample_count,
+        )
+
+    @classmethod
+    def from_batch_item(
+        cls,
+        symbol: str,
+        timeframe: str,
+        pred_len: int,
+        rows: list[Any],
+        model_id: str | None = None,
+        tokenizer_id: str | None = None,
+        dry_run: bool = False,
+        max_context: int | None = None,
+        temperature: float | None = None,
+        top_k: int | None = None,
+        top_p: float | None = None,
+        sample_count: int | None = None,
+    ) -> "ForecastRequest":
+        """Build a ForecastRequest from a batch item with optional field fallbacks."""
+        return cls(
+            symbol=symbol,
+            timeframe=timeframe,
+            pred_len=pred_len,
+            rows=[ForecastRow.from_pydantic(r) for r in rows],
+            model_id=model_id or DEFAULT_MODEL_ID,
+            tokenizer_id=tokenizer_id or DEFAULT_TOKENIZER_ID,
+            dry_run=dry_run,
+            max_context=max_context if max_context is not None else 512,
+            temperature=temperature if temperature is not None else 1.0,
+            top_k=top_k if top_k is not None else 0,
+            top_p=top_p if top_p is not None else 0.9,
+            sample_count=sample_count if sample_count is not None else 1,
         )
 
     def rows_as_dicts(self) -> list[dict[str, Any]]:

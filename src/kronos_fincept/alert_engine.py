@@ -202,29 +202,20 @@ class AlertEngine:
             logger.warning("Unknown notification channel: %s", rule.channel)
             return False
 
-    # ---- A-stock rule checking ------------------------------------------
+    # ---- Common alert evaluation ----------------------------------------
 
-    def _check_a_stock_rule(self, rule: AlertRule) -> Optional[AlertEvent]:
-        """Check an A-stock alert rule."""
-        try:
-            from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+    def _evaluate_alert_conditions(
+        self,
+        rule: AlertRule,
+        closes: list[float],
+        current_price: float,
+        prev_price: float,
+        volumes: list[float] | None = None,
+    ) -> Optional[AlertEvent]:
+        """Evaluate alert conditions shared between A-stock and global markets.
 
-            rows = fetch_a_stock_ohlcv(
-                symbol=rule.symbol,
-                start_date="20260101",
-                end_date="20261231",
-            )
-        except Exception as exc:
-            logger.warning("Failed to fetch A-stock data for %s: %s", rule.symbol, exc)
-            return None
-
-        if not rows or len(rows) < 2:
-            return None
-
-        closes = [r["close"] for r in rows]
-        current_price = closes[-1]
-        prev_price = closes[-2] if len(closes) >= 2 else current_price
-
+        Returns AlertEvent if triggered, else None.
+        """
         alert_type = rule.alert_type
         params = rule.params or {}
 
@@ -256,10 +247,7 @@ class AlertEngine:
                     rule_name=rule.name,
                     alert_type=alert_type,
                     symbol=rule.symbol,
-                    message=(
-                        f"{rule.symbol} price {current_price:.2f} crossed "
-                        f"above {level:.2f}"
-                    ),
+                    message=f"{rule.symbol} price {current_price:.2f} crossed above {level:.2f}",
                     current_value=current_price,
                     threshold_value=level,
                     timestamp=datetime.now(timezone.utc).isoformat(),
@@ -274,10 +262,7 @@ class AlertEngine:
                     rule_name=rule.name,
                     alert_type=alert_type,
                     symbol=rule.symbol,
-                    message=(
-                        f"{rule.symbol} price {current_price:.2f} crossed "
-                        f"below {level:.2f}"
-                    ),
+                    message=f"{rule.symbol} price {current_price:.2f} crossed below {level:.2f}",
                     current_value=current_price,
                     threshold_value=level,
                     timestamp=datetime.now(timezone.utc).isoformat(),
@@ -295,7 +280,7 @@ class AlertEngine:
                     alert_type=alert_type,
                     symbol=rule.symbol,
                     message=(
-                        f"{rule.symbol} RSI is {rsi:.1f} — overbought "
+                        f"{rule.symbol} RSI is {rsi:.1f} -- overbought "
                         f"(threshold: >{params.get('overbought', 70)})"
                     ),
                     current_value=rsi,
@@ -310,7 +295,7 @@ class AlertEngine:
                     alert_type=alert_type,
                     symbol=rule.symbol,
                     message=(
-                        f"{rule.symbol} RSI is {rsi:.1f} — oversold "
+                        f"{rule.symbol} RSI is {rsi:.1f} -- oversold "
                         f"(threshold: <{params.get('oversold', 30)})"
                     ),
                     current_value=rsi,
@@ -319,42 +304,8 @@ class AlertEngine:
                     severity="warning",
                 )
 
-        elif alert_type == AlertType.MACD_CROSSOVER:
-            macd_info = self._calc_macd(closes)
-            if macd_info is None:
-                return None
-            macd_line, signal_line = macd_info
-            # We need at least 2 MACD values to detect a crossover
-            if len(macd_line) < 2 or len(signal_line) < 2:
-                return None
-            prev_macd, cur_macd = macd_line[-2], macd_line[-1]
-            prev_signal, cur_signal = signal_line[-2], signal_line[-1]
-            # Bullish crossover: MACD crosses above signal
-            # Bearish crossover: MACD crosses below signal
-            if prev_macd <= prev_signal and cur_macd > cur_signal:
-                direction = "bullish"
-            elif prev_macd >= prev_signal and cur_macd < cur_signal:
-                direction = "bearish"
-            else:
-                return None
-            return AlertEvent(
-                rule_id=rule.id,
-                rule_name=rule.name,
-                alert_type=alert_type,
-                symbol=rule.symbol,
-                message=(
-                    f"{rule.symbol} MACD {direction} crossover: "
-                    f"MACD={cur_macd:.4f}, Signal={cur_signal:.4f}"
-                ),
-                current_value=cur_macd,
-                threshold_value=cur_signal,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                severity="info",
-            )
-
         elif alert_type == AlertType.VOLUME_SPIKE:
-            volumes = [r["volume"] for r in rows]
-            if len(volumes) < 20:
+            if volumes is None or len(volumes) < 20:
                 return None
             multiplier = params.get("multiplier", 3.0)
             avg_volume = sum(volumes[:-1]) / (len(volumes) - 1)
@@ -376,7 +327,72 @@ class AlertEngine:
                     severity="info",
                 )
 
+        return None
+
+    # ---- A-stock rule checking ------------------------------------------
+
+    def _check_a_stock_rule(self, rule: AlertRule) -> Optional[AlertEvent]:
+        """Check an A-stock alert rule."""
+        try:
+            from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+
+            rows = fetch_a_stock_ohlcv(
+                symbol=rule.symbol,
+                start_date="20260101",
+                end_date="20261231",
+            )
+        except Exception as exc:
+            logger.warning("Failed to fetch A-stock data for %s: %s", rule.symbol, exc)
+            return None
+
+        if not rows or len(rows) < 2:
+            return None
+
+        closes = [r["close"] for r in rows]
+        current_price = closes[-1]
+        prev_price = closes[-2] if len(closes) >= 2 else current_price
+        volumes = [r.get("volume", 0) for r in rows]
+
+        # Check common conditions first
+        event = self._evaluate_alert_conditions(rule, closes, current_price, prev_price, volumes)
+        if event is not None:
+            return event
+
+        # A-stock specific: MACD crossover
+        alert_type = rule.alert_type
+        if alert_type == AlertType.MACD_CROSSOVER:
+            macd_info = self._calc_macd(closes)
+            if macd_info is None:
+                return None
+            macd_line, signal_line = macd_info
+            if len(macd_line) < 2 or len(signal_line) < 2:
+                return None
+            prev_macd, cur_macd = macd_line[-2], macd_line[-1]
+            prev_signal, cur_signal = signal_line[-2], signal_line[-1]
+            if prev_macd <= prev_signal and cur_macd > cur_signal:
+                direction = "bullish"
+            elif prev_macd >= prev_signal and cur_macd < cur_signal:
+                direction = "bearish"
+            else:
+                return None
+            return AlertEvent(
+                rule_id=rule.id,
+                rule_name=rule.name,
+                alert_type=alert_type,
+                symbol=rule.symbol,
+                message=(
+                    f"{rule.symbol} MACD {direction} crossover: "
+                    f"MACD={cur_macd:.4f}, Signal={cur_signal:.4f}"
+                ),
+                current_value=cur_macd,
+                threshold_value=cur_signal,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                severity="info",
+            )
+
+        # A-stock specific: Prediction deviation
         elif alert_type == AlertType.PREDICTION_DEVIATION:
+            params = rule.params or {}
             deviation_pct = params.get("deviation_pct", 10.0)
             pred_price = self._get_latest_prediction(rule.symbol)
             if pred_price is None or pred_price == 0:
@@ -424,114 +440,9 @@ class AlertEngine:
         closes = df["Close"].tolist()
         current_price = float(closes[-1])
         prev_price = float(closes[-2]) if len(closes) >= 2 else current_price
+        volumes = df["Volume"].tolist() if "Volume" in df.columns else None
 
-        alert_type = rule.alert_type
-        params = rule.params or {}
-
-        if alert_type == AlertType.PRICE_CHANGE:
-            threshold_pct = params.get("threshold_pct", 5.0)
-            change_pct = abs((current_price - prev_price) / prev_price) * 100
-            if change_pct >= threshold_pct:
-                direction = "up" if current_price > prev_price else "down"
-                return AlertEvent(
-                    rule_id=rule.id,
-                    rule_name=rule.name,
-                    alert_type=alert_type,
-                    symbol=rule.symbol,
-                    message=(
-                        f"{rule.symbol} price moved {direction} {change_pct:.2f}% "
-                        f"to {current_price:.2f} (threshold: {threshold_pct}%)"
-                    ),
-                    current_value=current_price,
-                    threshold_value=threshold_pct,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    severity="warning" if change_pct >= threshold_pct * 2 else "info",
-                )
-
-        elif alert_type == AlertType.PRICE_ABOVE:
-            level = params.get("level", 0.0)
-            if current_price > level:
-                return AlertEvent(
-                    rule_id=rule.id,
-                    rule_name=rule.name,
-                    alert_type=alert_type,
-                    symbol=rule.symbol,
-                    message=f"{rule.symbol} price {current_price:.2f} above {level:.2f}",
-                    current_value=current_price,
-                    threshold_value=level,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    severity="info",
-                )
-
-        elif alert_type == AlertType.PRICE_BELOW:
-            level = params.get("level", 0.0)
-            if current_price < level:
-                return AlertEvent(
-                    rule_id=rule.id,
-                    rule_name=rule.name,
-                    alert_type=alert_type,
-                    symbol=rule.symbol,
-                    message=f"{rule.symbol} price {current_price:.2f} below {level:.2f}",
-                    current_value=current_price,
-                    threshold_value=level,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    severity="warning",
-                )
-
-        elif alert_type in (AlertType.RSI_OVERBOUGHT, AlertType.RSI_OVERSOLD):
-            rsi = self._calc_rsi(closes, params.get("rsi_period", 14))
-            if rsi is None:
-                return None
-            if alert_type == AlertType.RSI_OVERBOUGHT and rsi > params.get("overbought", 70):
-                return AlertEvent(
-                    rule_id=rule.id,
-                    rule_name=rule.name,
-                    alert_type=alert_type,
-                    symbol=rule.symbol,
-                    message=f"{rule.symbol} RSI {rsi:.1f} overbought",
-                    current_value=rsi,
-                    threshold_value=float(params.get("overbought", 70)),
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    severity="info",
-                )
-            if alert_type == AlertType.RSI_OVERSOLD and rsi < params.get("oversold", 30):
-                return AlertEvent(
-                    rule_id=rule.id,
-                    rule_name=rule.name,
-                    alert_type=alert_type,
-                    symbol=rule.symbol,
-                    message=f"{rule.symbol} RSI {rsi:.1f} oversold",
-                    current_value=rsi,
-                    threshold_value=float(params.get("oversold", 30)),
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    severity="warning",
-                )
-
-        elif alert_type == AlertType.VOLUME_SPIKE:
-            volumes = df["Volume"].tolist()
-            if len(volumes) < 20:
-                return None
-            multiplier = params.get("multiplier", 3.0)
-            avg_volume = sum(volumes[:-1]) / (len(volumes) - 1)
-            current_volume = float(volumes[-1])
-            if avg_volume > 0 and current_volume > avg_volume * multiplier:
-                ratio = current_volume / avg_volume
-                return AlertEvent(
-                    rule_id=rule.id,
-                    rule_name=rule.name,
-                    alert_type=alert_type,
-                    symbol=rule.symbol,
-                    message=(
-                        f"{rule.symbol} volume spike: {current_volume:.0f} "
-                        f"({ratio:.1f}x avg)"
-                    ),
-                    current_value=current_volume,
-                    threshold_value=avg_volume * multiplier,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    severity="info",
-                )
-
-        return None
+        return self._evaluate_alert_conditions(rule, closes, current_price, prev_price, volumes)
 
     # ---- Indicator helpers ----------------------------------------------
 

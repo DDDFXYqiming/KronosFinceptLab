@@ -20,7 +20,7 @@ def test_forecast_request_fills_optional_volume_and_amount():
     )
 
     assert request.symbol == "BTC/USDT"
-    assert request.model_id == "NeoQuasar/Kronos-small"
+    assert request.model_id == "NeoQuasar/Kronos-base"
     assert request.tokenizer_id == "NeoQuasar/Kronos-Tokenizer-base"
     assert request.rows[0].volume == 0.0
     assert request.rows[0].amount == 0.0

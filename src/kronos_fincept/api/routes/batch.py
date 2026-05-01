@@ -27,31 +27,19 @@ def _item_to_forecast_request(
     dry_run: bool,
 ) -> ForecastRequest:
     """Convert one batch item to internal ForecastRequest."""
-    rows = [
-        ForecastRow(
-            timestamp=r.timestamp,
-            open=r.open,
-            high=r.high,
-            low=r.low,
-            close=r.close,
-            volume=r.volume,
-            amount=r.amount,
-        )
-        for r in item.rows
-    ]
-    return ForecastRequest(
+    return ForecastRequest.from_batch_item(
         symbol=item.symbol,
         timeframe=item.timeframe,
         pred_len=pred_len,
-        rows=rows,
-        model_id=item.model_id or "NeoQuasar/Kronos-base",
-        tokenizer_id=item.tokenizer_id or "NeoQuasar/Kronos-Tokenizer-base",
+        rows=item.rows,
+        model_id=item.model_id,
+        tokenizer_id=item.tokenizer_id,
         dry_run=dry_run,
-        max_context=item.max_context or 512,
-        temperature=item.temperature or 1.0,
-        top_k=item.top_k or 0,
-        top_p=item.top_p or 0.9,
-        sample_count=item.sample_count or 1,
+        max_context=item.max_context,
+        temperature=item.temperature,
+        top_k=item.top_k,
+        top_p=item.top_p,
+        sample_count=item.sample_count,
     )
 
 

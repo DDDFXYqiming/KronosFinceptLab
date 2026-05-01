@@ -32,6 +32,35 @@ def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return records
 
 
+def _build_forecast_response(
+    request: ForecastRequest,
+    frame: pd.DataFrame,
+    device: str,
+    elapsed_ms: int,
+    backend: str,
+    probabilistic: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the standard forecast API response."""
+    resp: dict[str, Any] = {
+        "ok": True,
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+        "model_id": request.model_id,
+        "tokenizer_id": request.tokenizer_id,
+        "pred_len": request.pred_len,
+        "forecast": _frame_to_records(frame),
+        "metadata": {
+            "device": device,
+            "elapsed_ms": elapsed_ms,
+            "backend": backend,
+            "warning": RESEARCH_WARNING,
+        },
+    }
+    if probabilistic is not None:
+        resp["probabilistic"] = probabilistic
+    return resp
+
+
 def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
     """Run a forecast request and return the stable JSON contract.
 
@@ -44,21 +73,9 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
         # Dry-run: simple deterministic prediction
         predictor = DryRunPredictor()
         result = predictor.predict(df=df, x_timestamp=timestamps, pred_len=request.pred_len)
-        return {
-            "ok": True,
-            "symbol": request.symbol,
-            "timeframe": request.timeframe,
-            "model_id": request.model_id,
-            "tokenizer_id": request.tokenizer_id,
-            "pred_len": request.pred_len,
-            "forecast": _frame_to_records(result.frame),
-            "metadata": {
-                "device": result.device,
-                "elapsed_ms": result.elapsed_ms,
-                "backend": result.backend,
-                "warning": RESEARCH_WARNING,
-            },
-        }
+        return _build_forecast_response(
+            request, result.frame, result.device, result.elapsed_ms, result.backend,
+        )
 
     # Real inference
     predictor = KronosPredictorWrapper(
@@ -78,49 +95,26 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             x_timestamp=timestamps,
             pred_len=request.pred_len,
         )
-        return {
-            "ok": True,
-            "symbol": request.symbol,
-            "timeframe": request.timeframe,
-            "model_id": request.model_id,
-            "tokenizer_id": request.tokenizer_id,
-            "pred_len": request.pred_len,
-            "forecast": _frame_to_records(prob_result.mean_frame),
-            "probabilistic": {
-                "sample_count": prob_result.sample_count,
-                "upside_probability": round(prob_result.upside_probability, 4),
-                "volatility_amplification": round(prob_result.volatility_amplification, 4),
-                "forecast_range": {
-                    "min": round(prob_result.forecast_range[0], 2),
-                    "max": round(prob_result.forecast_range[1], 2),
-                },
-                "mean_final_close": round(prob_result.mean_final_close, 2),
+        prob_data = {
+            "sample_count": prob_result.sample_count,
+            "upside_probability": round(prob_result.upside_probability, 4),
+            "volatility_amplification": round(prob_result.volatility_amplification, 4),
+            "forecast_range": {
+                "min": round(prob_result.forecast_range[0], 2),
+                "max": round(prob_result.forecast_range[1], 2),
             },
-            "metadata": {
-                "device": prob_result.device,
-                "elapsed_ms": prob_result.elapsed_ms,
-                "backend": prob_result.backend,
-                "warning": RESEARCH_WARNING,
-            },
+            "mean_final_close": round(prob_result.mean_final_close, 2),
         }
+        return _build_forecast_response(
+            request, prob_result.mean_frame, prob_result.device,
+            prob_result.elapsed_ms, prob_result.backend, probabilistic=prob_data,
+        )
     else:
         # Single sample (original behavior)
         result = predictor.predict(df=df, x_timestamp=timestamps, pred_len=request.pred_len)
-        return {
-            "ok": True,
-            "symbol": request.symbol,
-            "timeframe": request.timeframe,
-            "model_id": request.model_id,
-            "tokenizer_id": request.tokenizer_id,
-            "pred_len": request.pred_len,
-            "forecast": _frame_to_records(result.frame),
-            "metadata": {
-                "device": result.device,
-                "elapsed_ms": result.elapsed_ms,
-                "backend": result.backend,
-                "warning": RESEARCH_WARNING,
-            },
-        }
+        return _build_forecast_response(
+            request, result.frame, result.device, result.elapsed_ms, result.backend,
+        )
 
 
 @dataclass
@@ -161,9 +155,6 @@ def batch_forecast_from_requests(
 
     if use_batch:
         # Prepare batch inputs
-        from kronos_fincept.predictor import KronosPredictorWrapper
-        from kronos_fincept.data_adapter import rows_to_dataframe
-
         predictor = KronosPredictorWrapper(
             model_id=requests[0].model_id,
             tokenizer_id=requests[0].tokenizer_id,

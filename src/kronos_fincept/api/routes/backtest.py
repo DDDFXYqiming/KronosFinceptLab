@@ -26,6 +26,120 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _fetch_and_prepare_data(
+    symbols: list[str],
+    start_date: str,
+    end_date: str,
+    window_size: int,
+    pred_len: int,
+) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """Fetch OHLCV data, build DataFrames, and align to common date range.
+
+    Returns (dfs, valid_symbols). Raises HTTPException if no valid data.
+    """
+    all_data: dict[str, list[dict[str, Any]]] = {}
+    for sym in symbols:
+        try:
+            rows = fetch_a_stock_ohlcv(sym, start_date, end_date)
+            if len(rows) < window_size + pred_len:
+                logger.warning("Insufficient data for %s: %d rows (need %d)",
+                               sym, len(rows), window_size + pred_len)
+                continue
+            all_data[sym] = rows
+        except Exception as exc:
+            logger.warning("Failed to fetch %s: %s", sym, exc)
+
+    if not all_data:
+        raise HTTPException(status_code=400, detail="No valid data for any symbol")
+
+    valid_symbols = list(all_data.keys())
+
+    dfs: dict[str, pd.DataFrame] = {}
+    for sym in valid_symbols:
+        df = pd.DataFrame(all_data[sym])
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        dfs[sym] = df
+
+    common_start = max(df["timestamp"].min() for df in dfs.values())
+    common_end = min(df["timestamp"].max() for df in dfs.values())
+    for sym in valid_symbols:
+        mask = (dfs[sym]["timestamp"] >= common_start) & (dfs[sym]["timestamp"] <= common_end)
+        dfs[sym] = dfs[sym][mask].reset_index(drop=True)
+
+    return dfs, valid_symbols
+
+
+def _run_ranking_backtest(
+    dfs: dict[str, pd.DataFrame],
+    valid_symbols: list[str],
+    predictor: DryRunPredictor,
+    window_size: int,
+    pred_len: int,
+    step: int,
+    top_k: int,
+    initial_equity: float = 100000.0,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Run the ranking backtest loop.
+
+    Returns (equity_curve, total_trades, winning_trades).
+    """
+    equity = initial_equity
+    equity_curve: list[dict[str, Any]] = []
+    total_trades = 0
+    winning_trades = 0
+    min_len = min(len(df) for df in dfs.values())
+
+    i = window_size
+    while i + step <= min_len:
+        predictions: list[tuple[str, float]] = []
+        for sym in valid_symbols:
+            df = dfs[sym]
+            window = df.iloc[i - window_size: i]
+            last_close = float(window.iloc[-1]["close"])
+            ohlcv_df = window[["open", "high", "low", "close"]].astype(float)
+            timestamps = pd.Series(pd.to_datetime(window["timestamp"]))
+            try:
+                result = predictor.predict(
+                    df=ohlcv_df,
+                    x_timestamp=timestamps,
+                    pred_len=pred_len,
+                )
+                pred_close = float(result.frame.iloc[-1]["close"])
+                predictions.append((sym, pred_close / last_close - 1.0))
+            except Exception:
+                continue
+
+        if not predictions:
+            i += step
+            continue
+
+        predictions.sort(key=lambda x: x[1], reverse=True)
+        selected = predictions[:top_k]
+        end_idx = min(i + step, min_len)
+        portfolio_return = 0.0
+        for sym, _ in selected:
+            df = dfs[sym]
+            entry_price = float(df.iloc[i]["close"])
+            exit_price = float(df.iloc[end_idx - 1]["close"])
+            ret = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
+            portfolio_return += ret / len(selected)
+            total_trades += 1
+            if ret > 0:
+                winning_trades += 1
+
+        equity *= (1 + portfolio_return)
+        equity_curve.append({
+            "date": str(dfs[valid_symbols[0]].iloc[i]["timestamp"]),
+            "equity": round(equity, 2),
+            "return": round(portfolio_return, 6),
+            "selected": [s[0] for s in selected],
+        })
+        i += step
+
+    return equity_curve, total_trades, winning_trades
+
+
 def _calculate_metrics(
     equity_curve: list[dict[str, Any]],
     total_trades: int,
@@ -105,105 +219,13 @@ async def backtest_ranking(req: BacktestRequestIn) -> BacktestResponseOut:
     started = time.perf_counter()
     predictor = DryRunPredictor() if req.dry_run else None
 
-    # Fetch data for all symbols
-    all_data: dict[str, list[dict[str, Any]]] = {}
-    for sym in req.symbols:
-        try:
-            rows = fetch_a_stock_ohlcv(sym, req.start_date, req.end_date)
-            if len(rows) < req.window_size + req.pred_len:
-                logger.warning("Insufficient data for %s: %d rows (need %d)",
-                               sym, len(rows), req.window_size + req.pred_len)
-                continue
-            all_data[sym] = rows
-        except Exception as exc:
-            logger.warning("Failed to fetch %s: %s", sym, exc)
+    dfs, valid_symbols = _fetch_and_prepare_data(
+        req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
+    )
 
-    if not all_data:
-        raise HTTPException(status_code=400, detail="No valid data for any symbol")
-
-    valid_symbols = list(all_data.keys())
-
-    # Build DataFrames
-    dfs: dict[str, pd.DataFrame] = {}
-    for sym in valid_symbols:
-        df = pd.DataFrame(all_data[sym])
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df = df.sort_values("timestamp").reset_index(drop=True)
-        dfs[sym] = df
-
-    # Find common date range
-    common_start = max(df["timestamp"].min() for df in dfs.values())
-    common_end = min(df["timestamp"].max() for df in dfs.values())
-
-    # Trim to common dates
-    for sym in valid_symbols:
-        mask = (dfs[sym]["timestamp"] >= common_start) & (dfs[sym]["timestamp"] <= common_end)
-        dfs[sym] = dfs[sym][mask].reset_index(drop=True)
-
-    # Run backtest
-    equity = 100000.0  # Starting capital
-    equity_curve: list[dict[str, Any]] = []
-    total_trades = 0
-    winning_trades = 0
-
-    # Get the minimum common length
-    min_len = min(len(df) for df in dfs.values())
-
-    i = req.window_size
-    while i + req.step <= min_len:
-        # Predict for each symbol
-        predictions: list[tuple[str, float]] = []
-        for sym in valid_symbols:
-            df = dfs[sym]
-            window = df.iloc[i - req.window_size : i]
-            last_close = float(window.iloc[-1]["close"])
-
-            # Simple dry-run prediction: use drift from predictor
-            ohlcv_df = window[["open", "high", "low", "close"]].astype(float)
-            timestamps = pd.Series(pd.to_datetime(window["timestamp"]))
-
-            try:
-                result = predictor.predict(
-                    df=ohlcv_df,
-                    x_timestamp=timestamps,
-                    pred_len=req.pred_len,
-                )
-                pred_close = float(result.frame.iloc[-1]["close"])
-                predictions.append((sym, pred_close / last_close - 1.0))
-            except Exception:
-                continue
-
-        if not predictions:
-            i += req.step
-            continue
-
-        # Rank by predicted return, pick top_k
-        predictions.sort(key=lambda x: x[1], reverse=True)
-        selected = predictions[: req.top_k]
-
-        # Calculate actual return over holding period
-        end_idx = min(i + req.step, min_len)
-        portfolio_return = 0.0
-        for sym, _ in selected:
-            df = dfs[sym]
-            entry_price = float(df.iloc[i]["close"])
-            exit_price = float(df.iloc[end_idx - 1]["close"])
-            ret = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
-            portfolio_return += ret / len(selected)
-
-            total_trades += 1
-            if ret > 0:
-                winning_trades += 1
-
-        equity *= (1 + portfolio_return)
-        equity_curve.append({
-            "date": str(dfs[valid_symbols[0]].iloc[i]["timestamp"]),
-            "equity": round(equity, 2),
-            "return": round(portfolio_return, 6),
-            "selected": [s[0] for s in selected],
-        })
-
-        i += req.step
+    equity_curve, total_trades, winning_trades = _run_ranking_backtest(
+        dfs, valid_symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
+    )
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     metrics = _calculate_metrics(equity_curve, total_trades, winning_trades)
@@ -228,99 +250,18 @@ async def backtest_ranking(req: BacktestRequestIn) -> BacktestResponseOut:
 @router.post("/backtest/report", response_model=BacktestReportResponseOut)
 async def backtest_report(req: BacktestReportRequestIn) -> BacktestReportResponseOut:
     """Run backtest and return HTML report string for frontend display."""
-    import math
-
     from kronos_fincept.backtest_report import BacktestReportGenerator
 
     started = time.perf_counter()
     predictor = DryRunPredictor() if req.dry_run else None
 
-    # Fetch data
-    all_data: dict[str, list[dict[str, Any]]] = {}
-    for sym in req.symbols:
-        try:
-            rows = fetch_a_stock_ohlcv(sym, req.start_date, req.end_date)
-            if len(rows) < req.window_size + req.pred_len:
-                logger.warning("Insufficient data for %s: %d rows (need %d)",
-                               sym, len(rows), req.window_size + req.pred_len)
-                continue
-            all_data[sym] = rows
-        except Exception as exc:
-            logger.warning("Failed to fetch %s: %s", sym, exc)
+    dfs, valid_symbols = _fetch_and_prepare_data(
+        req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
+    )
 
-    if not all_data:
-        raise HTTPException(status_code=400, detail="No valid data for any symbol")
-
-    valid_symbols = list(all_data.keys())
-
-    # Build DataFrames
-    dfs: dict[str, pd.DataFrame] = {}
-    for sym in valid_symbols:
-        df = pd.DataFrame(all_data[sym])
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df = df.sort_values("timestamp").reset_index(drop=True)
-        dfs[sym] = df
-
-    # Find common date range
-    common_start = max(df["timestamp"].min() for df in dfs.values())
-    common_end = min(df["timestamp"].max() for df in dfs.values())
-    for sym in valid_symbols:
-        mask = (dfs[sym]["timestamp"] >= common_start) & (dfs[sym]["timestamp"] <= common_end)
-        dfs[sym] = dfs[sym][mask].reset_index(drop=True)
-
-    # Run backtest
-    equity = 100000.0
-    equity_curve: list[dict[str, Any]] = []
-    total_trades = 0
-    winning_trades = 0
-    min_len = min(len(df) for df in dfs.values())
-
-    i = req.window_size
-    while i + req.step <= min_len:
-        predictions: list[tuple[str, float]] = []
-        for sym in valid_symbols:
-            df = dfs[sym]
-            window = df.iloc[i - req.window_size: i]
-            last_close = float(window.iloc[-1]["close"])
-            ohlcv_df = window[["open", "high", "low", "close"]].astype(float)
-            timestamps = pd.Series(pd.to_datetime(window["timestamp"]))
-            try:
-                result = predictor.predict(
-                    df=ohlcv_df,
-                    x_timestamp=timestamps,
-                    pred_len=req.pred_len,
-                )
-                pred_close = float(result.frame.iloc[-1]["close"])
-                predictions.append((sym, pred_close / last_close - 1.0))
-            except Exception:
-                continue
-
-        if not predictions:
-            i += req.step
-            continue
-
-        predictions.sort(key=lambda x: x[1], reverse=True)
-        selected = predictions[: req.top_k]
-        end_idx = min(i + req.step, min_len)
-        portfolio_return = 0.0
-        for sym, _ in selected:
-            df = dfs[sym]
-            entry_price = float(df.iloc[i]["close"])
-            exit_price = float(df.iloc[end_idx - 1]["close"])
-            ret = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
-            portfolio_return += ret / len(selected)
-            total_trades += 1
-            if ret > 0:
-                winning_trades += 1
-
-        equity *= (1 + portfolio_return)
-        equity_curve.append({
-            "date": str(dfs[valid_symbols[0]].iloc[i]["timestamp"]),
-            "equity": round(equity, 2),
-            "return": round(portfolio_return, 6),
-            "selected": [s[0] for s in selected],
-        })
-        i += req.step
+    equity_curve, total_trades, winning_trades = _run_ranking_backtest(
+        dfs, valid_symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
+    )
 
     metrics = _calculate_metrics(equity_curve, total_trades, winning_trades)
     metrics_dict = metrics.model_dump()
