@@ -11,12 +11,39 @@ Usage:
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import click
 
-from kronos_fincept.cli.commands import forecast, batch, data, backtest, serve, analyze, alert
+
+COMMANDS = {
+    "forecast": ("kronos_fincept.cli.commands.forecast", "forecast_cmd"),
+    "batch": ("kronos_fincept.cli.commands.batch", "batch_cmd"),
+    "data": ("kronos_fincept.cli.commands.data", "data_group"),
+    "backtest": ("kronos_fincept.cli.commands.backtest", "backtest_group"),
+    "serve": ("kronos_fincept.cli.commands.serve", "serve_cmd"),
+    "analyze": ("kronos_fincept.cli.commands.analyze", "analyze_group"),
+    "alert": ("kronos_fincept.cli.commands.alert", "alert_group"),
+}
 
 
-@click.group()
+class LazyCLI(click.Group):
+    """Click group that imports subcommands only when they are requested."""
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        return sorted(COMMANDS)
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        command_spec = COMMANDS.get(cmd_name)
+        if command_spec is None:
+            return None
+
+        module_name, attr_name = command_spec
+        module = import_module(module_name)
+        return getattr(module, attr_name)
+
+
+@click.group(cls=LazyCLI)
 @click.option("--output", "output_format", type=click.Choice(["json", "table"]), default="json",
               help="Output format (default: json)")
 @click.option("--verbose", is_flag=True, default=False, help="Verbose output")
@@ -26,16 +53,6 @@ def cli(ctx: click.Context, output_format: str, verbose: bool) -> None:
     ctx.ensure_object(dict)
     ctx.obj["output_format"] = output_format
     ctx.obj["verbose"] = verbose
-
-
-# Register subcommands
-cli.add_command(forecast.forecast_cmd, "forecast")
-cli.add_command(batch.batch_cmd, "batch")
-cli.add_command(data.data_group, "data")
-cli.add_command(backtest.backtest_group, "backtest")
-cli.add_command(serve.serve_cmd, "serve")
-cli.add_command(analyze.analyze_group, "analyze")
-cli.add_command(alert.alert_group, "alert")
 
 
 def main(argv: list[str] | None = None) -> int:

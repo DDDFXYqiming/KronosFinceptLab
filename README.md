@@ -32,7 +32,7 @@
 
 ## Current status
 
-Version: v8.4-dev
+Version: v8.4
 
 ## 已实现
 
@@ -127,7 +127,15 @@ Version: v8.4-dev
 - 所有 API 路由 handler 使用 `asyncio.to_thread()` 包装同步阻塞调用
 - 事件循环不再被数据获取、预测计算、回测循环阻塞
 
-### Rust-first 重构 Phase 0 (v8.4-dev)
+### 缓存与启动优化 (v8.4)
+- `DataSourceManager` 内存缓存增加 LRU 淘汰，避免长时间运行无限增长
+- `financial` 包和 CLI 子命令入口改为 lazy import，降低启动成本
+- `GlobalMarketSource` 改为单例并复用 Yahoo Finance 查询缓存，错误输出统一走 logging
+- 删除重复入口 `cli_legacy.py`
+- `start.bat` 启动前会运行 Web 依赖健康检查，输出 Node/npm/registry/Next/SWC 状态
+- 前端依赖锁定 `next@14.2.35`，并在验证当前平台 SWC native 包存在后设置 `NEXT_IGNORE_INCORRECT_LOCKFILE=1`，绕过 Next.js 14.2.35 对缺失跨平台 SWC lockfile 的错误自动 patch
+
+### Rust-first 重构 Phase 0 (v8.5-dev)
 - 新增 Cargo workspace：`crates/kronos-kernel` + `crates/kronos-python`
 - 新增 PyO3 native extension：`kronos_fincept_native`
 - 已接入可选 Rust POC kernel：RSI、MACD、Historical VaR

@@ -7,6 +7,7 @@ import time
 import json
 import os
 import logging
+from collections import OrderedDict
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -115,8 +116,15 @@ class DataSourceManager:
     def __init__(self, cache_dir: str = ".cache"):
         self.data_sources: Dict[str, DataSource] = {}
         self.cache_dir = cache_dir
-        self.memory_cache: Dict[str, Dict[str, Any]] = {}
+        self.memory_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
         self.memory_cache_ttl = 300  # 5分钟
+        try:
+            self.memory_cache_max_size = max(
+                1,
+                int(os.environ.get("KRONOS_MEMORY_CACHE_MAX_SIZE", "256"))
+            )
+        except ValueError:
+            self.memory_cache_max_size = 256
 
         # 创建缓存目录
         os.makedirs(cache_dir, exist_ok=True)
@@ -145,12 +153,22 @@ class DataSourceManager:
         key_data = f"{endpoint}:{json.dumps(kwargs, sort_keys=True)}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
+    def _set_memory_cache(self, cache_key: str, cache_entry: Dict[str, Any]) -> None:
+        """写入内存缓存并按 LRU 淘汰旧条目。"""
+        self.memory_cache[cache_key] = cache_entry
+        self.memory_cache.move_to_end(cache_key)
+
+        while len(self.memory_cache) > self.memory_cache_max_size:
+            evicted_key, _ = self.memory_cache.popitem(last=False)
+            logger.debug(f" 内存缓存 LRU 淘汰: {evicted_key}")
+
     def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
         """从缓存获取数据"""
         # 先检查内存缓存
         if cache_key in self.memory_cache:
             cache_entry = self.memory_cache[cache_key]
             if datetime.now().timestamp() < cache_entry["expire_at"]:
+                self.memory_cache.move_to_end(cache_key)
                 return cache_entry["data"]
             else:
                 del self.memory_cache[cache_key]
@@ -163,7 +181,7 @@ class DataSourceManager:
                     cache_entry = json.load(f)
                 if datetime.now().timestamp() < cache_entry["expire_at"]:
                     # 加载到内存缓存
-                    self.memory_cache[cache_key] = cache_entry
+                    self._set_memory_cache(cache_key, cache_entry)
                     return cache_entry["data"]
                 else:
                     os.remove(cache_file)
@@ -182,7 +200,7 @@ class DataSourceManager:
         }
 
         # 保存到内存缓存
-        self.memory_cache[cache_key] = cache_entry
+        self._set_memory_cache(cache_key, cache_entry)
 
         # 保存到文件缓存
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
@@ -216,7 +234,7 @@ class DataSourceManager:
         if use_cache:
             cache_key = self._get_cache_key(endpoint, **kwargs)
             cached_data = self._get_from_cache(cache_key)
-            if cached_data:
+            if cached_data is not None:
                 cached_data["from_cache"] = True
                 return cached_data
 

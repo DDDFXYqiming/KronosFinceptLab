@@ -1,9 +1,12 @@
 """
 Global market data sources (US, HK stocks).
 """
+import logging
+from collections import OrderedDict
 from typing import Optional, List, Dict, Any
-from datetime import datetime
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class GlobalMarketSource:
@@ -15,10 +18,34 @@ class GlobalMarketSource:
     - HK stocks (0700.HK, 9988.HK, etc.)
     - Crypto (BTC-USD, ETH-USD, etc.)
     """
-    
+
+    _instance: "GlobalMarketSource | None" = None
+
+    def __new__(cls) -> "GlobalMarketSource":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        self.cache = {}
-    
+        if getattr(self, "_initialized", False):
+            return
+        self.cache: OrderedDict[tuple[str, str, str], pd.DataFrame] = OrderedDict()
+        self.cache_max_size = 128
+        self._initialized = True
+
+    def _get_cached(self, cache_key: tuple[str, str, str]) -> Optional[pd.DataFrame]:
+        cached = self.cache.get(cache_key)
+        if cached is None:
+            return None
+        self.cache.move_to_end(cache_key)
+        return cached.copy()
+
+    def _save_cached(self, cache_key: tuple[str, str, str], df: pd.DataFrame) -> None:
+        self.cache[cache_key] = df.copy()
+        self.cache.move_to_end(cache_key)
+        while len(self.cache) > self.cache_max_size:
+            self.cache.popitem(last=False)
+
     def _convert_symbol(self, symbol: str, market: str = 'auto') -> str:
         """
         Convert symbol to Yahoo Finance format.
@@ -78,6 +105,10 @@ class GlobalMarketSource:
             import yfinance as yf
             
             yahoo_symbol = self._convert_symbol(symbol, market)
+            cache_key = (yahoo_symbol, period, interval)
+            cached = self._get_cached(cache_key)
+            if cached is not None:
+                return cached
             
             ticker = yf.Ticker(yahoo_symbol)
             df = ticker.history(period=period, interval=interval)
@@ -97,10 +128,12 @@ class GlobalMarketSource:
             # Add timestamp column
             df['timestamp'] = df.index
             
-            return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            result = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            self._save_cached(cache_key, result)
+            return result.copy()
             
         except Exception as e:
-            print(f"Error getting data for {symbol}: {e}")
+            logger.warning("Error getting data for %s: %s", symbol, e)
             return None
     
     def get_us_stock_data(

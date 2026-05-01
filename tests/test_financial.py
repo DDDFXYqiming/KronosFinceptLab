@@ -1,6 +1,10 @@
 """
 Tests for financial data module.
 """
+import sys
+import types
+
+import pandas as pd
 import pytest
 from kronos_fincept.financial.schemas import (
     FinancialData,
@@ -121,3 +125,50 @@ class TestFinancialDataManager:
         key = manager._get_cache_key("600519")
         assert "600519" in key
         assert len(key) > 10  # Should include date
+
+
+class TestGlobalMarketSource:
+    """Test global market source cache behavior."""
+
+    def test_global_market_source_is_singleton(self):
+        from kronos_fincept.financial.global_market import GlobalMarketSource
+
+        assert GlobalMarketSource() is GlobalMarketSource()
+
+    def test_stock_data_uses_shared_cache(self, monkeypatch):
+        from kronos_fincept.financial.global_market import GlobalMarketSource
+
+        calls = {"history": 0}
+
+        class FakeTicker:
+            def __init__(self, symbol):
+                self.symbol = symbol
+
+            def history(self, period, interval):
+                calls["history"] += 1
+                return pd.DataFrame(
+                    {
+                        "Open": [1.0],
+                        "High": [2.0],
+                        "Low": [0.5],
+                        "Close": [1.5],
+                        "Volume": [100],
+                    },
+                    index=pd.to_datetime(["2026-01-01"]),
+                )
+
+        monkeypatch.setitem(
+            sys.modules,
+            "yfinance",
+            types.SimpleNamespace(Ticker=FakeTicker),
+        )
+
+        source = GlobalMarketSource()
+        source.cache.clear()
+
+        first = source.get_stock_data("AAPL", market="us", period="1mo", interval="1d")
+        second = GlobalMarketSource().get_stock_data("AAPL", market="us", period="1mo", interval="1d")
+
+        assert calls["history"] == 1
+        assert first is not second
+        assert first.equals(second)
