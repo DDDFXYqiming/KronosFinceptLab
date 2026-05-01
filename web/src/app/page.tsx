@@ -26,11 +26,11 @@ export default function Dashboard() {
         <h1 className="text-3xl font-display">Dashboard</h1>
         <div className="flex items-center gap-2 text-sm">
           <div
-            className={`w-2 h-2 rounded-full ${
-              health?.status === "ok" ? "bg-accent-green" : "bg-accent-red"
+            className={`w-2 h-2 rounded-full animate-pulse-dot ${
+              health?.status === "ok" ? "bg-success" : "bg-error"
             }`}
           />
-          <span className="text-gray-400">
+          <span className="text-muted-foreground">
             {health?.status === "ok" ? "API Online" : "API Offline"}
           </span>
         </div>
@@ -42,7 +42,7 @@ export default function Dashboard() {
           <CardStat
             label="API Status"
             value={health?.status === "ok" ? "Online" : "Offline"}
-            color={health?.status === "ok" ? "text-accent-green" : "text-accent-red"}
+            color={health?.status === "ok" ? "text-success" : "text-error"}
           />
         </Card>
         <Card>
@@ -63,9 +63,9 @@ export default function Dashboard() {
       <Card>
         <CardTitle>Watchlist</CardTitle>
         {watchlist.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-muted-foreground">
             <p className="mb-2">No stocks in watchlist</p>
-            <Link href="/watchlist" className="text-primary-light hover:underline text-sm">
+            <Link href="/watchlist" className="text-accent hover:underline text-sm">
               Add stocks to your watchlist
             </Link>
           </div>
@@ -73,7 +73,7 @@ export default function Dashboard() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-700 text-gray-400">
+                <tr className="border-b border-border text-muted-foreground">
                   <th className="py-2 text-left">Symbol</th>
                   <th className="py-2 text-left">Market</th>
                   <th className="py-2 text-right">Actions</th>
@@ -81,17 +81,17 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {watchlist.map((item) => (
-                  <tr key={item.symbol} className="border-b border-gray-800 hover:bg-surface-overlay">
+                  <tr key={item.symbol} className="border-b border-border hover:bg-muted">
                     <td className="py-2 font-mono">{item.symbol}</td>
                     <td className="py-2">
-                      <span className="px-2 py-0.5 text-xs rounded bg-gray-700 text-gray-300">
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-muted text-muted-foreground border border-border">
                         {item.market}
                       </span>
                     </td>
                     <td className="py-2 text-right">
                       <Link
                         href={`/forecast?symbol=${item.symbol}`}
-                        className="text-primary-light hover:underline text-xs"
+                        className="text-accent hover:underline text-xs"
                       >
                         Forecast
                       </Link>
@@ -112,17 +112,17 @@ export default function Dashboard() {
             <Link
               key={link.href}
               href={link.href}
-              className="p-4 rounded-lg bg-surface-overlay/50 border border-gray-800 hover:bg-surface-overlay transition-colors"
+              className="p-4 rounded-xl bg-muted border border-border hover:bg-muted/80 hover:border-accent/20 transition-all duration-200"
             >
-              <h3 className="font-semibold text-primary-light">{link.label}</h3>
-              <p className="text-sm text-gray-400 mt-1">{link.desc}</p>
+              <h3 className="font-semibold text-accent">{link.label}</h3>
+              <p className="text-sm text-muted-foreground mt-1">{link.desc}</p>
             </Link>
           ))}
         </div>
       </Card>
 
       {/* Disclaimer */}
-      <div className="text-center text-xs text-gray-500 py-4">
+      <div className="text-center text-xs text-muted-foreground py-4">
         Research forecast only; not trading advice.
       </div>
     </div>

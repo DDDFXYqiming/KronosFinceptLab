@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import click
 
-from kronos_fincept.cli.commands import forecast, batch, data, backtest, serve, analyze
+from kronos_fincept.cli.commands import forecast, batch, data, backtest, serve, analyze, alert
 
 
 @click.group()
@@ -35,6 +35,7 @@ cli.add_command(data.data_group, "data")
 cli.add_command(backtest.backtest_group, "backtest")
 cli.add_command(serve.serve_cmd, "serve")
 cli.add_command(analyze.analyze_group, "analyze")
+cli.add_command(alert.alert_group, "alert")
 
 
 def main(argv: list[str] | None = None) -> int:

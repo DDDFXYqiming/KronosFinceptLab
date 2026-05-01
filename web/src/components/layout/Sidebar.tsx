@@ -23,13 +23,13 @@ export function Sidebar() {
     <aside
       className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ${
         sidebarOpen ? "w-60" : "w-16"
-      } bg-surface-raised border-r border-gray-800`}
+      } bg-card border-r border-border`}
     >
       {/* Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-gray-800">
-        <span className="text-xl font-bold text-primary-light">K</span>
+      <div className="flex items-center h-16 px-4 border-b border-border">
+        <span className="text-xl font-bold gradient-text">K</span>
         {sidebarOpen && (
-          <span className="ml-3 font-display text-lg bg-gradient-primary bg-clip-text text-transparent">
+          <span className="ml-3 font-display text-lg gradient-text">
             KronosFinceptLab
           </span>
         )}
@@ -43,10 +43,10 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center px-3 py-2.5 rounded-lg transition-colors ${
+              className={`flex items-center px-3 py-2.5 rounded-xl transition-all duration-200 ${
                 isActive
-                  ? "bg-primary/20 text-primary-light"
-                  : "text-gray-400 hover:bg-surface-overlay hover:text-gray-200"
+                  ? "bg-accent/10 text-accent border border-accent/20"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent"
               }`}
             >
               <span className="text-sm font-medium">
@@ -60,7 +60,7 @@ export function Sidebar() {
       {/* Footer */}
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
-          <div className="text-xs text-gray-500 text-center">
+          <div className="text-xs text-muted-foreground text-center font-mono">
             v8.0 -- Research Only
           </div>
         </div>

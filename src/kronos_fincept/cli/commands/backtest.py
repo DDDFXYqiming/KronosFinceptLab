@@ -3,11 +3,14 @@
 Examples:
     kronos backtest ranking --symbols 600519,000858 --start 20250101 --end 20260430 --top-k 1
     kronos backtest ranking --symbols 600519,000858 --start 20250101 --end 20260430 --dry-run --output table
+    kronos backtest ranking --symbols 600519,000858 --start 20250101 --end 20260430 --report
+    kronos backtest report ./backtest_report.html
 """
 
 from __future__ import annotations
 
 import json
+import os
 
 import click
 
@@ -24,6 +27,9 @@ def backtest_group() -> None:
     pass
 
 
+DEFAULT_REPORT_DIR = os.path.join(os.getcwd(), "backtest_reports")
+
+
 @backtest_group.command("ranking")
 @click.option("--symbols", "-s", type=str, required=True,
               help="Comma-separated stock symbols")
@@ -34,6 +40,7 @@ def backtest_group() -> None:
 @click.option("--window-size", type=int, default=60, help="Lookback window size")
 @click.option("--step", type=int, default=5, help="Rebalance step (trading days)")
 @click.option("--dry-run", is_flag=True, default=True, help="Use mock predictor")
+@click.option("--report", is_flag=True, default=False, help="Generate HTML report")
 @click.pass_context
 def backtest_ranking(
     ctx: click.Context,
@@ -45,6 +52,7 @@ def backtest_ranking(
     window_size: int,
     step: int,
     dry_run: bool,
+    report: bool,
 ) -> None:
     """Run ranking-based strategy backtest."""
     output_format = ctx.obj.get("output_format", "json")
@@ -196,3 +204,59 @@ def backtest_ranking(
         title, headers, rows_data = format_backtest_table(result)
         output_table(title, headers, rows_data)
         click.echo(f"[warn]  {RESEARCH_WARNING}")
+
+    # Generate HTML report if --report flag is set
+    if report:
+        _generate_report(result, symbol_list, start, end)
+
+
+def _generate_report(result: dict, symbols: list[str], start: str, end: str) -> None:
+    """Generate HTML report from backtest result and print file path."""
+    from kronos_fincept.backtest_report import BacktestReportGenerator
+
+    gen = BacktestReportGenerator()
+    symbol_str = "_".join(symbols[:3])
+    if len(symbols) > 3:
+        symbol_str += f"_+{len(symbols) - 3}"
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in symbol_str)
+    filename = f"backtest_{safe_name}_{start}_{end}.html"
+    os.makedirs(DEFAULT_REPORT_DIR, exist_ok=True)
+    output_path = os.path.join(DEFAULT_REPORT_DIR, filename)
+
+    metrics = result.get("metrics", {})
+    equity_curve = result.get("equity_curve", [])
+    html = gen.generate_html(
+        symbol=", ".join(symbols),
+        metrics=metrics,
+        equity_curve=equity_curve,
+        strategy_name="Ranking Strategy",
+    )
+    gen.export_html(html, output_path)
+    click.echo(f"")
+    click.echo(f"Report saved to: {output_path}")
+
+
+@backtest_group.command("report")
+@click.argument("filepath", type=str)
+def open_report(filepath: str) -> None:
+    """Open a generated backtest HTML report in the browser."""
+    import subprocess
+    import sys
+
+    if not os.path.exists(filepath):
+        click.echo(f"Error: File not found: {filepath}", err=True)
+        raise SystemExit(1)
+
+    abs_path = os.path.abspath(filepath)
+
+    # Determine platform and open
+    if sys.platform == "win32":
+        os.startfile(abs_path)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.run(["open", abs_path], check=False)
+    else:
+        # Linux / WSL
+        try:
+            subprocess.run(["xdg-open", abs_path], check=False)
+        except FileNotFoundError:
+            click.echo(f"Report ready at: {abs_path}")

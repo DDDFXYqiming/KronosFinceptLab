@@ -170,3 +170,25 @@ class HealthResponseOut(BaseModel):
     model_id: str
     device: str
     uptime_seconds: float
+
+
+# ── Backtest Report ─────────────────────────────────────────
+
+class BacktestReportRequestIn(BaseModel):
+    """POST /api/backtest/report request body."""
+    symbols: list[str] = Field(..., min_length=1, description="Stock symbols to backtest")
+    start_date: str = Field(..., description="Start date YYYYMMDD")
+    end_date: str = Field(..., description="End date YYYYMMDD")
+    top_k: int = Field(default=3, ge=1, description="Number of top stocks to hold")
+    pred_len: int = Field(default=5, ge=1, le=60)
+    window_size: int = Field(default=60, ge=10, le=250, description="Lookback window for each prediction")
+    step: int = Field(default=5, ge=1, description="Trading days between rebalances")
+    dry_run: bool = True
+    benchmark: str | None = Field(default=None, description="Benchmark index symbol, e.g. '000300' for CSI 300")
+    strategy_name: str = Field(default="Ranking Strategy", description="Display name for the report")
+
+
+class BacktestReportResponseOut(BaseModel):
+    ok: bool
+    html: str
+    filename: str
