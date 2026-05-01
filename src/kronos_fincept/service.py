@@ -48,6 +48,8 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             "ok": True,
             "symbol": request.symbol,
             "timeframe": request.timeframe,
+            "model_id": request.model_id,
+            "tokenizer_id": request.tokenizer_id,
             "pred_len": request.pred_len,
             "forecast": _frame_to_records(result.frame),
             "metadata": {
@@ -80,6 +82,8 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             "ok": True,
             "symbol": request.symbol,
             "timeframe": request.timeframe,
+            "model_id": request.model_id,
+            "tokenizer_id": request.tokenizer_id,
             "pred_len": request.pred_len,
             "forecast": _frame_to_records(prob_result.mean_frame),
             "probabilistic": {
@@ -106,6 +110,8 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             "ok": True,
             "symbol": request.symbol,
             "timeframe": request.timeframe,
+            "model_id": request.model_id,
+            "tokenizer_id": request.tokenizer_id,
             "pred_len": request.pred_len,
             "forecast": _frame_to_records(result.frame),
             "metadata": {
