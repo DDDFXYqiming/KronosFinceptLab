@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v8.1
+Version: v8.2
 
 ## 已实现
 
@@ -114,6 +114,12 @@ Version: v8.1
 - `start.bat` 换行符 LF→CRLF + UTF-8 编码 + 自动安装依赖
 - 预测 API 返回缺少 `model_id`/`tokenizer_id` 导致前端 `KeyError`
 - 前端图表 `D1`~`D5` 相对日期无法解析
+
+### 后端代码重构 (v8.2)
+- service.py 提取 `_build_forecast_response()` 公共响应构建
+- backtest.py 提取 `_fetch_and_prepare_data()` 和 `_run_ranking_backtest()` 公共回测引擎
+- alert_engine.py 提取 `_evaluate_alert_conditions()` 通用告警条件评估
+- schemas.py 添加 `ForecastRow.from_pydantic()` 和 `ForecastRequest.from_pydantic()` 类方法
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
