@@ -32,7 +32,7 @@
 
 ## Current status
 
-Version: v8.4
+Version: v8.5
 
 ## 已实现
 
@@ -135,11 +135,14 @@ Version: v8.4
 - `start.bat` 启动前会运行 Web 依赖健康检查，输出 Node/npm/registry/Next/SWC 状态
 - 前端依赖锁定 `next@14.2.35`，并在验证当前平台 SWC native 包存在后设置 `NEXT_IGNORE_INCORRECT_LOCKFILE=1`，绕过 Next.js 14.2.35 对缺失跨平台 SWC lockfile 的错误自动 patch
 
-### Rust-first 重构 Phase 0 (v8.5-dev)
+### Rust-first 重构 (v8.5)
 - 新增 Cargo workspace：`crates/kronos-kernel` + `crates/kronos-python`
 - 新增 PyO3 native extension：`kronos_fincept_native`
-- 已接入可选 Rust POC kernel：RSI、MACD、Historical VaR
+- 已接入可选 Rust kernel：SMA、EMA、RSI、MACD、Bollinger、KDJ、ATR、OBV
+- 已接入可选 Rust 风险指标：Historical VaR、Sharpe、Sortino、Max Drawdown、Volatility
 - Python fallback 默认保留，设置 `USE_RUST_ENGINE=1` 或 `USE_RUST_ENGINE=auto` 后才尝试 Rust 路径
+- Rust/Python parity 测试覆盖 Phase 1 指标与风险函数
+- DCF、Derivatives、Portfolio 的 Rust 化边界见 `docs/RUST_PHASE2_BOUNDARY.md`
 - 当前不迁移数据源、Kronos 推理、LLM 分析和前端
 
 ### MCP 服务器

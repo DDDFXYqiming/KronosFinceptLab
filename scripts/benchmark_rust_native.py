@@ -39,18 +39,43 @@ def _bench_mode(mode: str, prices: list[float], returns: np.ndarray) -> dict[str
     native._load_native.cache_clear()
     indicators = TechnicalIndicators()
     risk = RiskCalculator()
+    highs = [price * 1.012 for price in prices]
+    lows = [price * 0.991 for price in prices]
+    volumes = [1_000_000.0 + (i % 17) * 25_000.0 for i in range(len(prices))]
 
     # Warm up imports, caches, and extension dispatch.
+    indicators.calculate_sma(prices, 20)
+    indicators.calculate_ema(prices, 20)
     indicators.calculate_rsi(prices, 14)
     indicators.calculate_macd(prices)
+    indicators.calculate_bollinger_bands(prices, 20, 2.0)
+    indicators.calculate_kdj(highs, lows, prices, 9)
+    indicators.calculate_atr(highs, lows, prices, 14)
+    indicators.calculate_obv(prices, volumes)
     risk.calculate_var_historical(returns, 0.95)
+    risk.calculate_sharpe_ratio(returns)
+    risk.calculate_sortino_ratio(returns)
+    risk.calculate_max_drawdown(prices)
+    risk.calculate_volatility(returns)
 
     return {
+        "sma_ms": _time_call(lambda: indicators.calculate_sma(prices, 20), 200),
+        "ema_ms": _time_call(lambda: indicators.calculate_ema(prices, 20), 200),
         "rsi_ms": _time_call(lambda: indicators.calculate_rsi(prices, 14), 200),
         "macd_ms": _time_call(lambda: indicators.calculate_macd(prices), 100),
+        "bollinger_ms": _time_call(
+            lambda: indicators.calculate_bollinger_bands(prices, 20, 2.0), 100
+        ),
+        "kdj_ms": _time_call(lambda: indicators.calculate_kdj(highs, lows, prices, 9), 100),
+        "atr_ms": _time_call(lambda: indicators.calculate_atr(highs, lows, prices, 14), 100),
+        "obv_ms": _time_call(lambda: indicators.calculate_obv(prices, volumes), 200),
         "historical_var_ms": _time_call(
             lambda: risk.calculate_var_historical(returns, 0.95), 500
         ),
+        "sharpe_ms": _time_call(lambda: risk.calculate_sharpe_ratio(returns), 500),
+        "sortino_ms": _time_call(lambda: risk.calculate_sortino_ratio(returns), 500),
+        "max_drawdown_ms": _time_call(lambda: risk.calculate_max_drawdown(prices), 500),
+        "volatility_ms": _time_call(lambda: risk.calculate_volatility(returns), 500),
     }
 
 

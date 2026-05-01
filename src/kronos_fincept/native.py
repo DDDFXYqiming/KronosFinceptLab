@@ -41,6 +41,31 @@ def native_available() -> bool:
     return _load_native() is not None
 
 
+def _native_function(name: str) -> Any | None:
+    native = _load_native()
+    if native is None:
+        return None
+    return getattr(native, name, None)
+
+
+def calculate_sma(prices: Iterable[float], period: int) -> list[float] | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_sma")
+    if calculate is None:
+        return None
+    return list(calculate([float(p) for p in prices], int(period)))
+
+
+def calculate_ema(prices: Iterable[float], period: int) -> list[float] | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_ema")
+    if calculate is None:
+        return None
+    return list(calculate([float(p) for p in prices], int(period)))
+
+
 def calculate_rsi(prices: Iterable[float], period: int) -> list[float] | None:
     if not is_rust_engine_requested():
         return None
@@ -74,6 +99,90 @@ def calculate_macd(
     }
 
 
+def calculate_bollinger_bands(
+    prices: Iterable[float],
+    period: int,
+    std_dev: float,
+) -> dict[str, list[float]] | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_bollinger_bands")
+    if calculate is None:
+        return None
+    result = calculate(
+        [float(p) for p in prices],
+        int(period),
+        float(std_dev),
+    )
+    return {
+        "upper": list(result["upper"]),
+        "middle": list(result["middle"]),
+        "lower": list(result["lower"]),
+    }
+
+
+def calculate_kdj(
+    highs: Iterable[float],
+    lows: Iterable[float],
+    closes: Iterable[float],
+    period: int,
+) -> dict[str, list[float]] | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_kdj")
+    if calculate is None:
+        return None
+    result = calculate(
+        [float(p) for p in highs],
+        [float(p) for p in lows],
+        [float(p) for p in closes],
+        int(period),
+    )
+    return {
+        "k": list(result["k"]),
+        "d": list(result["d"]),
+        "j": list(result["j"]),
+    }
+
+
+def calculate_atr(
+    highs: Iterable[float],
+    lows: Iterable[float],
+    closes: Iterable[float],
+    period: int,
+) -> list[float] | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_atr")
+    if calculate is None:
+        return None
+    return list(
+        calculate(
+            [float(p) for p in highs],
+            [float(p) for p in lows],
+            [float(p) for p in closes],
+            int(period),
+        )
+    )
+
+
+def calculate_obv(
+    closes: Iterable[float],
+    volumes: Iterable[float],
+) -> list[float] | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_obv")
+    if calculate is None:
+        return None
+    return list(
+        calculate(
+            [float(p) for p in closes],
+            [float(v) for v in volumes],
+        )
+    )
+
+
 def calculate_var_historical(
     returns: Iterable[float],
     confidence_level: float,
@@ -89,5 +198,73 @@ def calculate_var_historical(
             [float(r) for r in returns],
             float(confidence_level),
             int(holding_period),
+        )
+    )
+
+
+def calculate_sharpe_ratio(
+    returns: Iterable[float],
+    risk_free_rate: float,
+    trading_days_per_year: int,
+) -> float | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_sharpe_ratio")
+    if calculate is None:
+        return None
+    return float(
+        calculate(
+            [float(r) for r in returns],
+            float(risk_free_rate),
+            int(trading_days_per_year),
+        )
+    )
+
+
+def calculate_sortino_ratio(
+    returns: Iterable[float],
+    risk_free_rate: float,
+    target_return: float,
+    trading_days_per_year: int,
+) -> float | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_sortino_ratio")
+    if calculate is None:
+        return None
+    return float(
+        calculate(
+            [float(r) for r in returns],
+            float(risk_free_rate),
+            float(target_return),
+            int(trading_days_per_year),
+        )
+    )
+
+
+def calculate_max_drawdown(prices: Iterable[float]) -> float | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_max_drawdown")
+    if calculate is None:
+        return None
+    return float(calculate([float(p) for p in prices]))
+
+
+def calculate_volatility(
+    returns: Iterable[float],
+    annualize: bool,
+    trading_days_per_year: int,
+) -> float | None:
+    if not is_rust_engine_requested():
+        return None
+    calculate = _native_function("calculate_volatility")
+    if calculate is None:
+        return None
+    return float(
+        calculate(
+            [float(r) for r in returns],
+            bool(annualize),
+            int(trading_days_per_year),
         )
     )

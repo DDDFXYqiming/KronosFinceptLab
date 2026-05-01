@@ -185,6 +185,10 @@ class TechnicalIndicators:
         Returns:
             SMA result
         """
+        rust_values = native.calculate_sma(prices, period)
+        if rust_values is not None:
+            return SMA(values=rust_values, period=period)
+
         if len(prices) < period:
             return SMA(values=[], period=period)
         
@@ -206,6 +210,10 @@ class TechnicalIndicators:
         Returns:
             EMA result
         """
+        rust_values = native.calculate_ema(prices, period)
+        if rust_values is not None:
+            return EMA(values=rust_values, period=period)
+
         if len(prices) < period:
             return EMA(values=[], period=period)
         
@@ -339,6 +347,16 @@ class TechnicalIndicators:
         Returns:
             BollingerBands result
         """
+        rust_result = native.calculate_bollinger_bands(prices, period, std_dev)
+        if rust_result is not None:
+            return BollingerBands(
+                upper=rust_result["upper"],
+                middle=rust_result["middle"],
+                lower=rust_result["lower"],
+                period=period,
+                std_dev=std_dev,
+            )
+
         if len(prices) < period:
             return BollingerBands(upper=[], middle=[], lower=[], period=period, std_dev=std_dev)
         
@@ -383,6 +401,10 @@ class TechnicalIndicators:
         Returns:
             KDJ result
         """
+        rust_result = native.calculate_kdj(highs, lows, closes, period)
+        if rust_result is not None:
+            return KDJ(k=rust_result["k"], d=rust_result["d"], j=rust_result["j"])
+
         if len(closes) < period:
             return KDJ(k=[], d=[], j=[])
         
@@ -437,6 +459,10 @@ class TechnicalIndicators:
         Returns:
             ATR result
         """
+        rust_values = native.calculate_atr(highs, lows, closes, period)
+        if rust_values is not None:
+            return ATR(values=rust_values, period=period)
+
         if len(closes) < period + 1:
             return ATR(values=[], period=period)
         
@@ -474,6 +500,10 @@ class TechnicalIndicators:
         Returns:
             OBV result
         """
+        rust_values = native.calculate_obv(closes, volumes)
+        if rust_values is not None:
+            return OBV(values=rust_values)
+
         if len(closes) < 2 or len(volumes) < 2:
             return OBV(values=[])
         
