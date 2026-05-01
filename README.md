@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v8.2
+Version: v8.3
 
 ## 已实现
 
@@ -120,6 +120,10 @@ Version: v8.2
 - backtest.py 提取 `_fetch_and_prepare_data()` 和 `_run_ranking_backtest()` 公共回测引擎
 - alert_engine.py 提取 `_evaluate_alert_conditions()` 通用告警条件评估
 - schemas.py 添加 `ForecastRow.from_pydantic()` 和 `ForecastRequest.from_pydantic()` 类方法
+
+### 异步性能优化 (v8.3)
+- 所有 API 路由 handler 使用 `asyncio.to_thread()` 包装同步阻塞调用
+- 事件循环不再被数据获取、预测计算、回测循环阻塞
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
