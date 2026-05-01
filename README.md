@@ -5,7 +5,7 @@
 ## 技术栈
 
 - **后端**: FastAPI (Python 3.11+)
-- **前端**: Next.js + Tailwind CSS + Framer Motion
+- **前端**: Next.js + Tailwind CSS + Framer Motion + TradingView Lightweight Charts
 - **CLI**: Click（支持 Hermes Agent 远程调用）
 
 ## 数据源与模型
@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v7.0 (已完成)
+Version: v8.0
 
 ## 已实现
 
@@ -84,6 +84,32 @@ Version: v7.0 (已完成)
 - 投资建议生成
 - 风险评估报告
 - CLI 命令：`kronos analyze ai-analyze/ai-report/ai-question`
+
+### Web 前端 (v8.0)
+- **TradingView K 线图表** — 预测叠加显示
+- **AI 分析面板** — DeepSeek + Kronos 全量分析
+- **自选股管理** — localStorage 持久化，Zustand 状态管理
+- **批量预测对比** — 多股票排序，Recharts 可视化
+- **深浅色主题切换** — 支持系统偏好检测
+- **设计系统** — 渐变文字、圆角卡片、入场动画
+
+### 实时监控与告警 (v8.0)
+- 价格变动告警（价格突破阈值、涨跌幅）
+- 技术指标异动告警（RSI 超买超卖、MACD 金叉死叉）
+- 预测偏差告警（实际价格与预测值偏离超过阈值）
+- 成交量异动告警（成交量超过均值 N 倍）
+- 通知渠道：飞书 Webhook / 邮件（可配置）
+- CLI 命令：`kronos alert add/list/remove/check/monitor`
+- API 路由：`/api/alert/*`
+
+### 回测报告增强 (v8.0)
+- HTML 报告生成（暗色主题，matplotlib 图表内嵌 base64）
+- 收益曲线可视化
+- 回撤曲线可视化
+- 多策略对比回测
+- 基准对比（沪深300、标普500 等）
+- CLI 命令：`kronos backtest ranking --report`
+- API 路由：`POST /api/backtest/report`
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
@@ -161,6 +187,27 @@ kronos data fetch --symbol 600519 --start 20240101 --end 20260429
 
 # 策略回测
 kronos backtest ranking --symbols 600519,000858 --start 20240101 --end 20260429
+
+# 策略回测并生成 HTML 报告
+kronos backtest ranking --symbols 600519,000858 --start 20240101 --end 20260429 --report
+
+# AI 分析（A股）
+kronos analyze ai-analyze --symbol 600519 --market cn
+
+# AI 分析（美股）
+kronos analyze ai-analyze --symbol AAPL --market us
+
+# 添加告警规则
+kronos alert add --type price_change --symbol 600519 --threshold 3.0
+
+# 查看告警规则
+kronos alert list
+
+# 检查所有告警
+kronos alert check
+
+# 启动持续监控
+kronos alert monitor --interval 5
 
 # 启动 API 服务
 kronos serve --port 8000
