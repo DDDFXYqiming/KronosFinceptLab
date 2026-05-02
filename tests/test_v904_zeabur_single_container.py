@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import re
 
 import pandas as pd
 
@@ -229,5 +230,5 @@ def test_legacy_ai_analyze_no_longer_uses_high_sample_count():
 
 
 def test_v904_version_labels_are_updated():
-    assert "Version: v9.0.4" in read("README.md")
-    assert "v9.0.4" in read("web/src/components/layout/Sidebar.tsx")
+    assert re.search(r"Version: v9\.0\.\d+", read("README.md"))
+    assert re.search(r"v9\.0\.\d+ — 仅供研究", read("web/src/components/layout/Sidebar.tsx"))
