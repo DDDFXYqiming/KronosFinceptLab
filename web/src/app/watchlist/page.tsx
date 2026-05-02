@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useAppStore } from "@/stores/app";
-import { DEFAULT_MARKET, DEFAULT_SYMBOL, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { DEFAULT_MARKET, MARKET_OPTIONS, getMarketLabel, type Market } from "@/lib/markets";
+import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
 import { useSessionState } from "@/lib/useSessionState";
 
 export default function WatchlistPage() {
@@ -13,10 +14,10 @@ export default function WatchlistPage() {
   const [market, setMarket] = useSessionState<Market>("kronos-watchlist-market", DEFAULT_MARKET);
 
   const handleAdd = () => {
-    const trimmed = symbol.trim().toUpperCase();
-    if (!trimmed) return;
+    const requestSymbol = normalizeSymbol(symbol);
+    if (!requestSymbol) return;
     addToWatchlist({
-      symbol: trimmed,
+      symbol: requestSymbol,
       market,
       addedAt: new Date().toISOString(),
     });
@@ -99,7 +100,7 @@ export default function WatchlistPage() {
                     </td>
                     <td className="py-3">
                       <span className="px-2 py-0.5 text-xs rounded bg-gray-700 text-gray-300">
-                        {item.market}
+                        {getMarketLabel(item.market)}
                       </span>
                     </td>
                     <td className="py-3 text-gray-400 text-xs">

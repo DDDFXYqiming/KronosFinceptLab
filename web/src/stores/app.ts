@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { type Market } from "@/lib/defaults";
+import type { Market } from "@/lib/markets";
 
 interface WatchlistItem {
   symbol: string;

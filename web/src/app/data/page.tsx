@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, DataResponse, SearchResult, formatApiError } from "@/lib/api";
-import { DEFAULT_MARKET, DEFAULT_SYMBOL } from "@/lib/defaults";
+import { api, formatApiError } from "@/lib/api";
+import { DEFAULT_MARKET } from "@/lib/markets";
+import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
+import type { DataResponse, SearchResult } from "@/types/api";
 
 export default function DataPage() {
   const queryClient = useQueryClient();
@@ -22,8 +24,9 @@ export default function DataPage() {
   const [error, setError] = useSessionState("kronos-data-error", "");
 
   const handleSearch = async (forceRefresh = false) => {
-    if (!query) return;
-    const key = queryKeys.search(query);
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return;
+    const key = queryKeys.search(trimmedQuery);
     const cached = forceRefresh ? undefined : queryClient.getQueryData<{ ok: boolean; results: SearchResult[] }>(key);
     if (cached) {
       setSearchResults(cached.results);
@@ -39,7 +42,7 @@ export default function DataPage() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: () => api.search(query),
+        queryFn: ({ signal }) => api.search(trimmedQuery, { signal }),
       });
       setSearchResults(res.results);
     } catch (e: any) {
@@ -50,9 +53,10 @@ export default function DataPage() {
   };
 
   const handleFetch = async (forceRefresh = false) => {
-    if (!symbol) return;
+    const requestSymbol = normalizeSymbol(symbol);
+    if (!requestSymbol) return;
     const key = queryKeys.data({
-      symbol,
+      symbol: requestSymbol,
       market: DEFAULT_MARKET,
       startDate,
       endDate,
@@ -72,7 +76,7 @@ export default function DataPage() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: () => api.getData(symbol, startDate, endDate),
+        queryFn: ({ signal }) => api.getData(requestSymbol, startDate, endDate, { signal }),
       });
       setData(res);
     } catch (e: any) {
@@ -109,8 +113,8 @@ export default function DataPage() {
           <div className="mt-4 space-y-1">
             {searchResults.map((r) => (
               <button
-                key={r.code}
-                onClick={() => { setSymbol(r.code); setSearchResults([]); }}
+                key={`${r.market}-${r.code}`}
+                onClick={() => { setSymbol(normalizeSymbol(r.code)); setSearchResults([]); }}
                 className="w-full text-left px-3 py-2 rounded hover:bg-surface-overlay flex justify-between"
               >
                 <span className="font-mono">{r.code}</span>
@@ -177,7 +181,7 @@ export default function DataPage() {
               </thead>
               <tbody>
                 {data.rows.map((row) => (
-                  <tr key={`${row.timestamp}-${row.close}`} className="border-b border-gray-800 hover:bg-surface-overlay">
+                  <tr key={`${data.symbol}-${row.timestamp}`} className="border-b border-gray-800 hover:bg-surface-overlay">
                     <td className="py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td>
                     <td className="py-1.5 text-right">{row.open.toFixed(2)}</td>
                     <td className="py-1.5 text-right">{row.high.toFixed(2)}</td>

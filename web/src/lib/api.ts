@@ -1,4 +1,47 @@
+import type {
+  AIAnalyzeRequest,
+  AIAnalyzeResponse,
+  AgentAnalyzeRequest,
+  AgentAnalyzeResponse,
+  BacktestResponse,
+  BatchResponse,
+  DataResponse,
+  ForecastRequest,
+  ForecastResponse,
+  HealthResponse,
+  IndicatorResponse,
+  SearchResult,
+} from "@/types/api";
+
+export type {
+  AIAnalyzeRequest,
+  AIAnalyzeResponse,
+  AgentAnalyzeRequest,
+  AgentAnalyzeResponse,
+  AgentReport,
+  AgentStep,
+  AgentToolCall,
+  BacktestMetrics,
+  BacktestResponse,
+  BatchResponse,
+  DataResponse,
+  ForecastRequest,
+  ForecastResponse,
+  ForecastRow,
+  GlobalDataResponse,
+  HealthResponse,
+  IndicatorResponse,
+  RankedSignal,
+  SearchResult,
+} from "@/types/api";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
+const DEFAULT_TIMEOUT_MS = 45000;
+
+export interface ApiClientOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -30,222 +73,6 @@ export function formatApiError(error: unknown, fallback = "请求失败"): strin
   return fallback;
 }
 
-export interface ForecastRow {
-  timestamp: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
-  amount?: number;
-}
-
-export interface ForecastRequest {
-  symbol: string;
-  timeframe?: string;
-  pred_len: number;
-  rows: ForecastRow[];
-  dry_run?: boolean;
-  model_id?: string;
-  tokenizer_id?: string;
-  temperature?: number;
-  top_k?: number;
-  top_p?: number;
-}
-
-export interface ForecastResponse {
-  ok: boolean;
-  symbol: string;
-  forecast: ForecastRow[];
-  metadata: {
-    device: string;
-    elapsed_ms: number;
-    backend: string;
-    warning: string;
-    model_cached?: boolean;
-    cache_key?: string;
-    load_wait_ms?: number;
-    inference_wait_ms?: number;
-  };
-  error?: string;
-  probability?: number;
-  signal?: string;
-}
-
-export interface RankedSignal {
-  rank: number;
-  symbol: string;
-  last_close: number;
-  predicted_close: number;
-  predicted_return: number;
-  elapsed_ms: number;
-}
-
-export interface BatchResponse {
-  ok: boolean;
-  rankings: RankedSignal[];
-  metadata: { device: string; elapsed_ms: number; warning: string };
-}
-
-export interface DataResponse {
-  ok: boolean;
-  symbol: string;
-  count: number;
-  rows: ForecastRow[];
-}
-
-export interface SearchResult {
-  code: string;
-  name: string;
-  market: string;
-}
-
-export interface BacktestMetrics {
-  total_return: number;
-  annualized_return: number;
-  sharpe_ratio: number;
-  max_drawdown: number;
-  total_trades: number;
-  win_rate: number;
-  avg_holding_days: number;
-}
-
-export interface BacktestResponse {
-  ok: boolean;
-  symbols: string[];
-  metrics: BacktestMetrics;
-  equity_curve: { date: string; equity: number; return: number; selected: string[] }[];
-  metadata: { device: string; elapsed_ms: number; warning: string };
-}
-
-export interface HealthResponse {
-  status: string;
-  version: string;
-  model_loaded: boolean;
-  model_id: string;
-  tokenizer_id?: string | null;
-  device: string;
-  uptime_seconds: number;
-  runtime_mode: string;
-  model_enabled: boolean;
-  deep_check: boolean;
-  capabilities?: Record<string, boolean>;
-  model_error?: string | null;
-}
-
-export interface GlobalDataResponse {
-  ok: boolean;
-  symbol: string;
-  market: string;
-  count: number;
-  rows: ForecastRow[];
-}
-
-// ── v8.0 New Types ───────────────────────────────────────────────
-
-export interface AIAnalyzeRequest {
-  symbol: string;
-  market: string;
-}
-
-export interface AIAnalyzeResponse {
-  ok: boolean;
-  symbol: string;
-  market: string;
-  summary: string;
-  detailed_analysis: string;
-  recommendation: string;
-  confidence: number;
-  risk_level: string;
-  current_price: number;
-  risk_metrics: Record<string, number> | null;
-  kronos_prediction: {
-    model: string;
-    prediction_days: number;
-    forecast: ForecastRow[];
-    probabilistic: Record<string, any> | null;
-  } | null;
-  timestamp: string;
-  error?: string;
-}
-
-export interface AgentToolCall {
-  name: string;
-  status: string;
-  summary: string;
-  elapsed_ms: number;
-  metadata: Record<string, any>;
-}
-
-export interface AgentStep {
-  name: string;
-  status: string;
-  summary: string;
-  elapsed_ms: number;
-}
-
-export interface AgentReport {
-  conclusion: string;
-  short_term_prediction: string;
-  technical: string;
-  fundamentals: string;
-  risk: string;
-  uncertainties: string;
-  recommendation: string;
-  confidence: number;
-  risk_level: string;
-  disclaimer: string;
-}
-
-export interface AgentAnalyzeRequest {
-  question: string;
-  symbol?: string;
-  market?: string;
-  context?: Record<string, any>;
-  dry_run?: boolean;
-}
-
-export interface AgentAnalyzeResponse {
-  ok: boolean;
-  question: string;
-  symbol: string | null;
-  symbols: string[];
-  market: string | null;
-  report: AgentReport;
-  final_report: string;
-  recommendation: string;
-  confidence: number;
-  risk_level: string;
-  current_price: number | null;
-  risk_metrics: Record<string, number> | null;
-  kronos_prediction: {
-    model: string;
-    prediction_days: number;
-    forecast: ForecastRow[];
-    probabilistic: Record<string, any> | null;
-    metadata?: Record<string, any>;
-  } | null;
-  tool_calls: AgentToolCall[];
-  steps: AgentStep[];
-  timestamp: string;
-  rejected: boolean;
-  security_reason?: string | null;
-  clarification_required: boolean;
-  clarifying_question?: string | null;
-  error?: string | null;
-}
-
-export interface IndicatorResponse {
-  ok: boolean;
-  symbol: string;
-  market: string;
-  current_price: number;
-  indicators: Record<string, any>;
-  data_points: number;
-}
-
-// ── Fetch Helper ─────────────────────────────────────────────────
-
 function logApiFailure(path: string, status: number, requestId: string | null, message: string) {
   if (typeof window === "undefined") return;
   const safePath = path.split("?")[0];
@@ -265,109 +92,153 @@ function enrichGatewayError(status: number, message: string): string {
   );
 }
 
-async function fetchApi<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (!headers.has("Content-Type")) {
+function joinUrl(base: string, path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
+  return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+}
+
+function createRequestSignal(options: ApiClientOptions): { signal: AbortSignal; cleanup: () => void } {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  const abortFromCaller = () => controller.abort();
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener("abort", abortFromCaller, { once: true });
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      globalThis.clearTimeout(timeoutId);
+      options.signal?.removeEventListener("abort", abortFromCaller);
+    },
+  };
+}
+
+async function parseErrorResponse(res: Response): Promise<Record<string, any>> {
+  const text = await res.text().catch(() => "");
+  if (!text) return { error: res.statusText };
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
+}
+
+async function fetchApi<T>(
+  path: string,
+  options: RequestInit & ApiClientOptions = {}
+): Promise<T> {
+  const { timeoutMs, signal: callerSignal, ...requestOptions } = options;
+  const headers = new Headers(requestOptions.headers);
+  if (requestOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    const message = enrichGatewayError(res.status, err.error || err.detail || `HTTP ${res.status}`);
-    const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || null;
-    const type = err.type || err.code || "api_error";
-    logApiFailure(path, res.status, requestId, message);
-    throw new ApiError(message, { status: res.status, requestId, path, type });
+  const { signal, cleanup } = createRequestSignal({ timeoutMs, signal: callerSignal });
+  try {
+    const res = await fetch(joinUrl(API_BASE, path), {
+      ...requestOptions,
+      headers,
+      signal,
+    });
+
+    if (!res.ok) {
+      const err = await parseErrorResponse(res);
+      const message = enrichGatewayError(res.status, err.error || err.detail || `HTTP ${res.status}`);
+      const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || null;
+      const type = err.type || err.code || "api_error";
+      logApiFailure(path, res.status, requestId, message);
+      throw new ApiError(message, { status: res.status, requestId, path, type });
+    }
+
+    return res.json();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      const message = "请求超时或已取消";
+      logApiFailure(path, 0, null, message);
+      throw new ApiError(message, { status: 0, requestId: null, path, type: "request_aborted" });
+    }
+    throw error;
+  } finally {
+    cleanup();
   }
-  return res.json();
 }
 
-// ── API Client ───────────────────────────────────────────────────
+function get<T>(path: string, options?: ApiClientOptions): Promise<T> {
+  return fetchApi<T>(path, { method: "GET", ...options });
+}
+
+function post<T>(path: string, body: unknown, options?: ApiClientOptions): Promise<T> {
+  return fetchApi<T>(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+    ...options,
+  });
+}
 
 export const api = {
-  health: () => fetchApi<HealthResponse>("/health"),
+  health: (options?: ApiClientOptions) => get<HealthResponse>("/health", options),
 
-  forecast: (req: ForecastRequest) =>
-    fetchApi<ForecastResponse>("/forecast", {
-      method: "POST",
-      body: JSON.stringify(req),
-    }),
+  forecast: (req: ForecastRequest, options?: ApiClientOptions) =>
+    post<ForecastResponse>("/forecast", req, options),
 
-  batch: (assets: ForecastRequest[], pred_len: number, dry_run = false) =>
-    fetchApi<BatchResponse>("/batch", {
-      method: "POST",
-      body: JSON.stringify({ assets, pred_len, dry_run }),
-    }),
+  batch: (assets: ForecastRequest[], pred_len: number, dry_run = false, options?: ApiClientOptions) =>
+    post<BatchResponse>("/batch", { assets, pred_len, dry_run }, options),
 
-  getData: (symbol: string, startDate: string, endDate: string) =>
-    fetchApi<DataResponse>(`/data/a-stock/${symbol}?start_date=${startDate}&end_date=${endDate}`),
+  getData: (symbol: string, startDate: string, endDate: string, options?: ApiClientOptions) =>
+    get<DataResponse>(`/data/a-stock/${symbol}?start_date=${startDate}&end_date=${endDate}`, options),
 
-  search: (query: string) =>
-    fetchApi<{ ok: boolean; results: SearchResult[] }>(`/data/search?q=${encodeURIComponent(query)}`),
+  search: (query: string, options?: ApiClientOptions) =>
+    get<{ ok: boolean; results: SearchResult[] }>(`/data/search?q=${encodeURIComponent(query)}`, options),
 
-  backtest: (params: {
-    symbols: string[];
-    start_date: string;
-    end_date: string;
-    top_k: number;
-    pred_len?: number;
-    dry_run?: boolean;
-  }) =>
-    fetchApi<BacktestResponse>("/backtest/ranking", {
-      method: "POST",
-      body: JSON.stringify(params),
-    }),
+  backtest: (
+    params: {
+      symbols: string[];
+      start_date: string;
+      end_date: string;
+      top_k: number;
+      pred_len?: number;
+      dry_run?: boolean;
+    },
+    options?: ApiClientOptions
+  ) => post<BacktestResponse>("/backtest/ranking", params, options),
 
-  // v8.0: Global market data
-  getGlobalData: (symbol: string, market: string, startDate: string, endDate: string) =>
-    fetchApi<DataResponse>(
-      `/data/global/${symbol}?market=${market}&start_date=${startDate}&end_date=${endDate}`
+  getGlobalData: (
+    symbol: string,
+    market: string,
+    startDate: string,
+    endDate: string,
+    options?: ApiClientOptions
+  ) =>
+    get<DataResponse>(
+      `/data/global/${symbol}?market=${market}&start_date=${startDate}&end_date=${endDate}`,
+      options
     ),
 
-  // v8.0: Technical indicators
-  getIndicators: (symbol: string, market: string = "cn") =>
-    fetchApi<IndicatorResponse>(`/data/indicator/${symbol}?market=${market}`),
+  getIndicators: (symbol: string, market = "cn", options?: ApiClientOptions) =>
+    get<IndicatorResponse>(`/data/indicator/${symbol}?market=${market}`, options),
 
-  // v8.0: AI-powered analysis
-  aiAnalyze: (req: AIAnalyzeRequest) =>
-    fetchApi<AIAnalyzeResponse>("/v1/analyze/ai", {
-      method: "POST",
-      body: JSON.stringify(req),
-    }),
+  aiAnalyze: (req: AIAnalyzeRequest, options?: ApiClientOptions) =>
+    post<AIAnalyzeResponse>("/v1/analyze/ai", req, options),
 
-  // v8.7: Stateless natural-language agent analysis
-  agentAnalyze: (req: AgentAnalyzeRequest) =>
-    fetchApi<AgentAnalyzeResponse>("/v1/analyze/agent", {
-      method: "POST",
-      body: JSON.stringify(req),
-    }),
+  agentAnalyze: (req: AgentAnalyzeRequest, options?: ApiClientOptions) =>
+    post<AgentAnalyzeResponse>("/v1/analyze/agent", req, options),
 
-  // CFA analysis endpoints
-  analyzeDcf: (symbol: string, market: string) =>
-    fetchApi<any>("/v1/analyze/dcf", {
-      method: "POST",
-      body: JSON.stringify({ symbol, market }),
-    }),
+  analyzeDcf: (symbol: string, market: string, options?: ApiClientOptions) =>
+    post<any>("/v1/analyze/dcf", { symbol, market }, options),
 
-  analyzeRisk: (symbol: string, market: string) =>
-    fetchApi<any>("/v1/analyze/risk", {
-      method: "POST",
-      body: JSON.stringify({ symbol, market }),
-    }),
+  analyzeRisk: (symbol: string, market: string, options?: ApiClientOptions) =>
+    post<any>("/v1/analyze/risk", { symbol, market }, options),
 
-  analyzePortfolio: (symbols: string[], market: string) =>
-    fetchApi<any>("/v1/analyze/portfolio", {
-      method: "POST",
-      body: JSON.stringify({ symbols, market }),
-    }),
+  analyzePortfolio: (symbols: string[], market: string, options?: ApiClientOptions) =>
+    post<any>("/v1/analyze/portfolio", { symbols, market }, options),
 
-  analyzeDerivative: (symbol: string, market: string) =>
-    fetchApi<any>("/v1/analyze/derivative", {
-      method: "POST",
-      body: JSON.stringify({ symbol, market }),
-    }),
+  analyzeDerivative: (symbol: string, market: string, options?: ApiClientOptions) =>
+    post<any>("/v1/analyze/derivative", { symbol, market }, options),
 };

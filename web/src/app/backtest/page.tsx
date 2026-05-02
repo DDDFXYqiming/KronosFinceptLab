@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, BacktestResponse, formatApiError } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 import { formatPercent, formatNumber } from "@/lib/utils";
-import { DEFAULT_BACKTEST_SYMBOLS } from "@/lib/defaults";
+import { DEFAULT_BACKTEST_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
+import type { BacktestResponse } from "@/types/api";
 
 export default function BacktestPage() {
   const queryClient = useQueryClient();
@@ -21,7 +22,7 @@ export default function BacktestPage() {
   const [error, setError] = useSessionState("kronos-backtest-error", "");
 
   const handleBacktest = async (forceRefresh = false) => {
-    const symbolList = symbols.split(",").map((s) => s.trim()).filter(Boolean);
+    const symbolList = normalizeSymbols(symbols);
     const key = queryKeys.backtest({ symbols: symbolList, startDate, endDate, topK });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<BacktestResponse>(key);
     if (cached) {
@@ -38,14 +39,14 @@ export default function BacktestPage() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: () =>
+        queryFn: ({ signal }) =>
           api.backtest({
             symbols: symbolList,
             start_date: startDate,
             end_date: endDate,
             top_k: topK,
             dry_run: false,
-          }),
+          }, { signal }),
       });
       setResult(res);
     } catch (e: any) {
@@ -54,6 +55,11 @@ export default function BacktestPage() {
       setLoading(false);
     }
   };
+
+  const equityValues = result?.equity_curve.map((point) => point.equity) || [];
+  const minEquity = equityValues.length ? Math.min(...equityValues) : 0;
+  const maxEquity = equityValues.length ? Math.max(...equityValues) : 0;
+  const equityRange = maxEquity - minEquity || 1;
 
   return (
     <div className="space-y-6">
@@ -147,10 +153,7 @@ export default function BacktestPage() {
             <div className="h-64 overflow-x-auto">
               <div className="flex items-end gap-1 h-full min-w-max">
                 {result.equity_curve.map((point, i) => {
-                  const minEq = Math.min(...result.equity_curve.map((p) => p.equity));
-                  const maxEq = Math.max(...result.equity_curve.map((p) => p.equity));
-                  const range = maxEq - minEq || 1;
-                  const height = ((point.equity - minEq) / range) * 100;
+                  const height = ((point.equity - minEquity) / equityRange) * 100;
                   return (
                     <div
                       key={`${point.date}-${point.equity}`}

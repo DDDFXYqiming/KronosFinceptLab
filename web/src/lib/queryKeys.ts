@@ -1,13 +1,5 @@
-import type { Market } from "@/lib/defaults";
-
-function normalizeSymbol(symbol: string): string {
-  return symbol.trim().toUpperCase();
-}
-
-export function normalizeSymbols(symbols: string[] | string): string[] {
-  const parts = Array.isArray(symbols) ? symbols : symbols.split(",");
-  return parts.map(normalizeSymbol).filter(Boolean);
-}
+import type { Market } from "@/lib/markets";
+import { normalizeSymbol, normalizeSymbols } from "@/lib/symbols";
 
 export const queryKeys = {
   all: ["kronos"] as const,

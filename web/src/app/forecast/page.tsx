@@ -5,10 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, DataResponse, ForecastRow, ForecastResponse, formatApiError } from "@/lib/api";
-import { DEFAULT_MARKET, DEFAULT_SYMBOL, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { ApiError, api, formatApiError } from "@/lib/api";
+import { DEFAULT_MARKET, MARKET_OPTIONS, normalizeMarket, type Market } from "@/lib/markets";
+import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
+import type { DataResponse, ForecastResponse, ForecastRow } from "@/types/api";
 import {
   createChart,
   IChartApi,
@@ -31,20 +33,58 @@ function toChartTime(ts: string, baseDate?: string): string {
   return ts.slice(0, 10);
 }
 
+function formatForecastDataError(
+  error: unknown,
+  symbol: string,
+  market: Market,
+  startDate: string,
+  endDate: string
+): string {
+  if (error instanceof ApiError && error.status === 404) {
+    const requestId = error.requestId ? ` request_id=${error.requestId}` : "";
+    const marketLabel = MARKET_OPTIONS.find((option) => option.value === market)?.label || market;
+    const defaultHint = symbol !== DEFAULT_SYMBOL
+      ? `如果要看${DEFAULT_SYMBOL_NAME}，请使用代码 ${DEFAULT_SYMBOL}。`
+      : "";
+    return (
+      `未找到 ${symbol} 在 ${startDate}~${endDate} 的${marketLabel}K线数据。` +
+      `请确认代码、市场和日期范围。${defaultHint}${requestId}`
+    );
+  }
+  return formatApiError(error, "行情获取失败");
+}
+
+function ForecastEmptyState({ symbol }: { symbol: string }) {
+  return (
+    <Card>
+      <CardTitle>未加载行情</CardTitle>
+      <div className="py-12 text-center">
+        <p className="text-base font-medium text-foreground">
+          当前没有可显示的 K 线数据
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          请确认 {symbol || "该标的"} 的代码、市场和日期范围；{DEFAULT_SYMBOL_NAME}代码为 {DEFAULT_SYMBOL}。
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 function ForecastContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const symbolParam = searchParams.get("symbol");
-  const marketParam = searchParams.get("market") as Market | null;
+  const marketParam = searchParams.get("market");
+  const hasMarketParam = marketParam !== null;
   const [symbol, setSymbol] = useSessionState(
     "kronos-forecast-symbol",
-    symbolParam || DEFAULT_SYMBOL,
+    symbolParam ? normalizeSymbol(symbolParam) : DEFAULT_SYMBOL,
     { preferInitial: Boolean(symbolParam) }
   );
   const [market, setMarket] = useSessionState<Market>(
     "kronos-forecast-market",
-    marketParam || DEFAULT_MARKET,
-    { preferInitial: Boolean(marketParam) }
+    normalizeMarket(marketParam, DEFAULT_MARKET),
+    { preferInitial: hasMarketParam }
   );
   const [startDate, setStartDate] = useSessionState("kronos-forecast-start-date", "20250101");
   const [endDate, setEndDate] = useSessionState("kronos-forecast-end-date", "20260430");
@@ -58,23 +98,31 @@ function ForecastContent() {
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const hasChartData = data.length > 0;
+
+  const clearForecastState = useCallback(() => {
+    setData([]);
+    setPrediction(null);
+    setPredResult(null);
+  }, [setData, setPrediction, setPredResult]);
 
   const applyDataResponse = useCallback((res: DataResponse) => {
     if (res.rows && res.rows.length > 0) {
       setData(res.rows);
       setError("");
     } else {
-      setError("该代码/日期范围无数据返回。");
-      setData([]);
+      setError(`未找到 ${res.symbol || normalizeSymbol(symbol)} 在 ${startDate}~${endDate} 的K线数据。请确认代码、市场和日期范围。`);
+      clearForecastState();
     }
-  }, [setData, setError]);
+  }, [clearForecastState, setData, setError, symbol, startDate, endDate]);
 
   const handleFetchData = useCallback(async (forceRefresh = false) => {
-    if (!symbol) return;
+    const requestSymbol = normalizeSymbol(symbol);
+    if (!requestSymbol) return;
     setError("");
     setPrediction(null);
     setPredResult(null);
-    const key = queryKeys.data({ symbol, market, startDate, endDate });
+    const key = queryKeys.data({ symbol: requestSymbol, market, startDate, endDate });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<DataResponse>(key);
     if (cached) {
       applyDataResponse(cached);
@@ -88,15 +136,15 @@ function ForecastContent() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: () =>
+        queryFn: ({ signal }) =>
           market === "cn"
-            ? api.getData(symbol, startDate, endDate)
-            : api.getGlobalData(symbol, market, startDate, endDate),
+            ? api.getData(requestSymbol, startDate, endDate, { signal })
+            : api.getGlobalData(requestSymbol, market, startDate, endDate, { signal }),
       });
       applyDataResponse(res);
     } catch (e: any) {
-      setError(formatApiError(e));
-      setData([]);
+      setError(formatForecastDataError(e, requestSymbol, market, startDate, endDate));
+      clearForecastState();
     } finally {
       setLoading(false);
     }
@@ -110,7 +158,7 @@ function ForecastContent() {
     setError,
     setPrediction,
     setPredResult,
-    setData,
+    clearForecastState,
   ]);
 
   // Load data from URL params on mount
@@ -123,6 +171,7 @@ function ForecastContent() {
 
   // Create/destroy chart
   useEffect(() => {
+    if (!hasChartData) return;
     if (!chartContainerRef.current) return;
     const chart = createChart(chartContainerRef.current, {
       layout: {
@@ -179,12 +228,19 @@ function ForecastContent() {
     return () => {
       window.removeEventListener("resize", handleResize);
       chart.remove();
+      chartRef.current = null;
+      candlestickSeriesRef.current = null;
+      lineSeriesRef.current = null;
     };
-  }, []);
+  }, [hasChartData]);
 
   // Update candlestick data
   useEffect(() => {
-    if (!candlestickSeriesRef.current || data.length === 0) return;
+    if (!candlestickSeriesRef.current) return;
+    if (data.length === 0) {
+      candlestickSeriesRef.current.setData([]);
+      return;
+    }
     const ohlcData: CandlestickData[] = data.map((row) => ({
       time: toChartTime(row.timestamp),
       open: row.open,
@@ -227,8 +283,10 @@ function ForecastContent() {
       setError("请先加载数据再运行预测。");
       return;
     }
+    const requestSymbol = normalizeSymbol(symbol);
+    if (!requestSymbol) return;
     const key = queryKeys.forecast({
-      symbol,
+      symbol: requestSymbol,
       market,
       predLen: 5,
       rowCount: data.length,
@@ -249,13 +307,13 @@ function ForecastContent() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: () =>
+        queryFn: ({ signal }) =>
           api.forecast({
-            symbol,
+            symbol: requestSymbol,
             pred_len: 5,
             rows: data,
             dry_run: false,
-          }),
+          }, { signal }),
       });
       applyForecastResponse(res);
     } catch (e: any) {
@@ -369,20 +427,23 @@ function ForecastContent() {
         </div>
       )}
 
-      {/* Chart */}
-      <Card>
-        <CardTitle>
-          {symbol} — {data.length} 根K线
-          {predResult && (
-            <span className="text-sm font-normal text-gray-400 ml-4">
-              预测: {predResult.forecast?.length || 0} 步
-              {predResult.metadata.elapsed_ms &&
-                ` (${predResult.metadata.elapsed_ms}ms)`}
-            </span>
-          )}
-        </CardTitle>
-        <div ref={chartContainerRef} className="w-full h-[500px]" />
-      </Card>
+      {hasChartData ? (
+        <Card>
+          <CardTitle>
+            {symbol} — {data.length} 根K线
+            {predResult && (
+              <span className="text-sm font-normal text-gray-400 ml-4">
+                预测: {predResult.forecast?.length || 0} 步
+                {predResult.metadata.elapsed_ms &&
+                  ` (${predResult.metadata.elapsed_ms}ms)`}
+              </span>
+            )}
+          </CardTitle>
+          <div ref={chartContainerRef} className="w-full h-[500px]" />
+        </Card>
+      ) : (
+        <ForecastEmptyState symbol={normalizeSymbol(symbol)} />
+      )}
 
       {/* Prediction Stats */}
       {predResult && predictedClose !== null && (
@@ -432,7 +493,7 @@ function ForecastContent() {
               <tbody>
                 {data.slice(-50).map((row) => (
                   <tr
-                    key={`${row.timestamp}-${row.close}`}
+                    key={`${symbol}-${row.timestamp}`}
                     className="border-b border-gray-800 hover:bg-surface-overlay"
                   >
                     <td className="py-1.5 font-mono text-xs">

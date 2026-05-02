@@ -5,10 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, AgentAnalyzeResponse, formatApiError } from "@/lib/api";
-import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, type Market } from "@/lib/defaults";
+import { api, formatApiError } from "@/lib/api";
+import { normalizeMarket, type Market } from "@/lib/markets";
+import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
+import type { AgentAnalyzeResponse } from "@/types/api";
 
 const LOADING_STEPS = ["理解问题", "获取行情", "调用预测模型", "汇总报告"];
 const EXAMPLES = [
@@ -111,9 +113,11 @@ function AnalysisContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const symbolParam = searchParams.get("symbol");
-  const marketParam = searchParams.get("market") as Market | null;
+  const marketParam = searchParams.get("market");
+  const normalizedMarketParam: Market | undefined = marketParam ? normalizeMarket(marketParam) : undefined;
+  const normalizedSymbolParam = symbolParam ? normalizeSymbol(symbolParam) : undefined;
   const initialQuestion = symbolParam
-    ? `分析 ${symbolParam} 的短期走势和风险`
+    ? `分析 ${normalizedSymbolParam || symbolParam} 的短期走势和风险`
     : `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`;
   const [question, setQuestion] = useSessionState(
     "kronos-analysis-question",
@@ -131,8 +135,8 @@ function AnalysisContent() {
     if (!prompt) return;
     const key = queryKeys.agent({
       question: prompt,
-      symbol: symbolParam || undefined,
-      market: marketParam || undefined,
+      symbol: normalizedSymbolParam,
+      market: normalizedMarketParam,
     });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
@@ -150,16 +154,16 @@ function AnalysisContent() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: () =>
+        queryFn: ({ signal }) =>
           api.agentAnalyze({
             question: prompt,
-            symbol: symbolParam || undefined,
-            market: marketParam || undefined,
+            symbol: normalizedSymbolParam,
+            market: normalizedMarketParam,
             context: {
               entry: "web-analysis",
               default_symbol: DEFAULT_SYMBOL,
             },
-          }),
+          }, { signal }),
       });
       setResult(res);
     } catch (e: any) {
@@ -305,9 +309,9 @@ function AnalysisContent() {
             <Card>
               <CardTitle>工具调用</CardTitle>
               <div className="space-y-3">
-                {result.tool_calls.map((call, index) => (
+                {result.tool_calls.map((call) => (
                   <div
-                    key={`${call.name}-${index}`}
+                    key={`${call.name}-${call.status}-${call.elapsed_ms}-${call.summary.slice(0, 24)}`}
                     className="flex flex-col gap-1 border border-border rounded-lg px-3 py-2 bg-muted"
                   >
                     <div className="flex items-center justify-between gap-3">

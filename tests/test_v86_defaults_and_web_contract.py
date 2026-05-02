@@ -31,11 +31,14 @@ def test_default_model_and_tokenizer_are_kronos_base(monkeypatch):
 
 def test_web_settings_removed_and_defaults_are_shared():
     defaults = (ROOT / "web/src/lib/defaults.ts").read_text(encoding="utf-8")
+    symbols = (ROOT / "web/src/lib/symbols.ts").read_text(encoding="utf-8")
     sidebar = (ROOT / "web/src/components/layout/Sidebar.tsx").read_text(encoding="utf-8")
     settings = (ROOT / "web/src/app/settings/page.tsx").read_text(encoding="utf-8")
 
-    assert 'DEFAULT_SYMBOL = "600036"' in defaults
-    assert 'DEFAULT_SYMBOL_NAME = "招商银行"' in defaults
+    assert 'DEFAULT_SYMBOL = "600036"' in symbols
+    assert 'DEFAULT_SYMBOL_NAME = "招商银行"' in symbols
+    assert "DEFAULT_SYMBOL" in defaults
+    assert "DEFAULT_SYMBOL_NAME" in defaults
     assert 'DEFAULT_MODEL_ID = "NeoQuasar/Kronos-base"' in defaults
     assert 'DEFAULT_TOKENIZER_ID = "NeoQuasar/Kronos-Tokenizer-base"' in defaults
     assert 'href: "/settings"' not in sidebar

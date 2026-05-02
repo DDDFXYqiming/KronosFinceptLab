@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardTitle, CardStat } from "@/components/ui/Card";
-import { api, HealthResponse } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAppStore } from "@/stores/app";
+import type { HealthResponse } from "@/types/api";
 
 export default function Dashboard() {
   const [health, setHealth] = useState<HealthResponse | null>(null);

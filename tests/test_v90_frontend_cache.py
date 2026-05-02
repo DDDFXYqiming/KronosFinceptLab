@@ -23,6 +23,7 @@ def test_v90_react_query_provider_is_global():
 
 def test_v90_query_keys_cover_core_web_requests():
     query_keys = read("web/src/lib/queryKeys.ts")
+    symbols = read("web/src/lib/symbols.ts")
 
     for key in [
         "health",
@@ -36,7 +37,8 @@ def test_v90_query_keys_cover_core_web_requests():
         assert f"{key}:" in query_keys
 
     assert "normalizeSymbols" in query_keys
-    assert "trim().toUpperCase()" in query_keys
+    assert "normalizeSymbol" in query_keys
+    assert "trim().toUpperCase()" in symbols
 
 
 def test_v90_api_errors_include_request_id_and_path():

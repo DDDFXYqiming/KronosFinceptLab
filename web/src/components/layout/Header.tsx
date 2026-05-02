@@ -10,7 +10,7 @@ export function Header() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
   const { data: health } = useQuery({
     queryKey: queryKeys.health(),
-    queryFn: api.health,
+    queryFn: ({ signal }) => api.health({ signal }),
     refetchInterval: 30000,
   });
 
