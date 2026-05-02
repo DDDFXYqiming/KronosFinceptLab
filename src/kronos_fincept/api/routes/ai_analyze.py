@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import json
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -48,7 +49,77 @@ class AIAnalyzeResponse(BaseModel):
     error: str | None = None
 
 
+class AgentAnalyzeRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="Natural-language analysis question")
+    symbol: str | None = Field(default=None, description="Optional explicit symbol override")
+    market: str | None = Field(default=None, description="Optional market override")
+    context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
+    dry_run: bool = Field(default=False, description="Use deterministic Kronos dry-run for tests")
+
+
+class AgentAnalyzeResponse(BaseModel):
+    ok: bool
+    question: str
+    symbol: str | None = None
+    symbols: list[str] = Field(default_factory=list)
+    market: str | None = None
+    report: dict[str, Any]
+    final_report: str
+    recommendation: str
+    confidence: float
+    risk_level: str
+    current_price: float | None = None
+    risk_metrics: dict[str, Any] | None = None
+    kronos_prediction: dict[str, Any] | None = None
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    timestamp: str
+    rejected: bool = False
+    security_reason: str | None = None
+    clarification_required: bool = False
+    clarifying_question: str | None = None
+    error: str | None = None
+
+
 # ── Endpoints ──
+
+
+@router.post("/agent", response_model=AgentAnalyzeResponse)
+async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
+    """Run the shared stateless natural-language AI analysis agent."""
+    try:
+        from kronos_fincept.agent import analyze_investment_question
+
+        result = await asyncio.to_thread(
+            analyze_investment_question,
+            req.question,
+            symbol=req.symbol,
+            market=req.market,
+            context=req.context,
+            dry_run=req.dry_run,
+        )
+        return AgentAnalyzeResponse(**result.to_dict())
+    except Exception as exc:
+        logger.exception("Agent analysis failed")
+        from datetime import datetime
+
+        return AgentAnalyzeResponse(
+            ok=False,
+            question=req.question,
+            report={
+                "conclusion": "Agent 分析失败。",
+                "risk": str(exc),
+                "disclaimer": "本报告仅供研究，不构成投资建议。",
+            },
+            final_report=f"Agent 分析失败：{exc}",
+            recommendation="失败",
+            confidence=0.0,
+            risk_level="未知",
+            tool_calls=[],
+            steps=[{"name": "执行", "status": "failed", "summary": str(exc), "elapsed_ms": 0}],
+            timestamp=datetime.now().isoformat(),
+            error=str(exc),
+        )
 
 
 @router.post("/ai", response_model=AIAnalyzeResponse)

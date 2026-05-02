@@ -32,7 +32,7 @@
 
 ## Current status
 
-Version: v8.6
+Version: v8.7
 
 ## 已实现
 
@@ -85,11 +85,11 @@ Version: v8.6
 - 自然语言股票分析
 - 投资建议生成
 - 风险评估报告
-- CLI 命令：`kronos analyze ai-analyze/ai-report/ai-question`
+- CLI 命令：`kronos analyze agent/ai-analyze/ai-report/ai-question`
 
 ### Web 前端 (v8.0)
 - **TradingView K 线图表** — 预测叠加显示
-- **AI 分析面板** — DeepSeek + Kronos 全量分析
+- **AI 分析面板** — 无记忆自然语言 Agent，DeepSeek + Kronos 全量分析
 - **自选股管理** — localStorage 持久化，Zustand 状态管理
 - **批量预测对比** — 多股票排序，Recharts 可视化
 - **设计系统** — 渐变文字、圆角卡片、入场动画
@@ -151,6 +151,13 @@ Version: v8.6
 - 默认 tokenizer 统一为 `NeoQuasar/Kronos-Tokenizer-base`
 - 预测、分析、批量、回测、数据页使用 sessionStorage 保留页面切换前的输入与结果
 - 默认 A 股标的统一为 `600036` 招商银行，Web 默认输入和 CLI/README 示例同步更新
+
+### Web/CLI/API AI Agent (v8.7)
+- 新增共享无记忆 Agent 服务：自然语言问题会先做能力范围和 prompt 注入校验，再解析标的并编排行情、财务、技术指标、风险指标、Kronos 预测和 DeepSeek 汇总
+- Web “AI 分析”改为对话式入口，切换页面后保留当前会话输入与结果，但不写入长期投资偏好
+- API 新增 `POST /api/v1/analyze/agent`，返回结构化报告、工具调用轨迹、执行步骤、拒绝/澄清信息
+- CLI 新增 `kronos analyze agent --question ...`，旧 `ai-question` 复用同一套 Agent 安全策略
+- Web、CLI、API 共享 prompt 注入和能力边界防护：拒绝泄露系统提示/密钥、越权工具、项目外任务和无关高风险操作
 
 ### MCP 服务器
 - `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
@@ -234,6 +241,9 @@ kronos backtest ranking --symbols 600036,000858 --start 20240101 --end 20260429 
 
 # AI 分析（A股）
 kronos analyze ai-analyze --symbol 600036 --market cn
+
+# 自然语言 Agent 分析
+kronos analyze agent --question "帮我看看招商银行现在能不能买"
 
 # AI 分析（美股）
 kronos analyze ai-analyze --symbol AAPL --market us

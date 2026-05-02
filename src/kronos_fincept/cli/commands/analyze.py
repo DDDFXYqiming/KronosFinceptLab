@@ -526,6 +526,48 @@ def market_summary(ctx, output_format):
         return 1
 
 
+@analyze_group.command("agent")
+@click.option("--question", required=True, help="Natural-language investment or project question")
+@click.option("--symbol", default=None, help="Optional explicit stock symbol")
+@click.option("--market", type=click.Choice(["cn", "hk", "us", "commodity"]), default=None, help="Optional market override")
+@click.option("--dry-run", is_flag=True, default=False, help="Use deterministic Kronos dry-run predictor")
+@click.option("--output", "output_format", type=click.Choice(["json", "text"]), default="text")
+@click.pass_context
+def agent(ctx, question, symbol, market, dry_run, output_format):
+    """Stateless natural-language AI analysis agent shared with Web/API."""
+    try:
+        from kronos_fincept.agent import analyze_investment_question
+
+        result = analyze_investment_question(
+            question,
+            symbol=symbol,
+            market=market,
+            dry_run=dry_run,
+        )
+        payload = result.to_dict()
+
+        if output_format == "json":
+            click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            click.echo("KronosFinceptLab Agent")
+            click.echo("=" * 50)
+            if result.rejected:
+                click.echo(f"Rejected: {result.security_reason}")
+            elif result.clarification_required:
+                click.echo(result.clarifying_question)
+            else:
+                click.echo(result.final_report)
+                click.echo("\nTool Calls:")
+                for call in result.tool_calls:
+                    click.echo(f"- [{call.status}] {call.name}: {call.summary}")
+
+        return 0
+
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1
+
+
 @analyze_group.command()
 @click.option('--symbol', required=True, help='Stock symbol')
 @click.option('--market', type=click.Choice(['cn', 'hk', 'us', 'commodity']), default='cn', help='Market: cn=A股, hk=港股, us=美股, commodity=大宗商品')
@@ -798,46 +840,30 @@ def ai_report(ctx, symbol, output_format):
 def ai_question(ctx, question, symbol, output_format):
     """Ask AI investment questions."""
     try:
-        from kronos_fincept.financial import AIInvestmentAdvisor
-        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
-        
-        context = None
-        
-        if symbol:
-            # Get market data for context
-            price_data = fetch_a_stock_ohlcv(
-                symbol=symbol,
-                start_date="20250101",
-                end_date="20260430"
-            )
-            
-            if price_data and len(price_data) > 0:
-                closes = [row['close'] for row in price_data]
-                context = {
-                    'symbol': symbol,
-                    'current_price': price_data[-1]['close'],
-                    'price_history': price_data[-5:]
-                }
-        
-        # AI Question
-        advisor = AIInvestmentAdvisor()
-        answer = advisor.answer_question(question, context)
-        
-        # Format output
+        from kronos_fincept.agent import analyze_investment_question
+
+        result = analyze_investment_question(question, symbol=symbol)
+
         if output_format == 'json':
             output = {
                 'question': question,
-                'symbol': symbol,
-                'answer': answer,
-                'timestamp': datetime.now().isoformat()
+                'symbol': result.symbol or symbol,
+                'answer': result.final_report,
+                'agent_result': result.to_dict(),
+                'timestamp': result.timestamp,
             }
             click.echo(json.dumps(output, indent=2, ensure_ascii=False))
         else:
             click.echo(f"Question: {question}")
-            if symbol:
-                click.echo(f"Related Symbol: {symbol}")
+            if result.symbol or symbol:
+                click.echo(f"Related Symbol: {result.symbol or symbol}")
             click.echo("-" * 50)
-            click.echo(answer)
+            if result.rejected:
+                click.echo(f"Rejected: {result.security_reason}")
+            elif result.clarification_required:
+                click.echo(result.clarifying_question)
+            else:
+                click.echo(result.final_report)
         
         return 0
         

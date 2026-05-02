@@ -124,6 +124,72 @@ export interface AIAnalyzeResponse {
   error?: string;
 }
 
+export interface AgentToolCall {
+  name: string;
+  status: string;
+  summary: string;
+  elapsed_ms: number;
+  metadata: Record<string, any>;
+}
+
+export interface AgentStep {
+  name: string;
+  status: string;
+  summary: string;
+  elapsed_ms: number;
+}
+
+export interface AgentReport {
+  conclusion: string;
+  short_term_prediction: string;
+  technical: string;
+  fundamentals: string;
+  risk: string;
+  uncertainties: string;
+  recommendation: string;
+  confidence: number;
+  risk_level: string;
+  disclaimer: string;
+}
+
+export interface AgentAnalyzeRequest {
+  question: string;
+  symbol?: string;
+  market?: string;
+  context?: Record<string, any>;
+  dry_run?: boolean;
+}
+
+export interface AgentAnalyzeResponse {
+  ok: boolean;
+  question: string;
+  symbol: string | null;
+  symbols: string[];
+  market: string | null;
+  report: AgentReport;
+  final_report: string;
+  recommendation: string;
+  confidence: number;
+  risk_level: string;
+  current_price: number | null;
+  risk_metrics: Record<string, number> | null;
+  kronos_prediction: {
+    model: string;
+    prediction_days: number;
+    forecast: ForecastRow[];
+    probabilistic: Record<string, any> | null;
+    metadata?: Record<string, any>;
+  } | null;
+  tool_calls: AgentToolCall[];
+  steps: AgentStep[];
+  timestamp: string;
+  rejected: boolean;
+  security_reason?: string | null;
+  clarification_required: boolean;
+  clarifying_question?: string | null;
+  error?: string | null;
+}
+
 export interface IndicatorResponse {
   ok: boolean;
   symbol: string;
@@ -196,6 +262,13 @@ export const api = {
   // v8.0: AI-powered analysis
   aiAnalyze: (req: AIAnalyzeRequest) =>
     fetchApi<AIAnalyzeResponse>("/v1/analyze/ai", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  // v8.7: Stateless natural-language agent analysis
+  agentAnalyze: (req: AgentAnalyzeRequest) =>
+    fetchApi<AgentAnalyzeResponse>("/v1/analyze/agent", {
       method: "POST",
       body: JSON.stringify(req),
     }),
