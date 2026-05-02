@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -12,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from kronos_fincept.api.routes import backtest, batch, data, forecast, health, analyze, ai_analyze, alert
+from kronos_fincept.logging_config import configure_logging, log_event, reset_request_id, set_request_id
 
 logger = logging.getLogger("kronos_fincept.api")
 
@@ -24,13 +26,14 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler — startup and shutdown."""
     global _start_time
     _start_time = time.time()
-    logger.info("KronosFinceptLab API starting up...")
+    log_event(logger, logging.INFO, "api.startup", "KronosFinceptLab API starting up")
     yield
-    logger.info("KronosFinceptLab API shutting down.")
+    log_event(logger, logging.INFO, "api.shutdown", "KronosFinceptLab API shutting down")
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    configure_logging()
     app = FastAPI(
         title="KronosFinceptLab API",
         description="Financial quantitative analysis platform powered by Kronos foundation models.",
@@ -57,28 +60,69 @@ def create_app() -> FastAPI:
     # Request logging middleware
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        token = set_request_id(request_id)
         start = time.perf_counter()
-        response = await call_next(request)
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "%s %s -> %d (%.1fms)",
-            request.method,
-            request.url.path,
-            response.status_code,
-            elapsed_ms,
-        )
-        return response
+        try:
+            response = await call_next(request)
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            response.headers["X-Request-ID"] = request_id
+            log_event(
+                logger,
+                logging.INFO,
+                "api.request",
+                f"{request.method} {request.url.path} -> {response.status_code}",
+                request_id=request_id,
+                method=request.method,
+                path=request.url.path,
+                status=response.status_code,
+                client=request.client.host if request.client else None,
+                duration_ms=elapsed_ms,
+            )
+            return response
+        except Exception as exc:
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            log_event(
+                logger,
+                logging.ERROR,
+                "api.request.error",
+                f"{request.method} {request.url.path} failed",
+                request_id=request_id,
+                method=request.method,
+                path=request.url.path,
+                client=request.client.host if request.client else None,
+                duration_ms=elapsed_ms,
+                error_type=type(exc).__name__,
+                exc_info=True,
+            )
+            raise
+        finally:
+            reset_request_id(token)
 
     # Global exception handler
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+        request_id = request.headers.get("X-Request-ID") or getattr(request.state, "request_id", None)
+        log_event(
+            logger,
+            logging.ERROR,
+            "api.unhandled_exception",
+            f"Unhandled exception on {request.method} {request.url.path}",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
         return JSONResponse(
             status_code=500,
             content={
                 "ok": False,
-                "error": f"Internal server error: {type(exc).__name__}: {str(exc)}",
+                "error": "Internal server error",
+                "request_id": request_id,
             },
+            headers={"X-Request-ID": request_id or ""},
         )
 
     # Register routes

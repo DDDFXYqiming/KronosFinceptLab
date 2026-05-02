@@ -14,6 +14,8 @@ from enum import Enum
 from datetime import datetime, timedelta
 import hashlib
 
+from kronos_fincept.logging_config import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -169,6 +171,13 @@ class DataSourceManager:
             cache_entry = self.memory_cache[cache_key]
             if datetime.now().timestamp() < cache_entry["expire_at"]:
                 self.memory_cache.move_to_end(cache_key)
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "data_source.cache_hit",
+                    "Memory cache hit",
+                    cache_key=cache_key,
+                )
                 return cache_entry["data"]
             else:
                 del self.memory_cache[cache_key]
@@ -182,6 +191,13 @@ class DataSourceManager:
                 if datetime.now().timestamp() < cache_entry["expire_at"]:
                     # 加载到内存缓存
                     self._set_memory_cache(cache_key, cache_entry)
+                    log_event(
+                        logger,
+                        logging.DEBUG,
+                        "data_source.cache_hit",
+                        "File cache hit",
+                        cache_key=cache_key,
+                    )
                     return cache_entry["data"]
                 else:
                     os.remove(cache_file)
@@ -242,14 +258,28 @@ class DataSourceManager:
         last_error = None
         for source in self.get_sorted_sources():
             if not source.is_available():
-                logger.debug(f" 跳过不可用的数据源: {source.config.name}")
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "data_source.skip_unavailable",
+                    "Skipping unavailable data source",
+                    source=source.config.name,
+                )
                 continue
 
-            logger.debug(f" 尝试数据源: {source.config.name}")
+            log_event(
+                logger,
+                logging.DEBUG,
+                "data_source.try",
+                "Trying data source",
+                source=source.config.name,
+                endpoint=endpoint,
+            )
 
             # 带重试的请求
             for attempt in range(source.config.max_retries):
                 try:
+                    started = time.perf_counter()
                     result = source.fetch(endpoint, **kwargs)
 
                     if result.get("success"):
@@ -261,11 +291,30 @@ class DataSourceManager:
                         if use_cache:
                             self._save_to_cache(cache_key, result, cache_ttl)
 
+                        log_event(
+                            logger,
+                            logging.INFO,
+                            "data_source.success",
+                            "Data source returned data",
+                            source=source.config.name,
+                            endpoint=endpoint,
+                            duration_ms=int((time.perf_counter() - started) * 1000),
+                        )
                         return result
                     else:
                         # 失败
                         last_error = result.get("error", "Unknown error")
                         source.record_failure()
+                        log_event(
+                            logger,
+                            logging.WARNING,
+                            "data_source.failure",
+                            "Data source returned failure",
+                            source=source.config.name,
+                            endpoint=endpoint,
+                            attempt=attempt + 1,
+                            error=last_error,
+                        )
 
                         # 等待重试
                         if attempt < source.config.max_retries - 1:
@@ -277,6 +326,17 @@ class DataSourceManager:
                 except Exception as e:
                     last_error = str(e)
                     source.record_failure()
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "data_source.failure",
+                        "Data source request failed",
+                        source=source.config.name,
+                        endpoint=endpoint,
+                        attempt=attempt + 1,
+                        error_type=type(e).__name__,
+                        error=str(e),
+                    )
 
                     # 等待重试
                     if attempt < source.config.max_retries - 1:

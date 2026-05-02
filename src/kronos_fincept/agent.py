@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from contextlib import redirect_stdout
@@ -12,7 +13,11 @@ from io import StringIO
 from typing import Any
 
 from kronos_fincept.config import settings
+from kronos_fincept.logging_config import log_event
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, ForecastRequest, ForecastRow
+
+
+logger = logging.getLogger(__name__)
 
 
 AGENT_SCOPE_DESCRIPTION = (
@@ -133,7 +138,16 @@ def analyze_investment_question(
     started_at = time.perf_counter()
     now = datetime.now().isoformat()
     clean_question = (question or "").strip()
+    log_event(
+        logger,
+        logging.INFO,
+        "agent.analysis.start",
+        "Starting stateless agent analysis",
+        question_length=len(clean_question),
+        dry_run=dry_run,
+    )
     if not clean_question:
+        log_event(logger, logging.INFO, "agent.analysis.clarification", "Agent question is empty")
         return _clarification_result(
             question=clean_question,
             message="请提供要分析的标的或问题，例如：帮我看看招商银行现在能不能买。",
@@ -142,6 +156,13 @@ def analyze_investment_question(
 
     safety = evaluate_agent_safety(clean_question)
     if not safety["allowed"]:
+        log_event(
+            logger,
+            logging.WARNING,
+            "agent.analysis.rejected",
+            "Agent request rejected by safety policy",
+            reason=safety["reason"],
+        )
         return _rejection_result(
             question=clean_question,
             reason=safety["reason"],
@@ -150,6 +171,7 @@ def analyze_investment_question(
 
     resolved = resolve_symbols(clean_question, explicit_symbol=symbol, explicit_market=market)
     if not resolved:
+        log_event(logger, logging.INFO, "agent.analysis.clarification", "Agent could not resolve a symbol")
         return _clarification_result(
             question=clean_question,
             message="我还没有识别出要分析的标的。请补充股票代码或公司名称。",
@@ -171,6 +193,19 @@ def analyze_investment_question(
         asset_context, calls = _build_asset_context(item, dry_run=dry_run)
         asset_contexts.append(asset_context)
         tool_calls.extend(calls)
+        for call in calls:
+            log_event(
+                logger,
+                logging.INFO if call.status in {"completed", "skipped", "fallback"} else logging.WARNING,
+                "agent.tool_call",
+                call.summary,
+                symbol=item.symbol,
+                market=item.market,
+                tool=call.name,
+                status=call.status,
+                duration_ms=call.elapsed_ms,
+                model=call.metadata.get("model"),
+            )
 
     has_market_data = any(ctx.get("market_data") for ctx in asset_contexts)
     has_prediction = any(ctx.get("kronos_prediction") for ctx in asset_contexts)
@@ -200,6 +235,15 @@ def analyze_investment_question(
         "disclaimer": RESEARCH_DISCLAIMER,
     }
     report, llm_call = _generate_report(clean_question, llm_context)
+    log_event(
+        logger,
+        logging.INFO if llm_call.status == "completed" else logging.WARNING,
+        "agent.synthesis",
+        llm_call.summary,
+        status=llm_call.status,
+        duration_ms=llm_call.elapsed_ms,
+        model=llm_call.metadata.get("model"),
+    )
     tool_calls.append(llm_call)
     steps.append(
         AgentStep(

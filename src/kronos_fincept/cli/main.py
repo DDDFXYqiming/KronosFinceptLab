@@ -15,6 +15,8 @@ from importlib import import_module
 
 import click
 
+from kronos_fincept.logging_config import configure_logging
+
 
 COMMANDS = {
     "forecast": ("kronos_fincept.cli.commands.forecast", "forecast_cmd"),
@@ -50,6 +52,7 @@ class LazyCLI(click.Group):
 @click.pass_context
 def cli(ctx: click.Context, output_format: str, verbose: bool) -> None:
     """KronosFinceptLab — Financial quantitative analysis platform."""
+    configure_logging(level="DEBUG" if verbose else None)
     ctx.ensure_object(dict)
     ctx.obj["output_format"] = output_format
     ctx.obj["verbose"] = verbose

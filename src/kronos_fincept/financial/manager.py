@@ -3,15 +3,20 @@ Financial data manager with fallback support.
 """
 from typing import Optional, List
 from datetime import datetime
+import logging
 import time
 import os
 import json
 from pathlib import Path
 
+from kronos_fincept.logging_config import log_event
+
 from .schemas import FinancialData
 from .financial_source import FinancialDataSource
 from .baostock_financial import BaoStockFinancialSource
 from .yahoo_financial import YahooFinanceFinancialSource
+
+logger = logging.getLogger(__name__)
 
 
 class FinancialDataManager:
@@ -206,7 +211,14 @@ class FinancialDataManager:
         
         if self.failed_attempts[source_name] >= self.MAX_ATTEMPTS:
             self.disabled_until[source_name] = datetime.now().timestamp() + self.DISABLE_DURATION
-            print(f"Source {source_name} disabled for {self.DISABLE_DURATION} seconds due to repeated failures")
+            log_event(
+                logger,
+                logging.WARNING,
+                "financial_source.circuit_open",
+                "Financial source disabled after repeated failures",
+                source=source_name,
+                duration_ms=self.DISABLE_DURATION * 1000,
+            )
     
     def _record_success(self, source_name: str) -> None:
         """Record success and reset failure count."""
@@ -233,27 +245,74 @@ class FinancialDataManager:
             source_name = source.__class__.__name__
             
             if self._is_disabled(source_name):
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "financial_source.skip_disabled",
+                    "Skipping disabled financial source",
+                    source=source_name,
+                    symbol=symbol,
+                )
                 continue
             
             try:
-                print(f"Trying {source_name} for {symbol}...")
+                started = time.perf_counter()
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "financial_source.try",
+                    "Trying financial source",
+                    source=source_name,
+                    symbol=symbol,
+                )
                 data = source.get_financial_data(symbol, periods)
                 
                 if data:
                     self._record_success(source_name)
                     self.cache[symbol] = data
                     self._save_to_cache(symbol, data)
-                    print(f"Successfully got financial data from {source_name}")
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "financial_source.success",
+                        "Financial source returned data",
+                        source=source_name,
+                        symbol=symbol,
+                        duration_ms=int((time.perf_counter() - started) * 1000),
+                    )
                     return data
                 else:
-                    print(f"{source_name} returned no data for {symbol}")
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "financial_source.empty",
+                        "Financial source returned no data",
+                        source=source_name,
+                        symbol=symbol,
+                        duration_ms=int((time.perf_counter() - started) * 1000),
+                    )
                     
             except Exception as e:
-                print(f"{source_name} failed: {e}")
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "financial_source.failure",
+                    "Financial source failed",
+                    source=source_name,
+                    symbol=symbol,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
                 self._record_failure(source_name)
                 continue
         
-        print(f"All financial data sources failed for {symbol}")
+        log_event(
+            logger,
+            logging.WARNING,
+            "financial_source.all_failed",
+            "All financial sources failed",
+            symbol=symbol,
+        )
         return None
     
     def get_source_status(self) -> dict:

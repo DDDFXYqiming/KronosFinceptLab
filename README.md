@@ -32,150 +32,7 @@
 
 ## Current status
 
-Version: v8.7
-
-## 已实现
-
-### 核心引擎
-- Python 包 `src/kronos_fincept/`：schema 验证、数据适配器、服务层
-- Kronos 推理封装：dry-run + real 模式，支持 Kronos-mini/small/base
-- 采样参数：`temperature`, `top_k`, `top_p`, `sample_count`, `max_context`
-- HuggingFace 缓存检测 + 离线失败提示
-- JSON CLI 桥接：stdin/stdout + `--input`/`--output`
-
-### 数据源
-- 多数据源自动降级架构（AkShare → BaoStock → Yahoo Finance）
-- 统一数据源管理器（DataSourceManager）
-- 指数退避重试 + 熔断机制 + 内存/文件缓存
-- CLI/API **全链路降级集成** — `kronos data fetch`、`kronos forecast` 等命令自动走 DataSourceManager，AkShare 失败时无缝切换到 BaoStock
-- `akshare_adapter.py` — 统一数据入口，所有 6 个调用方（CLI、API、backtest）自动享受降级
-- AkShare A 股 OHLCV 适配器
-- BaoStock 数据源适配器（已验证可用）
-- Yahoo Finance 数据源适配器（已验证可用）
-- 通用 CSV/OHLCV 适配器（`data_adapter.py`）
-
-### 量化引擎
-- Qlib-style 模型适配器 + `batch_predict` 多资产批量预测
-- 排序信号生成（predicted_return）
-- A 股排名回测示例（`examples/backtest_a_stock_ranking.py`）
-
-### CFA 级别分析 (v4.0)
-- DCF 模型（现金流折现）
-- 风险指标（VaR, Sharpe, Sortino, 最大回撤, 波动率）
-- 投资组合优化（马科维茨均值-方差, 有效前沿, 风险平价）
-- 衍生品定价（Black-Scholes, 希腊字母, 隐含波动率）
-- 财务数据获取（BaoStock + Yahoo Finance）
-- CLI 命令：`kronos analyze dcf/risk/portfolio/derivative`
-- API 路由：`/api/v1/analyze/*`
-
-### 技术指标与策略 (v5.0)
-- 技术指标：SMA, EMA, RSI, MACD, Bollinger Bands, KDJ, ATR, OBV
-- 量化策略：均线交叉、RSI超买超卖、MACD金叉死叉、布林带突破
-- CLI 命令：`kronos analyze indicator/strategy`
-- 统一技术分析接口
-
-### 全球市场数据 (v5.0)
-- 美股数据：AAPL, MSFT, GOOGL, etc.
-- 港股数据：0700.HK, 9988.HK, etc.
-- 加密货币：BTC-USD, ETH-USD, etc.
-- CLI 命令：`kronos analyze global-data/market-summary`
-
-### AI 投资顾问 (v6.0)
-- DeepSeek LLM 集成
-- 自然语言股票分析
-- 投资建议生成
-- 风险评估报告
-- CLI 命令：`kronos analyze agent/ai-analyze/ai-report/ai-question`
-
-### Web 前端 (v8.0)
-- **TradingView K 线图表** — 预测叠加显示
-- **AI 分析面板** — 无记忆自然语言 Agent，DeepSeek + Kronos 全量分析
-- **自选股管理** — localStorage 持久化，Zustand 状态管理
-- **批量预测对比** — 多股票排序，Recharts 可视化
-- **设计系统** — 渐变文字、圆角卡片、入场动画
-
-### 实时监控与告警 (v8.0)
-- 价格变动告警（价格突破阈值、涨跌幅）
-- 技术指标异动告警（RSI 超买超卖、MACD 金叉死叉）
-- 预测偏差告警（实际价格与预测值偏离超过阈值）
-- 成交量异动告警（成交量超过均值 N 倍）
-- 通知渠道：飞书 Webhook / 邮件（可配置）
-- CLI 命令：`kronos alert add/list/remove/check/monitor`
-- API 路由：`/api/alert/*`
-
-### 回测报告增强 (v8.0)
-- HTML 报告生成（暗色主题，matplotlib 图表内嵌 base64）
-- 收益曲线可视化
-- 回撤曲线可视化
-- 多策略对比回测
-- 基准对比（沪深300、标普500 等）
-- CLI 命令：`kronos backtest ranking --report`
-- API 路由：`POST /api/backtest/report`
-
-### Bug 修复与稳定性 (v8.1)
-- `start.bat` 换行符 LF→CRLF + UTF-8 编码 + 自动安装依赖
-- 预测 API 返回缺少 `model_id`/`tokenizer_id` 导致前端 `KeyError`
-- 前端图表 `D1`~`D5` 相对日期无法解析
-
-### 后端代码重构 (v8.2)
-- service.py 提取 `_build_forecast_response()` 公共响应构建
-- backtest.py 提取 `_fetch_and_prepare_data()` 和 `_run_ranking_backtest()` 公共回测引擎
-- alert_engine.py 提取 `_evaluate_alert_conditions()` 通用告警条件评估
-- schemas.py 添加 `ForecastRow.from_pydantic()` 和 `ForecastRequest.from_pydantic()` 类方法
-
-### 异步性能优化 (v8.3)
-- 所有 API 路由 handler 使用 `asyncio.to_thread()` 包装同步阻塞调用
-- 事件循环不再被数据获取、预测计算、回测循环阻塞
-
-### 缓存与启动优化 (v8.4)
-- `DataSourceManager` 内存缓存增加 LRU 淘汰，避免长时间运行无限增长
-- `financial` 包和 CLI 子命令入口改为 lazy import，降低启动成本
-- `GlobalMarketSource` 改为单例并复用 Yahoo Finance 查询缓存，错误输出统一走 logging
-- 删除重复入口 `cli_legacy.py`
-- `start.bat` 启动前会运行 Web 依赖健康检查，输出 Node/npm/registry/Next/SWC 状态
-- 前端依赖锁定 `next@14.2.35`，并在验证当前平台 SWC native 包存在后设置 `NEXT_IGNORE_INCORRECT_LOCKFILE=1`，绕过 Next.js 14.2.35 对缺失跨平台 SWC lockfile 的错误自动 patch
-
-### Rust-first 重构 (v8.5)
-- 新增 Cargo workspace：`crates/kronos-kernel` + `crates/kronos-python`
-- 新增 PyO3 native extension：`kronos_fincept_native`
-- 已接入可选 Rust kernel：SMA、EMA、RSI、MACD、Bollinger、KDJ、ATR、OBV
-- 已接入可选 Rust 风险指标：Historical VaR、Sharpe、Sortino、Max Drawdown、Volatility
-- Python fallback 默认保留，设置 `USE_RUST_ENGINE=1` 或 `USE_RUST_ENGINE=auto` 后才尝试 Rust 路径
-- Rust/Python parity 测试覆盖 Phase 1 指标与风险函数
-- DCF、Derivatives、Portfolio 的 Rust 化边界见 `docs/RUST_PHASE2_BOUNDARY.md`
-- 当前不迁移数据源、Kronos 推理、LLM 分析和前端
-
-### Web 产品体验与默认配置修正 (v8.6)
-- Web 侧边栏移除“设置”入口，`/settings` 直接回到仪表盘
-- 后端、API、CLI、MCP 与文档默认模型统一为 `NeoQuasar/Kronos-base`
-- 默认 tokenizer 统一为 `NeoQuasar/Kronos-Tokenizer-base`
-- 预测、分析、批量、回测、数据页使用 sessionStorage 保留页面切换前的输入与结果
-- 默认 A 股标的统一为 `600036` 招商银行，Web 默认输入和 CLI/README 示例同步更新
-
-### Web/CLI/API AI Agent (v8.7)
-- 新增共享无记忆 Agent 服务：自然语言问题会先做能力范围和 prompt 注入校验，再解析标的并编排行情、财务、技术指标、风险指标、Kronos 预测和 DeepSeek 汇总
-- Web “AI 分析”改为对话式入口，切换页面后保留当前会话输入与结果，但不写入长期投资偏好
-- API 新增 `POST /api/v1/analyze/agent`，返回结构化报告、工具调用轨迹、执行步骤、拒绝/澄清信息
-- CLI 新增 `kronos analyze agent --question ...`，旧 `ai-question` 复用同一套 Agent 安全策略
-- Web、CLI、API 共享 prompt 注入和能力边界防护：拒绝泄露系统提示/密钥、越权工具、项目外任务和无关高风险操作
-
-### MCP 服务器
-- `kronos_mcp/kronos_mcp_server.py` — 暴露 3 个 MCP 工具
-- 支持 Claude Desktop / Cursor 等 MCP 客户端
-
-### FinceptTerminal 兼容层（保留）
-- PythonRunner 桥接脚本
-- PythonWorker 协议验证通过
-- C++ 服务层 `KronosForecastService.h/.cpp`
-
-### Windows 部署
-- Kronos-base 模型已部署（CPU 推理，PyTorch 2.11.0）
-- 批处理脚本 `kronos.bat`（推荐用于真实推理）
-
-### WSL/Linux 部署
-- 支持 CPU 推理（PyTorch）
-- 安装脚本：`bash scripts/install_torch.sh`
-- 也可使用 Windows Python 运行真实推理（见下方）
+Version: v8.8
 
 ## 快速开始
 
@@ -288,6 +145,30 @@ npm run dev
 ```bash
 PYTHONPATH=src python3 -m pytest tests -v
 ```
+
+## 日志与运维
+
+默认日志写入 `logs/kronos-YYYYMMDD.log`，同时输出到 stderr。常用配置：
+
+```bash
+KRONOS_LOG_LEVEL=DEBUG
+KRONOS_LOG_FORMAT=json
+KRONOS_LOG_DIR=logs
+KRONOS_LOG_RETENTION_DAYS=14
+KRONOS_LOG_MAX_BYTES=10485760
+```
+
+查看日志：
+
+```bash
+# PowerShell
+Get-Content logs\kronos-*.log -Tail 100
+
+# JSON Lines 模式下每一行都是独立 JSON
+Get-Content logs\kronos-*.log -Tail 10
+```
+
+清理历史日志可直接删除 `logs/` 下旧文件；目录已被 git 忽略。API 错误响应会返回 `request_id`，可用该 ID 在日志里定位完整异常栈。
 
 ### Rust native 加速（可选）
 

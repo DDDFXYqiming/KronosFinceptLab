@@ -1,6 +1,7 @@
 """
 Yahoo Finance financial data source.
 """
+import logging
 import pandas as pd
 from typing import Optional, List
 from datetime import datetime
@@ -10,6 +11,8 @@ from .schemas import (
     FinancialData, IncomeStatement, BalanceSheet, CashFlowStatement
 )
 from .financial_source import FinancialDataSource
+
+logger = logging.getLogger(__name__)
 
 
 class YahooFinanceFinancialSource(FinancialDataSource):
@@ -46,7 +49,7 @@ class YahooFinanceFinancialSource(FinancialDataSource):
                 cash_flow_statements=cash_flow_statements
             )
         except Exception as e:
-            print(f"Error getting financial data from Yahoo Finance: {e}")
+            logger.warning("Error getting financial data from Yahoo Finance: %s", e)
             return None
     
     def get_income_statements(self, symbol: str, periods: int = 4) -> List[IncomeStatement]:
@@ -87,12 +90,12 @@ class YahooFinanceFinancialSource(FinancialDataSource):
                         ebitda=ebitda
                     ))
                 except Exception as e:
-                    print(f"Error parsing income statement: {e}")
+                    logger.warning("Error parsing income statement: %s", e)
                     continue
             
             return income_statements
         except Exception as e:
-            print(f"Error getting income statements: {e}")
+            logger.warning("Error getting income statements from Yahoo Finance: %s", e)
             return []
     
     def get_balance_sheets(self, symbol: str, periods: int = 4) -> List[BalanceSheet]:
@@ -134,12 +137,12 @@ class YahooFinanceFinancialSource(FinancialDataSource):
                         shareholders_equity=equity
                     ))
                 except Exception as e:
-                    print(f"Error parsing balance sheet: {e}")
+                    logger.warning("Error parsing balance sheet: %s", e)
                     continue
             
             return balance_sheets
         except Exception as e:
-            print(f"Error getting balance sheets: {e}")
+            logger.warning("Error getting balance sheets from Yahoo Finance: %s", e)
             return []
     
     def get_cash_flow_statements(self, symbol: str, periods: int = 4) -> List[CashFlowStatement]:
@@ -174,10 +177,10 @@ class YahooFinanceFinancialSource(FinancialDataSource):
                         debt_repayment=0.0
                     ))
                 except Exception as e:
-                    print(f"Error parsing cash flow statement: {e}")
+                    logger.warning("Error parsing cash flow statement: %s", e)
                     continue
             
             return cash_flow_statements
         except Exception as e:
-            print(f"Error getting cash flow statements: {e}")
+            logger.warning("Error getting cash flow statements from Yahoo Finance: %s", e)
             return []

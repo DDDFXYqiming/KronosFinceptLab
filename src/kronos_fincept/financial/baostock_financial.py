@@ -1,6 +1,7 @@
 """
 BaoStock financial data source.
 """
+import logging
 import pandas as pd
 from typing import Optional, List
 from datetime import datetime
@@ -10,6 +11,8 @@ from .schemas import (
     FinancialData, IncomeStatement, BalanceSheet, CashFlowStatement
 )
 from .financial_source import FinancialDataSource
+
+logger = logging.getLogger(__name__)
 
 
 class BaoStockFinancialSource(FinancialDataSource):
@@ -46,7 +49,7 @@ class BaoStockFinancialSource(FinancialDataSource):
                 cash_flow_statements=cash_flow_statements
             )
         except Exception as e:
-            print(f"Error getting financial data from BaoStock: {e}")
+            logger.warning("Error getting financial data from BaoStock: %s", e)
             return None
     
     def get_income_statements(self, symbol: str, periods: int = 4) -> List[IncomeStatement]:
@@ -99,7 +102,7 @@ class BaoStockFinancialSource(FinancialDataSource):
                 ebitda=0
             )]
         except Exception as e:
-            print(f"Error getting income statements: {e}")
+            logger.warning("Error getting income statements from BaoStock: %s", e)
             return []
     
     def get_balance_sheets(self, symbol: str, periods: int = 4) -> List[BalanceSheet]:

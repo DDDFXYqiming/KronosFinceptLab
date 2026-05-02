@@ -7,9 +7,14 @@ used only when explicitly enabled and the native extension is installed.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 from functools import lru_cache
 from typing import Any, Iterable
+
+from kronos_fincept.logging_config import log_event
+
+logger = logging.getLogger(__name__)
 
 _TRUE_VALUES = {"1", "true", "yes", "on", "auto"}
 _FALSE_VALUES = {"", "0", "false", "no", "off"}
@@ -31,8 +36,25 @@ def is_rust_engine_requested() -> bool:
 @lru_cache(maxsize=1)
 def _load_native() -> Any | None:
     try:
-        return importlib.import_module("kronos_fincept_native")
-    except ImportError:
+        module = importlib.import_module("kronos_fincept_native")
+        log_event(
+            logger,
+            logging.INFO,
+            "rust_native.available",
+            "Rust native extension loaded",
+            mode=rust_engine_mode(),
+        )
+        return module
+    except ImportError as exc:
+        if is_rust_engine_requested():
+            log_event(
+                logger,
+                logging.WARNING,
+                "rust_native.unavailable",
+                "Rust native extension unavailable; using Python fallback",
+                mode=rust_engine_mode(),
+                error_type=type(exc).__name__,
+            )
         return None
 
 
@@ -45,7 +67,17 @@ def _native_function(name: str) -> Any | None:
     native = _load_native()
     if native is None:
         return None
-    return getattr(native, name, None)
+    func = getattr(native, name, None)
+    if func is None:
+        log_event(
+            logger,
+            logging.WARNING,
+            "rust_native.missing_function",
+            "Rust native function missing; using Python fallback",
+            mode=rust_engine_mode(),
+            function=name,
+        )
+    return func
 
 
 def calculate_sma(prices: Iterable[float], period: int) -> list[float] | None:

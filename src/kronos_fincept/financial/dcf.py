@@ -1,9 +1,12 @@
 """
 DCF (Discounted Cash Flow) valuation model.
 """
+import logging
 from typing import Optional, List
 from dataclasses import dataclass
 from ..financial.schemas import FinancialData, CashFlowStatement, BalanceSheet
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -299,18 +302,18 @@ class DCFModel:
         latest_bs = financial_data.get_latest_balance_sheet()
         
         if not latest_cf:
-            print("No cash flow data available for DCF valuation")
+            logger.warning("No cash flow data available for DCF valuation")
             return None
         
         # Calculate free cash flow
         base_fcf = latest_cf.free_cash_flow
         
         if base_fcf <= 0:
-            print("Warning: Negative free cash flow, using operating cash flow")
+            logger.warning("Negative free cash flow, using operating cash flow")
             base_fcf = latest_cf.operating_cash_flow
         
         if base_fcf <= 0:
-            print("Insufficient cash flow data for DCF valuation")
+            logger.warning("Insufficient cash flow data for DCF valuation")
             return None
         
         # Calculate WACC

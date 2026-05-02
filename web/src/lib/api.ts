@@ -201,6 +201,17 @@ export interface IndicatorResponse {
 
 // ── Fetch Helper ─────────────────────────────────────────────────
 
+function logApiFailure(path: string, status: number, requestId: string | null, message: string) {
+  if (typeof window === "undefined") return;
+  const safePath = path.split("?")[0];
+  console.warn("[kronos-api]", {
+    path: safePath,
+    status,
+    request_id: requestId || undefined,
+    error: message,
+  });
+}
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -208,7 +219,9 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || err.detail || `HTTP ${res.status}`);
+    const message = err.error || err.detail || `HTTP ${res.status}`;
+    logApiFailure(path, res.status, res.headers.get("X-Request-ID"), message);
+    throw new Error(message);
   }
   return res.json();
 }

@@ -28,6 +28,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from kronos_fincept.logging_config import configure_logging
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -315,5 +317,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging()
     asyncio.run(main())
