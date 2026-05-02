@@ -32,7 +32,7 @@
 
 ## Current status
 
-Version: v8.8
+Version: v8.9
 
 ## 快速开始
 
@@ -139,6 +139,37 @@ npm install
 npm run dev
 # 访问 http://localhost:3000
 ```
+
+### Zeabur / Docker 部署
+
+当前 Dockerfile 使用单容器部署：Next.js standalone Web 对外监听 `PORT`（默认 `3000`），FastAPI 在容器内监听 `API_PORT`（默认 `8000`），Web 通过 `/api` rewrite 访问后端。
+
+```bash
+# 本地部署前检查（含前端 build；有 Docker 时再跑镜像构建）
+powershell -ExecutionPolicy Bypass -File scripts/check_zeabur_build.ps1
+
+# 没有 Docker 时只检查前端产物和 Dockerfile 关键路径
+powershell -ExecutionPolicy Bypass -File scripts/check_zeabur_build.ps1 -SkipDocker
+
+# Linux/macOS
+sh scripts/check_zeabur_build.sh
+```
+
+Zeabur 推荐环境变量：
+
+```bash
+PORT=3000
+API_PORT=8000
+INTERNAL_API_URL=http://localhost:8000
+NEXT_IGNORE_INCORRECT_LOCKFILE=1
+PYTHONPATH=/app/src
+KRONOS_MODEL_ID=NeoQuasar/Kronos-base
+KRONOS_REPO_PATH=/app/external/Kronos
+DEEPSEEK_API_KEY=...
+DEEPSEEK_BASE_URL=...
+```
+
+已修复的部署失败点：`web/next.config.js` 已启用 `output: "standalone"`，`web/public/.gitkeep` 保证 public 目录进入 git，Docker frontend-builder 阶段设置 `NEXT_IGNORE_INCORRECT_LOCKFILE=1` 并使用 `npm ci --include=optional`，避免 Zeabur 云构建再次触发 Next.js 14.2.35 lockfile patch 和 `.next/standalone` / `web/public` checksum not found。
 
 ## 测试
 

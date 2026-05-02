@@ -60,7 +60,7 @@ export function Sidebar() {
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
           <div className="text-xs text-muted-foreground text-center font-mono">
-            v8.8 — 仅供研究
+            v8.9 — 仅供研究
           </div>
         </div>
       )}
