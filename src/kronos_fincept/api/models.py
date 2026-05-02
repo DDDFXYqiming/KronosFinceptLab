@@ -170,8 +170,11 @@ class HealthResponseOut(BaseModel):
     version: str
     model_loaded: bool
     model_id: str
+    tokenizer_id: str | None = None
     device: str
     uptime_seconds: float
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    model_error: str | None = None
 
 
 # ── Backtest Report ─────────────────────────────────────────

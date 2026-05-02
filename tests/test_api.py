@@ -64,9 +64,11 @@ class TestHealth:
         resp = client.get("/api/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "ok"
+        assert data["status"] in {"ok", "degraded"}
         assert data["version"] == "2.0.0"
         assert "model_id" in data
+        assert "model_loaded" in data
+        assert "capabilities" in data
         assert "device" in data
         assert "uptime_seconds" in data
 

@@ -20,7 +20,7 @@ WORKDIR /app
 
 # Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-venv build-essential curl \
+    python3 python3-venv build-essential curl git ca-certificates \
     && python3 -m venv /opt/venv \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,13 +28,22 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/app/src \
     NEXT_TELEMETRY_DISABLED=1 \
     INTERNAL_API_URL=http://localhost:8000 \
-    API_PORT=8000
+    API_PORT=8000 \
+    KRONOS_REPO_PATH=/app/external/Kronos \
+    HF_HOME=/app/.cache/huggingface
+
+ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git
 
 # Install Python deps
 COPY pyproject.toml requirements.txt ./
 COPY src/ src/
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e ".[api,astock]"
+    && pip install --no-cache-dir -e ".[deploy]"
+
+# Fetch upstream Kronos source code for real inference. Model weights stay out of git/image.
+RUN mkdir -p external \
+    && git clone --depth=1 "$KRONOS_REPO_URL" external/Kronos \
+    && test -f external/Kronos/model/__init__.py
 
 # Copy frontend build
 COPY --from=frontend-builder /app/web/.next/standalone web/

@@ -20,10 +20,13 @@ async def health_check(request: Request) -> HealthResponseOut:
     model_info = get_model_info()
 
     return HealthResponseOut(
-        status="ok",
+        status=model_info["status"],
         version="2.0.0",
-        model_loaded=True,
+        model_loaded=model_info["model_loaded"],
         model_id=model_info["model_id"],
+        tokenizer_id=model_info["tokenizer_id"],
         device=model_info["device"],
         uptime_seconds=round(uptime, 1),
+        capabilities=model_info["capabilities"],
+        model_error=model_info["model_error"],
     )

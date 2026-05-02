@@ -114,8 +114,11 @@ export interface HealthResponse {
   version: string;
   model_loaded: boolean;
   model_id: string;
+  tokenizer_id?: string | null;
   device: string;
   uptime_seconds: number;
+  capabilities?: Record<string, boolean>;
+  model_error?: string | null;
 }
 
 export interface GlobalDataResponse {

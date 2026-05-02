@@ -14,10 +14,16 @@ rich>=13.0
 
 # A-stock data
 akshare>=1.10
+baostock>=0.8.8
+yfinance>=0.2
+requests>=2.31
 
 # Kronos model
 torch>=2.0
 huggingface-hub>=0.20
+einops>=0.8
+safetensors>=0.6
+tqdm>=4.67
 
 # Dev / Test
 pytest>=8.0

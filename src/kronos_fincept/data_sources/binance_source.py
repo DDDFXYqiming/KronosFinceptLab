@@ -18,6 +18,8 @@ from . import DataSource, DataSourceConfig, DataSourceStatus
 class BinanceSource(DataSource):
     """Binance data source for crypto market data."""
 
+    supported_endpoints = {"binance_kline"}
+
     def __init__(self, priority: int = 4):
         config = DataSourceConfig(
             name="binance",

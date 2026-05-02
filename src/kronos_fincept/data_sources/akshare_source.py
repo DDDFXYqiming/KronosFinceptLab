@@ -13,6 +13,13 @@ from . import DataSource, DataSourceConfig, DataSourceStatus
 class AkShareSource(DataSource):
     """AkShare 数据源"""
 
+    supported_endpoints = {
+        "stock_zh_a_hist",
+        "stock_zh_a_spot_em",
+        "stock_info_a_code_name",
+        "stock_individual_info_em",
+    }
+
     def __init__(self, priority: int = 1):
         config = DataSourceConfig(
             name="akshare",

@@ -13,6 +13,12 @@ from . import DataSource, DataSourceConfig, DataSourceStatus
 class BaoStockSource(DataSource):
     """BaoStock 数据源"""
 
+    supported_endpoints = {
+        "stock_zh_a_hist",
+        "stock_info_a_code_name",
+        "stock_individual_info_em",
+    }
+
     def __init__(self, priority: int = 2):
         config = DataSourceConfig(
             name="baostock",

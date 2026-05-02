@@ -43,6 +43,8 @@ class DataSourceConfig:
 class DataSource:
     """数据源基类"""
 
+    supported_endpoints: set[str] | None = None
+
     def __init__(self, config: DataSourceConfig):
         self.config = config
         self.status = DataSourceStatus.HEALTHY
@@ -51,6 +53,10 @@ class DataSource:
         self.last_failure_time: Optional[datetime] = None
         self.circuit_break_until: Optional[datetime] = None
         self.last_health_check: Optional[datetime] = None
+
+    def supports_endpoint(self, endpoint: str) -> bool:
+        """Return whether this source can serve the requested endpoint."""
+        return self.supported_endpoints is None or endpoint in self.supported_endpoints
 
     def is_available(self) -> bool:
         """检查数据源是否可用"""
@@ -256,7 +262,19 @@ class DataSourceManager:
 
         # 按优先级尝试数据源
         last_error = None
+        errors_by_source: Dict[str, str] = {}
         for source in self.get_sorted_sources():
+            if not source.supports_endpoint(endpoint):
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "data_source.skip_unsupported",
+                    "Skipping source that does not support endpoint",
+                    source=source.config.name,
+                    endpoint=endpoint,
+                )
+                continue
+
             if not source.is_available():
                 log_event(
                     logger,
@@ -304,6 +322,7 @@ class DataSourceManager:
                     else:
                         # 失败
                         last_error = result.get("error", "Unknown error")
+                        errors_by_source[source.config.name] = str(last_error)
                         source.record_failure()
                         log_event(
                             logger,
@@ -325,6 +344,7 @@ class DataSourceManager:
 
                 except Exception as e:
                     last_error = str(e)
+                    errors_by_source[source.config.name] = last_error
                     source.record_failure()
                     log_event(
                         logger,
@@ -348,11 +368,17 @@ class DataSourceManager:
             logger.debug(f" 数据源 {source.config.name} 失败，"
                   f"尝试下一个...")
 
-        # 所有数据源都失败
+        # 所有支持该 endpoint 的数据源都失败
+        if errors_by_source:
+            error_detail = "; ".join(
+                f"{source}={error}" for source, error in errors_by_source.items()
+            )
+        else:
+            error_detail = f"endpoint unsupported by registered sources: {endpoint}"
         return {
             "success": False,
             "data": None,
-            "error": f"所有数据源都失败，最后错误: {last_error}",
+            "error": f"所有数据源都失败: {error_detail}",
             "source": "none",
             "timestamp": int(datetime.now().timestamp()),
             "from_cache": False

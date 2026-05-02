@@ -13,6 +13,11 @@ from . import DataSource, DataSourceConfig, DataSourceStatus
 class YahooFinanceSource(DataSource):
     """Yahoo Finance 数据源"""
 
+    supported_endpoints = {
+        "stock_zh_a_hist",
+        "stock_individual_info_em",
+    }
+
     def __init__(self, priority: int = 3):
         config = DataSourceConfig(
             name="yahoo_finance",

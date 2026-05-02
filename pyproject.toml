@@ -23,9 +23,15 @@ api = [
 kronos = [
     "torch>=2.0",
     "huggingface-hub>=0.20",
+    "einops>=0.8",
+    "safetensors>=0.6",
+    "tqdm>=4.67",
 ]
 astock = [
     "akshare>=1.10",
+    "baostock>=0.8.8",
+    "yfinance>=0.2",
+    "requests>=2.31",
 ]
 cli = [
     "click>=8.0",
@@ -41,6 +47,21 @@ dev = [
 ]
 rust = [
     "maturin>=1.8,<2",
+]
+deploy = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.22",
+    "pydantic>=2.0",
+    "python-multipart>=0.0.6",
+    "akshare>=1.10",
+    "baostock>=0.8.8",
+    "yfinance>=0.2",
+    "requests>=2.31",
+    "torch>=2.0",
+    "huggingface-hub>=0.20",
+    "einops>=0.8",
+    "safetensors>=0.6",
+    "tqdm>=4.67",
 ]
 
 [project.scripts]
