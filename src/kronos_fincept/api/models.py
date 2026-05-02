@@ -43,6 +43,10 @@ class ForecastMetadataOut(BaseModel):
     elapsed_ms: int
     backend: str
     warning: str
+    model_cached: bool = False
+    cache_key: str = ""
+    load_wait_ms: int = 0
+    inference_wait_ms: int = 0
 
 
 class ForecastRangeOut(BaseModel):

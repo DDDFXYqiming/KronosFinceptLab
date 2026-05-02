@@ -354,6 +354,7 @@ def resolve_symbols(
 
 
 def _build_asset_context(item: ResolvedSymbol, *, dry_run: bool) -> tuple[dict[str, Any], list[AgentToolCall]]:
+    asset_started = time.perf_counter()
     calls: list[AgentToolCall] = []
     asset: dict[str, Any] = {
         "symbol": item.symbol,
@@ -361,6 +362,16 @@ def _build_asset_context(item: ResolvedSymbol, *, dry_run: bool) -> tuple[dict[s
         "name": item.name,
         "model": _active_kronos_model_id(),
     }
+    log_event(
+        logger,
+        logging.INFO,
+        "agent.asset.start",
+        "Building agent asset context",
+        symbol=item.symbol,
+        market=item.market,
+        model=_active_kronos_model_id(),
+        dry_run=dry_run,
+    )
 
     started = time.perf_counter()
     rows: list[dict[str, Any]] = []
@@ -427,20 +438,37 @@ def _build_asset_context(item: ResolvedSymbol, *, dry_run: bool) -> tuple[dict[s
         )
 
         started = time.perf_counter()
-        asset["kronos_prediction"] = _call_quietly(_build_prediction, item.symbol, rows, dry_run=dry_run)
-        calls.append(
-            AgentToolCall(
-                name="kronos_prediction",
-                status="completed" if asset["kronos_prediction"] else "failed",
-                summary=(
-                    f"已调用 {_active_kronos_model_id()} 生成短期预测。"
-                    if asset["kronos_prediction"]
-                    else "Kronos 预测失败或数据不足。"
-                ),
-                elapsed_ms=_elapsed_ms(started),
-                metadata={"symbol": item.symbol, "model": _active_kronos_model_id()},
+        try:
+            asset["kronos_prediction"] = _call_quietly(_build_prediction, item.symbol, rows, dry_run=dry_run)
+            calls.append(
+                AgentToolCall(
+                    name="kronos_prediction",
+                    status="completed",
+                    summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
+                    elapsed_ms=_elapsed_ms(started),
+                    metadata={
+                        "symbol": item.symbol,
+                        "model": _active_kronos_model_id(),
+                        "metadata": asset["kronos_prediction"].get("metadata"),
+                    },
+                )
             )
-        )
+        except Exception as exc:
+            error_summary = _short_error(exc)
+            asset["kronos_prediction_error"] = error_summary
+            calls.append(
+                AgentToolCall(
+                    name="kronos_prediction",
+                    status="failed",
+                    summary=f"Kronos 真实预测失败：{error_summary}",
+                    elapsed_ms=_elapsed_ms(started),
+                    metadata={
+                        "symbol": item.symbol,
+                        "model": _active_kronos_model_id(),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+            )
 
     calls.append(
         AgentToolCall(
@@ -449,6 +477,18 @@ def _build_asset_context(item: ResolvedSymbol, *, dry_run: bool) -> tuple[dict[s
             summary="未配置通用网页检索工具；报告只使用项目内行情、财务、指标和模型工具。",
             metadata={"symbol": item.symbol, "policy": "third_party_content_is_untrusted"},
         )
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "agent.asset.done",
+        "Agent asset context built",
+        symbol=item.symbol,
+        market=item.market,
+        duration_ms=_elapsed_ms(asset_started),
+        has_market_data=bool(asset.get("market_data")),
+        has_prediction=bool(asset.get("kronos_prediction")),
+        prediction_error=asset.get("kronos_prediction_error"),
     )
     return asset, calls
 
@@ -576,45 +616,46 @@ def _build_risk_metrics(symbol: str, rows: list[dict[str, Any]]) -> dict[str, An
         return None
 
 
-def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool) -> dict[str, Any] | None:
+def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool) -> dict[str, Any]:
     if len(rows) < 3:
-        return None
-    try:
-        from kronos_fincept.service import forecast_from_request
+        raise ValueError("Kronos prediction requires at least 3 OHLCV rows.")
 
-        forecast_rows = [
-            ForecastRow(
-                timestamp=str(row["timestamp"]),
-                open=_safe_float(row["open"]),
-                high=_safe_float(row["high"]),
-                low=_safe_float(row["low"]),
-                close=_safe_float(row["close"]),
-                volume=_safe_float(row.get("volume")),
-                amount=_safe_float(row.get("amount")),
-            )
-            for row in rows[-100:]
-        ]
-        request = ForecastRequest(
-            symbol=symbol,
-            timeframe="1d",
-            rows=forecast_rows,
-            pred_len=5,
-            model_id=_active_kronos_model_id(),
-            dry_run=dry_run,
-            sample_count=1,
+    from kronos_fincept.service import forecast_from_request
+
+    forecast_rows = [
+        ForecastRow(
+            timestamp=str(row["timestamp"]),
+            open=_safe_float(row["open"]),
+            high=_safe_float(row["high"]),
+            low=_safe_float(row["low"]),
+            close=_safe_float(row["close"]),
+            volume=_safe_float(row.get("volume")),
+            amount=_safe_float(row.get("amount")),
         )
-        response = forecast_from_request(request)
-        if not response.get("ok"):
-            return None
-        return {
-            "model": response.get("model_id", _active_kronos_model_id()),
-            "prediction_days": response.get("pred_len", 5),
-            "forecast": response.get("forecast", []),
-            "probabilistic": response.get("probabilistic"),
-            "metadata": response.get("metadata"),
-        }
-    except Exception:
-        return None
+        for row in rows[-100:]
+    ]
+    request = ForecastRequest(
+        symbol=symbol,
+        timeframe="1d",
+        rows=forecast_rows,
+        pred_len=5,
+        model_id=_active_kronos_model_id(),
+        dry_run=dry_run,
+        sample_count=1,
+    )
+    response = forecast_from_request(request)
+    if not response.get("ok"):
+        raise RuntimeError(str(response.get("error") or "Kronos forecast returned ok=false."))
+    forecast = response.get("forecast") or []
+    if not forecast:
+        raise RuntimeError("Kronos forecast returned no forecast rows.")
+    return {
+        "model": response.get("model_id", _active_kronos_model_id()),
+        "prediction_days": response.get("pred_len", 5),
+        "forecast": forecast,
+        "probabilistic": response.get("probabilistic"),
+        "metadata": response.get("metadata"),
+    }
 
 
 def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, Any], AgentToolCall]:
@@ -690,6 +731,7 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
     primary = assets[0] if assets else {}
     market_data = primary.get("market_data") or {}
     prediction = primary.get("kronos_prediction") or {}
+    prediction_error = primary.get("kronos_prediction_error")
     risk_metrics = primary.get("risk_metrics") or {}
     symbol = primary.get("symbol") or "未识别标的"
 
@@ -699,8 +741,10 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
         current_price = _safe_float(market_data.get("current_price"))
         expected_return = _pct_change(predicted_close, current_price)
         short_term = f"Kronos 5 日末收盘预测相对当前价格约 {expected_return:.2f}%。"
+    elif prediction_error:
+        short_term = f"真实 Kronos 未返回预测：{prediction_error}"
     else:
-        short_term = "Kronos 短期预测不可用，需先确认模型或行情数据是否可用。"
+        short_term = "真实 Kronos 短期预测不可用，需先确认模型或行情数据是否可用。"
 
     volatility = risk_metrics.get("volatility")
     risk_level = "中"
@@ -877,6 +921,14 @@ def _safe_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _short_error(exc: BaseException, *, limit: int = 240) -> str:
+    text = str(exc).strip() or type(exc).__name__
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
 
 
 def _elapsed_ms(started_at: float) -> int:

@@ -220,13 +220,13 @@ async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
                 timeframe="1d",
                 rows=forecast_rows,
                 pred_len=5,
-                sample_count=100,
+                sample_count=1,
             )
 
             result = forecast_from_request(request)
             if result["ok"]:
                 prediction_data = ForecastDataOut(
-                    model="Kronos-base",
+                    model=result.get("model_id", "Kronos"),
                     prediction_days=5,
                     forecast=result["forecast"],
                     probabilistic=result.get("probabilistic"),

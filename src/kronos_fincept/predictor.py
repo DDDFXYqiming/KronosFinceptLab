@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,9 @@ from kronos_fincept.data_adapter import make_future_timestamps
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
 
 _KRONOS_REPO_ENV = "KRONOS_REPO_PATH"
+_PREDICTOR_CACHE_LOCK = threading.RLock()
+_INFERENCE_LOCK = threading.Lock()
+_PREDICTOR_CACHE: dict[tuple[str, str, int, str], "_CachedPredictor"] = {}
 
 
 def _resolve_kronos_repo() -> Path | None:
@@ -67,6 +71,10 @@ class ForecastResult:
     device: str
     elapsed_ms: int
     backend: str
+    model_cached: bool = False
+    cache_key: str = ""
+    load_wait_ms: int = 0
+    inference_wait_ms: int = 0
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,36 @@ class ProbabilisticForecastResult:
     elapsed_ms: int
     backend: str
     sample_count: int
+    model_cached: bool = False
+    cache_key: str = ""
+    load_wait_ms: int = 0
+    inference_wait_ms: int = 0
+
+
+@dataclass(frozen=True)
+class _CachedPredictor:
+    predictor: Any
+    device: str
+
+
+def clear_predictor_cache() -> None:
+    """Clear the process-level Kronos predictor cache.
+
+    This is primarily used by tests and controlled local troubleshooting. Runtime
+    code should keep the cache hot so Web forecast and Agent analysis reuse the
+    same loaded model.
+    """
+    with _PREDICTOR_CACHE_LOCK:
+        _PREDICTOR_CACHE.clear()
+
+
+def predictor_cache_stats() -> dict[str, Any]:
+    """Return lightweight cache diagnostics without touching Torch."""
+    with _PREDICTOR_CACHE_LOCK:
+        return {
+            "size": len(_PREDICTOR_CACHE),
+            "keys": ["|".join(str(part) for part in key) for key in _PREDICTOR_CACHE],
+        }
 
 
 class DryRunPredictor:
@@ -151,11 +189,46 @@ class KronosPredictorWrapper:
         self.top_p = top_p
         self.sample_count = sample_count
         self._predictor: Any | None = None
+        self._resolved_device = device or "auto"
+        self._model_cached = False
+        self._load_wait_ms = 0
+        self._cache_key = (
+            self.model_id,
+            self.tokenizer_id,
+            self.max_context,
+            self.device or "auto",
+        )
+
+    @property
+    def cache_key(self) -> str:
+        return "|".join(str(part) for part in self._cache_key)
 
     def _load(self) -> Any:
         if self._predictor is not None:
+            self._model_cached = True
             return self._predictor
 
+        wait_started = time.perf_counter()
+        _PREDICTOR_CACHE_LOCK.acquire()
+        self._load_wait_ms = int((time.perf_counter() - wait_started) * 1000)
+        try:
+            cached = _PREDICTOR_CACHE.get(self._cache_key)
+            if cached is not None:
+                self._predictor = cached.predictor
+                self._resolved_device = cached.device
+                self._model_cached = True
+                return self._predictor
+
+            predictor, device = self._load_uncached()
+            self._predictor = predictor
+            self._resolved_device = device
+            self._model_cached = False
+            _PREDICTOR_CACHE[self._cache_key] = _CachedPredictor(predictor=predictor, device=device)
+            return self._predictor
+        finally:
+            _PREDICTOR_CACHE_LOCK.release()
+
+    def _load_uncached(self) -> tuple[Any, str]:
         _ensure_kronos_on_syspath()
 
         try:
@@ -203,30 +276,44 @@ class KronosPredictorWrapper:
 
         model.to(device)
         model.eval()
-        self._predictor = KronosPredictor(model, tokenizer, max_context=self.max_context, device=device)
-        return self._predictor
+        predictor = KronosPredictor(model, tokenizer, max_context=self.max_context, device=device)
+        return predictor, device
 
     def predict(self, df: pd.DataFrame, x_timestamp: pd.Series, pred_len: int) -> ForecastResult:
         started = time.perf_counter()
         predictor = self._load()
         y_timestamp = make_future_timestamps(x_timestamp, pred_len)
-        frame = predictor.predict(
-            df=df,
-            x_timestamp=x_timestamp,
-            y_timestamp=y_timestamp,
-            pred_len=pred_len,
-            T=self.temperature,
-            top_k=self.top_k,
-            top_p=self.top_p,
-            sample_count=self.sample_count,
-            verbose=False,
-        )
+        wait_started = time.perf_counter()
+        _INFERENCE_LOCK.acquire()
+        inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
+        try:
+            frame = predictor.predict(
+                df=df,
+                x_timestamp=x_timestamp,
+                y_timestamp=y_timestamp,
+                pred_len=pred_len,
+                T=self.temperature,
+                top_k=self.top_k,
+                top_p=self.top_p,
+                sample_count=self.sample_count,
+                verbose=False,
+            )
+        finally:
+            _INFERENCE_LOCK.release()
         frame = frame.reset_index(drop=False)
         if "timestamp" not in frame.columns:
             frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        device = self.device or "auto"
-        return ForecastResult(frame=frame, device=device, elapsed_ms=elapsed_ms, backend="kronos")
+        return ForecastResult(
+            frame=frame,
+            device=self._resolved_device,
+            elapsed_ms=elapsed_ms,
+            backend="kronos",
+            model_cached=self._model_cached,
+            cache_key=self.cache_key,
+            load_wait_ms=self._load_wait_ms,
+            inference_wait_ms=inference_wait_ms,
+        )
 
     def predict_probabilistic(
         self,
@@ -263,23 +350,29 @@ class KronosPredictorWrapper:
         samples: list[pd.DataFrame] = []
         final_closes: list[float] = []
 
-        for i in range(self.sample_count):
-            frame = predictor.predict(
-                df=df,
-                x_timestamp=x_timestamp,
-                y_timestamp=y_timestamp,
-                pred_len=pred_len,
-                T=self.temperature,
-                top_k=self.top_k,
-                top_p=self.top_p,
-                sample_count=1,  # Run one sample at a time for diversity
-                verbose=False,
-            )
-            frame = frame.reset_index(drop=False)
-            if "timestamp" not in frame.columns:
-                frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
-            samples.append(frame)
-            final_closes.append(float(frame.iloc[-1]["close"]))
+        wait_started = time.perf_counter()
+        _INFERENCE_LOCK.acquire()
+        inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
+        try:
+            for i in range(self.sample_count):
+                frame = predictor.predict(
+                    df=df,
+                    x_timestamp=x_timestamp,
+                    y_timestamp=y_timestamp,
+                    pred_len=pred_len,
+                    T=self.temperature,
+                    top_k=self.top_k,
+                    top_p=self.top_p,
+                    sample_count=1,  # Run one sample at a time for diversity
+                    verbose=False,
+                )
+                frame = frame.reset_index(drop=False)
+                if "timestamp" not in frame.columns:
+                    frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
+                samples.append(frame)
+                final_closes.append(float(frame.iloc[-1]["close"]))
+        finally:
+            _INFERENCE_LOCK.release()
 
         # Compute statistics
         current_close = float(df.iloc[-1]["close"])
@@ -312,8 +405,6 @@ class KronosPredictorWrapper:
         mean_frame = pd.DataFrame(mean_data)
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        device = self.device or "auto"
-
         return ProbabilisticForecastResult(
             mean_frame=mean_frame,
             samples=samples,
@@ -321,10 +412,14 @@ class KronosPredictorWrapper:
             volatility_amplification=volatility_amplification,
             forecast_range=forecast_range,
             mean_final_close=mean_final_close,
-            device=device,
+            device=self._resolved_device,
             elapsed_ms=elapsed_ms,
             backend="kronos",
             sample_count=self.sample_count,
+            model_cached=self._model_cached,
+            cache_key=self.cache_key,
+            load_wait_ms=self._load_wait_ms,
+            inference_wait_ms=inference_wait_ms,
         )
 
     def predict_batch(
@@ -352,28 +447,16 @@ class KronosPredictorWrapper:
         # Prepare batch inputs
         y_timestamps = [make_future_timestamps(ts, pred_len) for ts in x_timestamps]
 
+        wait_started = time.perf_counter()
+        _INFERENCE_LOCK.acquire()
+        inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         try:
-            # Use upstream predict_batch
-            frames = predictor.predict_batch(
-                df_list=dfs,
-                x_timestamp_list=x_timestamps,
-                y_timestamp_list=y_timestamps,
-                pred_len=pred_len,
-                T=self.temperature,
-                top_k=self.top_k,
-                top_p=self.top_p,
-                sample_count=self.sample_count,
-                verbose=False,
-            )
-        except Exception:
-            # Fallback to sequential predict if batch fails
-            frames = []
-            for df, ts in zip(dfs, x_timestamps):
-                y_ts = make_future_timestamps(ts, pred_len)
-                frame = predictor.predict(
-                    df=df,
-                    x_timestamp=ts,
-                    y_timestamp=y_ts,
+            try:
+                # Use upstream predict_batch
+                frames = predictor.predict_batch(
+                    df_list=dfs,
+                    x_timestamp_list=x_timestamps,
+                    y_timestamp_list=y_timestamps,
                     pred_len=pred_len,
                     T=self.temperature,
                     top_k=self.top_k,
@@ -381,7 +464,25 @@ class KronosPredictorWrapper:
                     sample_count=self.sample_count,
                     verbose=False,
                 )
-                frames.append(frame)
+            except Exception:
+                # Fallback to sequential if upstream batch inference fails.
+                frames = []
+                for df, ts in zip(dfs, x_timestamps):
+                    y_ts = make_future_timestamps(ts, pred_len)
+                    frame = predictor.predict(
+                        df=df,
+                        x_timestamp=ts,
+                        y_timestamp=y_ts,
+                        pred_len=pred_len,
+                        T=self.temperature,
+                        top_k=self.top_k,
+                        top_p=self.top_p,
+                        sample_count=self.sample_count,
+                        verbose=False,
+                    )
+                    frames.append(frame)
+        finally:
+            _INFERENCE_LOCK.release()
 
         results: list[ForecastResult] = []
         for i, frame in enumerate(frames):
@@ -390,9 +491,13 @@ class KronosPredictorWrapper:
                 frame.insert(0, "timestamp", y_timestamps[i].reset_index(drop=True))
             results.append(ForecastResult(
                 frame=frame,
-                device=self.device or "auto",
+                device=self._resolved_device,
                 elapsed_ms=int((time.perf_counter() - started) * 1000),
                 backend="kronos_batch",
+                model_cached=self._model_cached,
+                cache_key=self.cache_key,
+                load_wait_ms=self._load_wait_ms,
+                inference_wait_ms=inference_wait_ms,
             ))
 
         return results

@@ -30,7 +30,7 @@
 
 ## Current status
 
-Version: v9.0.3
+Version: v9.0.4
 
 ## 快速开始
 

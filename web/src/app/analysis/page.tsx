@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
@@ -121,10 +121,12 @@ function AnalysisContent() {
     { preferInitial: Boolean(symbolParam) }
   );
   const [loading, setLoading] = useState(false);
+  const inFlightRef = useRef(false);
   const [error, setError] = useSessionState("kronos-analysis-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-analysis-result", null);
 
   const handleAnalyze = async (overrideQuestion?: string, forceRefresh = false) => {
+    if (inFlightRef.current) return;
     const prompt = (overrideQuestion || question).trim();
     if (!prompt) return;
     const key = queryKeys.agent({
@@ -139,6 +141,7 @@ function AnalysisContent() {
       return;
     }
 
+    inFlightRef.current = true;
     setLoading(true);
     setError("");
     try {
@@ -162,6 +165,7 @@ function AnalysisContent() {
     } catch (e: any) {
       setError(formatApiError(e, "分析请求失败"));
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
     }
   };

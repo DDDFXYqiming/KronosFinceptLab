@@ -57,7 +57,16 @@ export interface ForecastResponse {
   ok: boolean;
   symbol: string;
   forecast: ForecastRow[];
-  metadata: { device: string; elapsed_ms: number; backend: string; warning: string };
+  metadata: {
+    device: string;
+    elapsed_ms: number;
+    backend: string;
+    warning: string;
+    model_cached?: boolean;
+    cache_key?: string;
+    load_wait_ms?: number;
+    inference_wait_ms?: number;
+  };
   error?: string;
   probability?: number;
   signal?: string;
@@ -248,6 +257,14 @@ function logApiFailure(path: string, status: number, requestId: string | null, m
   });
 }
 
+function enrichGatewayError(status: number, message: string): string {
+  if (![502, 503, 504].includes(status)) return message;
+  return (
+    `${message || `HTTP ${status}`}。` +
+    "这通常表示 Zeabur 网关、容器重启、推理超时或内存压力中断了请求；请稍后重试并用 Runtime Logs 对照 request_id。"
+  );
+}
+
 async function fetchApi<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) {
@@ -260,7 +277,7 @@ async function fetchApi<T>(path: string, options: RequestInit = {}): Promise<T> 
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    const message = err.error || err.detail || `HTTP ${res.status}`;
+    const message = enrichGatewayError(res.status, err.error || err.detail || `HTTP ${res.status}`);
     const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || null;
     const type = err.type || err.code || "api_error";
     logApiFailure(path, res.status, requestId, message);

@@ -46,6 +46,10 @@ def _build_forecast_response(
     elapsed_ms: int,
     backend: str,
     probabilistic: dict[str, Any] | None = None,
+    model_cached: bool = False,
+    cache_key: str = "",
+    load_wait_ms: int = 0,
+    inference_wait_ms: int = 0,
 ) -> dict[str, Any]:
     """Build the standard forecast API response."""
     resp: dict[str, Any] = {
@@ -61,6 +65,10 @@ def _build_forecast_response(
             "elapsed_ms": elapsed_ms,
             "backend": backend,
             "warning": RESEARCH_WARNING,
+            "model_cached": model_cached,
+            "cache_key": cache_key,
+            "load_wait_ms": load_wait_ms,
+            "inference_wait_ms": inference_wait_ms,
         },
     }
     if probabilistic is not None:
@@ -88,6 +96,10 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
         result = predictor.predict(df=df, x_timestamp=timestamps, pred_len=request.pred_len)
         return _build_forecast_response(
             request, result.frame, result.device, result.elapsed_ms, result.backend,
+            model_cached=result.model_cached,
+            cache_key=result.cache_key,
+            load_wait_ms=result.load_wait_ms,
+            inference_wait_ms=result.inference_wait_ms,
         )
 
     if not settings.kronos.enable_real_model:
@@ -128,12 +140,20 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
         return _build_forecast_response(
             request, prob_result.mean_frame, prob_result.device,
             prob_result.elapsed_ms, prob_result.backend, probabilistic=prob_data,
+            model_cached=prob_result.model_cached,
+            cache_key=prob_result.cache_key,
+            load_wait_ms=prob_result.load_wait_ms,
+            inference_wait_ms=prob_result.inference_wait_ms,
         )
     else:
         # Single sample (original behavior)
         result = predictor.predict(df=df, x_timestamp=timestamps, pred_len=request.pred_len)
         return _build_forecast_response(
             request, result.frame, result.device, result.elapsed_ms, result.backend,
+            model_cached=result.model_cached,
+            cache_key=result.cache_key,
+            load_wait_ms=result.load_wait_ms,
+            inference_wait_ms=result.inference_wait_ms,
         )
 
 
