@@ -371,30 +371,30 @@ export default function BatchPage() {
     : 0;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-display">批量对比</h1>
+    <div className="page-shell space-y-6">
+      <h1 className="page-title">批量对比</h1>
 
       <Card>
         <CardTitle>多标的对比</CardTitle>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="md:col-span-2">
-            <label className="text-sm text-gray-400">
+            <label className="field-label">
               股票代码（逗号分隔）
             </label>
             <input
               type="text"
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
               placeholder={`例如 ${DEFAULT_BATCH_SYMBOLS}`}
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">市场</label>
+            <label className="field-label">市场</label>
             <select
               value={market}
               onChange={(event) => setMarket(event.target.value as Market)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white"
+              className="app-input mt-1"
             >
               {MARKET_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -404,7 +404,7 @@ export default function BatchPage() {
             </select>
           </div>
           <div>
-            <label className="text-sm text-gray-400">
+            <label className="field-label">
               预测天数
             </label>
             <input
@@ -413,12 +413,12 @@ export default function BatchPage() {
               onChange={(event) => setPredLen(Math.max(1, +event.target.value))}
               min={1}
               max={60}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white"
+              className="app-input mt-1"
             />
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Button onClick={() => handleCompare(false)} loading={loading}>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 md:flex md:flex-wrap">
+          <Button onClick={() => handleCompare(false)} loading={loading} className="w-full md:w-auto">
             开始对比
           </Button>
           {results.length > 0 && (
@@ -426,12 +426,13 @@ export default function BatchPage() {
               variant="secondary"
               onClick={() => handleCompare(true)}
               disabled={loading}
+              className="w-full md:w-auto"
             >
               刷新对比
             </Button>
           )}
           {loading && (
-            <Button variant="danger" onClick={handleCancel}>
+            <Button variant="danger" onClick={handleCancel} className="w-full md:w-auto">
               取消任务
             </Button>
           )}
@@ -478,7 +479,7 @@ export default function BatchPage() {
       )}
 
       {error && (
-        <div className="p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-300">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
           {error}
         </div>
       )}
@@ -487,7 +488,7 @@ export default function BatchPage() {
         <>
           <Card>
             <CardTitle>预测收益率对比</CardTitle>
-            <div className="h-64">
+            <div className="chart-frame h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
@@ -520,8 +521,8 @@ export default function BatchPage() {
 
           <Card>
             <CardTitle>排名</CardTitle>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="table-scroll">
+              <table className="min-w-[42rem] w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-700 text-gray-400">
                     <th className="py-2 text-left w-12">排名</th>
@@ -590,8 +591,8 @@ export default function BatchPage() {
       {failures.length > 0 && (
         <Card>
           <CardTitle>失败项</CardTitle>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="table-scroll">
+            <table className="min-w-[44rem] w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-700 text-gray-400">
                   <th className="py-2 text-left">代码</th>

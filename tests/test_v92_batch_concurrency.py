@@ -55,5 +55,5 @@ def test_v92_batch_page_tracks_progress_and_partial_failures():
 
 
 def test_v92_version_labels_are_updated():
-    assert "Version: v9.2" in read("README.md")
-    assert "v9.2" in read("web/src/components/layout/Sidebar.tsx")
+    assert "Version: v9.3" in read("README.md")
+    assert "v9.3" in read("web/src/components/layout/Sidebar.tsx")

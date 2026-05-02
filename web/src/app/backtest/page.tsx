@@ -62,58 +62,58 @@ export default function BacktestPage() {
   const equityRange = maxEquity - minEquity || 1;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-display">策略回测</h1>
+    <div className="page-shell space-y-6">
+      <h1 className="page-title">策略回测</h1>
 
       <Card>
         <CardTitle>策略配置</CardTitle>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label className="text-sm text-gray-400">股票代码（逗号分隔）</label>
+            <label className="field-label">股票代码（逗号分隔）</label>
             <input
               type="text"
               value={symbols}
               onChange={(e) => setSymbols(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white"
+              className="app-input mt-1"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">开始日期</label>
+            <label className="field-label">开始日期</label>
             <input
               type="text"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">结束日期</label>
+            <label className="field-label">结束日期</label>
             <input
               type="text"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">Top K</label>
+            <label className="field-label">Top K</label>
             <input
               type="number"
               value={topK}
               onChange={(e) => setTopK(+e.target.value)}
               min={1}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white"
+              className="app-input mt-1"
             />
           </div>
         </div>
-        <div className="mt-4">
-          <Button onClick={() => handleBacktest(false)} loading={loading}>运行回测</Button>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:flex">
+          <Button onClick={() => handleBacktest(false)} loading={loading} className="w-full md:w-auto">运行回测</Button>
           {result && (
             <Button
               variant="secondary"
               onClick={() => handleBacktest(true)}
               loading={loading}
-              className="ml-3"
+              className="w-full md:ml-3 md:w-auto"
             >
               刷新回测
             </Button>
@@ -121,28 +121,28 @@ export default function BacktestPage() {
         </div>
       </Card>
 
-      {error && <div className="p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-300">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
 
       {result && (
         <>
           {/* Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
-              <p className="text-sm text-gray-400">总收益率</p>
+              <p className="text-sm text-muted-foreground">总收益率</p>
               <p className={`text-2xl font-bold ${result.metrics.total_return >= 0 ? "text-accent-green" : "text-accent-red"}`}>
                 {formatPercent(result.metrics.total_return)}
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-gray-400">夏普比率</p>
+              <p className="text-sm text-muted-foreground">夏普比率</p>
               <p className="text-2xl font-bold">{formatNumber(result.metrics.sharpe_ratio, 4)}</p>
             </Card>
             <Card>
-              <p className="text-sm text-gray-400">最大回撤</p>
+              <p className="text-sm text-muted-foreground">最大回撤</p>
               <p className="text-2xl font-bold text-accent-red">{formatPercent(result.metrics.max_drawdown)}</p>
             </Card>
             <Card>
-              <p className="text-sm text-gray-400">胜率</p>
+              <p className="text-sm text-muted-foreground">胜率</p>
               <p className="text-2xl font-bold">{formatPercent(result.metrics.win_rate)}</p>
             </Card>
           </div>
@@ -150,8 +150,8 @@ export default function BacktestPage() {
           {/* Equity curve */}
           <Card>
             <CardTitle>权益曲线</CardTitle>
-            <div className="h-64 overflow-x-auto">
-              <div className="flex items-end gap-1 h-full min-w-max">
+            <div className="chart-frame h-72 overflow-x-auto">
+              <div className="flex h-full min-w-[40rem] items-end gap-1 md:min-w-0">
                 {result.equity_curve.map((point, i) => {
                   const height = ((point.equity - minEquity) / equityRange) * 100;
                   return (

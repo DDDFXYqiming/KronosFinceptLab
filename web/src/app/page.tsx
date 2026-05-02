@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardTitle, CardStat } from "@/components/ui/Card";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/stores/app";
+import { formatDuration } from "@/lib/utils";
 import type { HealthResponse } from "@/types/api";
 
 export default function Dashboard() {
@@ -22,10 +23,10 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-display">仪表盘</h1>
-        <div className="flex items-center gap-2 text-sm">
+    <div className="page-shell space-y-6">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <h1 className="page-title">仪表盘</h1>
+        <div className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm">
           <div
             className={`w-2 h-2 rounded-full animate-pulse-dot ${
               health?.status === "ok" ? "bg-success" : "bg-error"
@@ -38,7 +39,7 @@ export default function Dashboard() {
       </div>
 
       {/* System Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <Card>
             <CardStat
               label="API 状态"
@@ -55,7 +56,7 @@ export default function Dashboard() {
         <Card>
           <CardStat
             label="运行时间"
-            value={health ? `${Math.floor(health.uptime_seconds / 60)}m` : "-"}
+            value={health ? formatDuration(health.uptime_seconds) : "-"}
           />
         </Card>
       </div>
@@ -71,8 +72,8 @@ export default function Dashboard() {
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="table-scroll">
+            <table className="min-w-[28rem] w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
                   <th className="py-2 text-left">代码</th>
@@ -113,7 +114,7 @@ export default function Dashboard() {
             <Link
               key={link.href}
               href={link.href}
-              className="p-4 rounded-xl bg-muted border border-border hover:bg-muted/80 hover:border-accent/20 transition-all duration-200"
+              className="min-h-24 p-4 rounded-xl bg-muted border border-border hover:bg-muted/80 hover:border-accent/20 transition-all duration-200"
             >
               <h3 className="font-semibold text-accent">{link.label}</h3>
               <p className="text-sm text-muted-foreground mt-1">{link.desc}</p>

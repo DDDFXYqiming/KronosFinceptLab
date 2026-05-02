@@ -32,8 +32,9 @@ def test_analysis_light_cards_do_not_use_low_contrast_gray_body_text():
     for pattern in low_contrast_patterns:
         assert pattern not in page
 
-    # Dark input remains intentionally inverted per the existing design.
-    assert "bg-surface-overlay border border-gray-700 rounded-lg text-white" in page
+    # Dark input remains intentionally inverted through the shared responsive primitive.
+    assert "app-input" in page
+    assert "bg-surface-overlay border border-gray-700 rounded-lg text-white" not in page
 
 
 def test_v905_version_labels_are_updated():

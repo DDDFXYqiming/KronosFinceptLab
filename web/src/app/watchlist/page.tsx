@@ -25,30 +25,30 @@ export default function WatchlistPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-display">自选股</h1>
+    <div className="page-shell space-y-6">
+      <h1 className="page-title">自选股</h1>
 
       {/* Add Stock Form */}
       <Card>
         <CardTitle>添加股票</CardTitle>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div>
-            <label className="text-sm text-gray-400">代码</label>
+            <label className="field-label">代码</label>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
               placeholder={`例如 ${DEFAULT_SYMBOL}`}
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">市场</label>
+            <label className="field-label">市场</label>
             <select
               value={market}
               onChange={(e) => setMarket(e.target.value as Market)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white"
+              className="app-input mt-1"
             >
               {MARKET_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -79,8 +79,40 @@ export default function WatchlistPage() {
       {watchlist.length > 0 && (
         <Card>
           <CardTitle>已保存股票 ({watchlist.length})</CardTitle>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="space-y-3 md:hidden">
+            {watchlist.map((item) => (
+              <div key={item.symbol} className="rounded-lg border border-border bg-muted p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-lg font-bold text-foreground">{item.symbol}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{getMarketLabel(item.market)}</p>
+                  </div>
+                  <button
+                    onClick={() => removeFromWatchlist(item.symbol)}
+                    className="min-h-11 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700"
+                  >
+                    移除
+                  </button>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Link
+                    href={`/analysis?symbol=${item.symbol}&market=${item.market}`}
+                    className="flex min-h-11 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-sm font-medium text-accent"
+                  >
+                    分析
+                  </Link>
+                  <Link
+                    href={`/forecast?symbol=${item.symbol}&market=${item.market}`}
+                    className="flex min-h-11 items-center justify-center rounded-lg border border-border bg-card text-sm font-medium text-foreground"
+                  >
+                    预测
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="table-scroll hidden md:block">
+            <table className="min-w-[42rem] w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-700 text-gray-400">
                   <th className="py-2 text-left">代码</th>

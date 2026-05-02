@@ -17,7 +17,7 @@ export function Button({
   className = "",
   ...props
 }: ButtonProps) {
-  const base = "inline-flex items-center justify-center gap-2 font-medium text-sm transition-all duration-200 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed";
+  const base = "inline-flex min-h-11 items-center justify-center gap-2 font-medium text-sm transition-all duration-200 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variants = {
     primary: "btn-primary h-12 px-6",

@@ -193,7 +193,7 @@ function ForecastContent() {
         borderColor: "#374151",
       },
       width: chartContainerRef.current.clientWidth,
-      height: 500,
+      height: window.innerWidth < 768 ? 360 : 500,
     });
 
     chartRef.current = chart;
@@ -220,7 +220,10 @@ function ForecastContent() {
 
     const handleResize = () => {
       if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+        chart.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+          height: window.innerWidth < 768 ? 360 : 500,
+        });
       }
     };
     window.addEventListener("resize", handleResize);
@@ -334,28 +337,28 @@ function ForecastContent() {
       : null;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-display">价格预测</h1>
+    <div className="page-shell space-y-6">
+      <h1 className="page-title">价格预测</h1>
 
       {/* Controls */}
       <Card>
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div>
-            <label className="text-sm text-gray-400">代码</label>
+            <label className="field-label">代码</label>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
               placeholder={`例如 ${DEFAULT_SYMBOL}`}
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">市场</label>
+            <label className="field-label">市场</label>
             <select
               value={market}
               onChange={(e) => setMarket(e.target.value as Market)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white"
+              className="app-input mt-1"
             >
               {MARKET_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -365,22 +368,22 @@ function ForecastContent() {
             </select>
           </div>
           <div>
-            <label className="text-sm text-gray-400">开始日期</label>
+            <label className="field-label">开始日期</label>
             <input
               type="text"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
               placeholder="YYYYMMDD"
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">结束日期</label>
+            <label className="field-label">结束日期</label>
             <input
               type="text"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
               placeholder="YYYYMMDD"
             />
           </div>
@@ -405,7 +408,7 @@ function ForecastContent() {
           </div>
         </div>
         {data.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:flex md:flex-wrap">
             <Button variant="secondary" onClick={() => handleFetchData(true)} loading={loading}>
               刷新数据
             </Button>
@@ -422,7 +425,7 @@ function ForecastContent() {
       </Card>
 
       {error && (
-        <div className="p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-300">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
           {error}
         </div>
       )}
@@ -432,14 +435,14 @@ function ForecastContent() {
           <CardTitle>
             {symbol} — {data.length} 根K线
             {predResult && (
-              <span className="text-sm font-normal text-gray-400 ml-4">
+              <span className="ml-0 block text-sm font-normal text-muted-foreground md:ml-4 md:inline">
                 预测: {predResult.forecast?.length || 0} 步
                 {predResult.metadata.elapsed_ms &&
                   ` (${predResult.metadata.elapsed_ms}ms)`}
               </span>
             )}
           </CardTitle>
-          <div ref={chartContainerRef} className="w-full h-[500px]" />
+          <div ref={chartContainerRef} className="chart-frame h-[360px] md:h-[500px]" />
         </Card>
       ) : (
         <ForecastEmptyState symbol={normalizeSymbol(symbol)} />
@@ -449,18 +452,18 @@ function ForecastContent() {
       {predResult && predictedClose !== null && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
-            <p className="text-sm text-gray-400">最新收盘</p>
+            <p className="text-sm text-muted-foreground">最新收盘</p>
             <p className="text-xl font-bold">{lastClose.toFixed(2)}</p>
           </Card>
           <Card>
-            <p className="text-sm text-gray-400">预测收盘</p>
+            <p className="text-sm text-muted-foreground">预测收盘</p>
             <p className="text-xl font-bold text-blue-400">
               {predictedClose.toFixed(2)}
             </p>
           </Card>
           {changePct !== null && (
             <Card>
-              <p className="text-sm text-gray-400">涨跌幅</p>
+              <p className="text-sm text-muted-foreground">涨跌幅</p>
               <p
                 className={`text-xl font-bold ${
                   changePct >= 0 ? "text-green-400" : "text-red-400"
@@ -478,8 +481,8 @@ function ForecastContent() {
       {data.length > 0 && (
         <Card>
           <CardTitle>历史数据</CardTitle>
-          <div className="overflow-x-auto max-h-64 overflow-y-auto">
-            <table className="w-full text-sm">
+          <div className="table-scroll max-h-64 overflow-y-auto">
+            <table className="min-w-[42rem] w-full text-sm">
               <thead className="sticky top-0 bg-surface-raised">
                 <tr className="border-b border-gray-700 text-gray-400">
                   <th className="py-2 text-left">日期</th>

@@ -48,6 +48,12 @@ body {
   @apply antialiased;
 }
 
+html,
+body {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
 h1, h2, h3 {
   font-family: "Calistoga", Georgia, serif;
 }
@@ -67,6 +73,72 @@ code, pre, .font-mono {
 /* ── Gradient Background ── */
 .gradient-bg {
   background: linear-gradient(to right, var(--color-accent), var(--color-accent-secondary));
+}
+
+.mobile-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.mobile-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.page-shell {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.page-title {
+  white-space: nowrap;
+  font-family: "Calistoga", Georgia, serif;
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  color: var(--color-foreground);
+}
+
+@media (max-width: 767px) {
+  .page-title {
+    font-size: 1.75rem;
+    line-height: 2.15rem;
+  }
+}
+
+.app-input {
+  min-height: 44px;
+  width: 100%;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid #374151;
+  background: #1F2937;
+  padding: 0.625rem 0.75rem;
+  color: #FFFFFF;
+}
+
+.app-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(0, 82, 255, 0.12);
+}
+
+.field-label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+}
+
+.table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chart-frame {
+  min-height: 320px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ── Button Styles (Design Spec) ── */

@@ -12,7 +12,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 import type { AgentAnalyzeResponse } from "@/types/api";
 
-const LOADING_STEPS = ["理解问题", "获取行情", "调用预测模型", "汇总报告"];
+const LOADING_STEPS = ["理解问题", "获取行情", "调用预测模型", "网页检索", "汇总报告"];
 const EXAMPLES = [
   `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`,
   "比较招商银行和贵州茅台的中短期风险",
@@ -72,7 +72,7 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
   }));
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
       {steps.map((step) => {
         const active = step.status === "completed";
         const failed = ["failed", "blocked"].includes(step.status);
@@ -189,8 +189,8 @@ function AnalysisContent() {
   const report = result?.report;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-display">AI 分析</h1>
+    <div className="page-shell space-y-6">
+      <h1 className="page-title">AI 分析</h1>
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -198,17 +198,17 @@ function AnalysisContent() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             rows={4}
-            className="w-full px-4 py-3 bg-surface-overlay border border-gray-700 rounded-lg text-white resize-none focus:outline-none focus:border-accent"
+            className="app-input min-h-36 resize-none px-4 py-3"
             placeholder={`例如：帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`}
           />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex min-w-0 flex-wrap gap-2">
               {EXAMPLES.map((item) => (
                 <button
                   key={item}
                   type="button"
                   onClick={() => setQuestion(item)}
-                  className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:border-accent hover:text-foreground transition-colors"
+                  className="min-h-11 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
                 >
                   {item}
                 </button>
@@ -240,7 +240,7 @@ function AnalysisContent() {
       )}
 
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
           {error}
         </div>
       )}
@@ -248,8 +248,8 @@ function AnalysisContent() {
       {result && (
         <>
           <Card>
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
+            <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-3 mb-2">
                   <CardTitle>{result.symbols.length ? result.symbols.join(" / ") : "待澄清"}</CardTitle>
                   {result.market && (
@@ -269,7 +269,7 @@ function AnalysisContent() {
 
             <p className="text-muted-foreground leading-relaxed">{report?.conclusion}</p>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">置信度</p>
                 <div className="flex items-center gap-2">
@@ -315,10 +315,10 @@ function AnalysisContent() {
                     className="flex flex-col gap-1 border border-border rounded-lg px-3 py-2 bg-muted"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-mono text-foreground">{call.name}</span>
+                      <span className="break-all text-sm font-mono text-foreground">{call.name}</span>
                       <span className="text-xs text-muted-foreground">{call.status}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground">{call.summary}</p>
+                    <p className="break-words text-sm text-muted-foreground">{call.summary}</p>
                   </div>
                 ))}
               </div>
@@ -349,8 +349,8 @@ function AnalysisContent() {
                   {result.kronos_prediction.model} · {result.kronos_prediction.prediction_days} days
                 </span>
               </CardTitle>
-              <div className="overflow-x-auto max-h-80 overflow-y-auto">
-                <table className="w-full text-sm">
+              <div className="table-scroll max-h-80 overflow-y-auto">
+                <table className="min-w-[36rem] w-full text-sm">
                   <thead className="sticky top-0 bg-muted">
                     <tr className="border-b border-border text-muted-foreground">
                       <th className="py-2 text-left">日期</th>

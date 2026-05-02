@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app";
 
-const navItems = [
+export const navItems = [
   { href: "/", label: "仪表盘" },
   { href: "/forecast", label: "预测" },
   { href: "/analysis", label: "分析" },
@@ -20,7 +20,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ${
+      className={`fixed left-0 top-0 z-40 hidden h-screen transition-all duration-300 md:block ${
         sidebarOpen ? "w-60" : "w-16"
       } bg-card border-r border-border`}
     >
@@ -42,7 +42,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center px-3 py-2.5 rounded-xl transition-all duration-200 ${
+              className={`flex min-h-11 items-center px-3 py-2.5 rounded-xl transition-all duration-200 ${
                 isActive
                   ? "bg-accent/10 text-accent border border-accent/20"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent"
@@ -60,7 +60,7 @@ export function Sidebar() {
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
           <div className="text-xs text-muted-foreground text-center font-mono">
-            v9.2.4 — 仅供研究
+            v9.3 — 仅供研究
           </div>
         </div>
       )}

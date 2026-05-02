@@ -17,6 +17,18 @@ export function formatNumber(value: number, decimals = 2): string {
   });
 }
 
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "-";
+  const totalMinutes = Math.floor(seconds / 60);
+  if (totalMinutes < 1) return `${Math.floor(seconds)}s`;
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 export function signalColor(signal: string): string {
   switch (signal.toUpperCase()) {
     case "BUY": return "text-accent-green";

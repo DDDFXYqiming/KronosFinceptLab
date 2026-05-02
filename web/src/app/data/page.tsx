@@ -87,25 +87,25 @@ export default function DataPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-display">数据浏览</h1>
+    <div className="page-shell space-y-6">
+      <h1 className="page-title">数据浏览</h1>
 
       {/* Search */}
       <Card>
         <CardTitle>搜索股票</CardTitle>
-        <div className="flex gap-4">
+        <div className="grid grid-cols-1 gap-3 md:flex md:gap-4">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="flex-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white"
+            className="app-input flex-1"
             placeholder="输入代码或名称搜索..."
           />
-          <Button onClick={() => handleSearch(false)} loading={searchLoading}>搜索</Button>
+          <Button onClick={() => handleSearch(false)} loading={searchLoading} className="w-full md:w-auto">搜索</Button>
         </div>
         {error && (
-          <div className="mt-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error}
           </div>
         )}
@@ -115,11 +115,11 @@ export default function DataPage() {
               <button
                 key={`${r.market}-${r.code}`}
                 onClick={() => { setSymbol(normalizeSymbol(r.code)); setSearchResults([]); }}
-                className="w-full text-left px-3 py-2 rounded hover:bg-surface-overlay flex justify-between"
+                className="flex min-h-11 w-full flex-col gap-1 rounded px-3 py-2 text-left hover:bg-muted sm:flex-row sm:justify-between"
               >
                 <span className="font-mono">{r.code}</span>
                 <span>{r.name}</span>
-                <span className="text-gray-500 text-sm">{r.market}</span>
+                <span className="text-sm text-muted-foreground">{r.market}</span>
               </button>
             ))}
           </div>
@@ -129,26 +129,26 @@ export default function DataPage() {
       {/* Fetch */}
       <Card>
         <CardTitle>获取数据</CardTitle>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div>
-            <label className="text-sm text-gray-400">代码</label>
+            <label className="field-label">代码</label>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono"
+              className="app-input mt-1 font-mono"
               placeholder={DEFAULT_SYMBOL}
             />
           </div>
           <div>
-            <label className="text-sm text-gray-400">开始日期</label>
+            <label className="field-label">开始日期</label>
             <input type="text" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono" />
+              className="app-input mt-1 font-mono" />
           </div>
           <div>
-            <label className="text-sm text-gray-400">结束日期</label>
+            <label className="field-label">结束日期</label>
             <input type="text" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-              className="w-full mt-1 px-3 py-2 bg-surface-overlay border border-gray-700 rounded-lg text-white font-mono" />
+              className="app-input mt-1 font-mono" />
           </div>
           <div className="flex items-end">
             <Button onClick={() => handleFetch(false)} loading={loading} className="w-full">获取</Button>
@@ -167,8 +167,8 @@ export default function DataPage() {
       {data && (
         <Card>
           <CardTitle>{data.symbol} — {data.count} rows</CardTitle>
-          <div className="overflow-x-auto max-h-96 overflow-y-auto">
-            <table className="w-full text-sm">
+          <div className="table-scroll max-h-96 overflow-y-auto">
+            <table className="min-w-[42rem] w-full text-sm">
               <thead className="sticky top-0 bg-surface-raised">
                 <tr className="border-b border-gray-700 text-gray-400">
                   <th className="py-2 text-left">日期</th>
