@@ -2,10 +2,12 @@
 
 import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, ForecastRow, ForecastResponse } from "@/lib/api";
+import { api, DataResponse, ForecastRow, ForecastResponse, formatApiError } from "@/lib/api";
 import { DEFAULT_MARKET, DEFAULT_SYMBOL, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 import {
   createChart,
@@ -31,6 +33,7 @@ function toChartTime(ts: string, baseDate?: string): string {
 
 function ForecastContent() {
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const symbolParam = searchParams.get("symbol");
   const marketParam = searchParams.get("market") as Market | null;
   const [symbol, setSymbol] = useSessionState(
@@ -56,32 +59,59 @@ function ForecastContent() {
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
-  const handleFetchData = useCallback(async () => {
+  const applyDataResponse = useCallback((res: DataResponse) => {
+    if (res.rows && res.rows.length > 0) {
+      setData(res.rows);
+      setError("");
+    } else {
+      setError("该代码/日期范围无数据返回。");
+      setData([]);
+    }
+  }, [setData, setError]);
+
+  const handleFetchData = useCallback(async (forceRefresh = false) => {
     if (!symbol) return;
-    setLoading(true);
     setError("");
     setPrediction(null);
     setPredResult(null);
+    const key = queryKeys.data({ symbol, market, startDate, endDate });
+    const cached = forceRefresh ? undefined : queryClient.getQueryData<DataResponse>(key);
+    if (cached) {
+      applyDataResponse(cached);
+      return;
+    }
+
+    setLoading(true);
     try {
-      let res;
-      if (market === "cn") {
-        res = await api.getData(symbol, startDate, endDate);
-      } else {
-        res = await api.getGlobalData(symbol, market, startDate, endDate);
+      if (forceRefresh) {
+        await queryClient.invalidateQueries({ queryKey: key });
       }
-      if (res.rows && res.rows.length > 0) {
-        setData(res.rows);
-      } else {
-        setError("该代码/日期范围无数据返回。");
-        setData([]);
-      }
+      const res = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: () =>
+          market === "cn"
+            ? api.getData(symbol, startDate, endDate)
+            : api.getGlobalData(symbol, market, startDate, endDate),
+      });
+      applyDataResponse(res);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatApiError(e));
       setData([]);
     } finally {
       setLoading(false);
     }
-  }, [symbol, market, startDate, endDate]);
+  }, [
+    symbol,
+    market,
+    startDate,
+    endDate,
+    queryClient,
+    applyDataResponse,
+    setError,
+    setPrediction,
+    setPredResult,
+    setData,
+  ]);
 
   // Load data from URL params on mount
   useEffect(() => {
@@ -182,28 +212,54 @@ function ForecastContent() {
     chartRef.current?.timeScale().fitContent();
   }, [prediction, data]);
 
-  const handleRunPrediction = async () => {
+  const applyForecastResponse = useCallback((res: ForecastResponse) => {
+    if (res.forecast && res.forecast.length > 0) {
+      setPrediction(res.forecast);
+      setPredResult(res);
+      setError("");
+    } else {
+      setError("未返回预测数据。");
+    }
+  }, [setError, setPredResult, setPrediction]);
+
+  const handleRunPrediction = async (forceRefresh = false) => {
     if (data.length === 0) {
       setError("请先加载数据再运行预测。");
       return;
     }
+    const key = queryKeys.forecast({
+      symbol,
+      market,
+      predLen: 5,
+      rowCount: data.length,
+      lastTimestamp: data[data.length - 1]?.timestamp,
+      dryRun: true,
+    });
+    const cached = forceRefresh ? undefined : queryClient.getQueryData<ForecastResponse>(key);
+    if (cached) {
+      applyForecastResponse(cached);
+      return;
+    }
+
     setPredLoading(true);
     setError("");
     try {
-      const res = await api.forecast({
-        symbol,
-        pred_len: 5,
-        rows: data,
-        dry_run: true,
-      });
-      if (res.forecast && res.forecast.length > 0) {
-        setPrediction(res.forecast);
-        setPredResult(res);
-      } else {
-        setError("未返回预测数据。");
+      if (forceRefresh) {
+        await queryClient.invalidateQueries({ queryKey: key });
       }
+      const res = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: () =>
+          api.forecast({
+            symbol,
+            pred_len: 5,
+            rows: data,
+            dry_run: true,
+          }),
+      });
+      applyForecastResponse(res);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatApiError(e));
     } finally {
       setPredLoading(false);
     }
@@ -272,7 +328,7 @@ function ForecastContent() {
           </div>
           <div className="flex items-end">
             <Button
-              onClick={handleFetchData}
+              onClick={() => handleFetchData(false)}
               loading={loading}
               className="w-full"
             >
@@ -281,7 +337,7 @@ function ForecastContent() {
           </div>
           <div className="flex items-end">
             <Button
-              onClick={handleRunPrediction}
+              onClick={() => handleRunPrediction(false)}
               loading={predLoading}
               className="w-full"
               disabled={data.length === 0}
@@ -290,6 +346,21 @@ function ForecastContent() {
             </Button>
           </div>
         </div>
+        {data.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button variant="secondary" onClick={() => handleFetchData(true)} loading={loading}>
+              刷新数据
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => handleRunPrediction(true)}
+              loading={predLoading}
+              disabled={data.length === 0}
+            >
+              重新预测
+            </Button>
+          </div>
+        )}
       </Card>
 
       {error && (
@@ -359,9 +430,9 @@ function ForecastContent() {
                 </tr>
               </thead>
               <tbody>
-                {data.slice(-50).map((row, i) => (
+                {data.slice(-50).map((row) => (
                   <tr
-                    key={i}
+                    key={`${row.timestamp}-${row.close}`}
                     className="border-b border-gray-800 hover:bg-surface-overlay"
                   >
                     <td className="py-1.5 font-mono text-xs">

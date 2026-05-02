@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, BacktestResponse } from "@/lib/api";
+import { api, BacktestResponse, formatApiError } from "@/lib/api";
 import { formatPercent, formatNumber } from "@/lib/utils";
 import { DEFAULT_BACKTEST_SYMBOLS } from "@/lib/defaults";
+import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 
 export default function BacktestPage() {
+  const queryClient = useQueryClient();
   const [symbols, setSymbols] = useSessionState("kronos-backtest-symbols", DEFAULT_BACKTEST_SYMBOLS);
   const [startDate, setStartDate] = useSessionState("kronos-backtest-start-date", "20250101");
   const [endDate, setEndDate] = useSessionState("kronos-backtest-end-date", "20260430");
@@ -17,20 +20,36 @@ export default function BacktestPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-backtest-error", "");
 
-  const handleBacktest = async () => {
+  const handleBacktest = async (forceRefresh = false) => {
+    const symbolList = symbols.split(",").map((s) => s.trim()).filter(Boolean);
+    const key = queryKeys.backtest({ symbols: symbolList, startDate, endDate, topK });
+    const cached = forceRefresh ? undefined : queryClient.getQueryData<BacktestResponse>(key);
+    if (cached) {
+      setResult(cached);
+      setError("");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      const res = await api.backtest({
-        symbols: symbols.split(",").map((s) => s.trim()),
-        start_date: startDate,
-        end_date: endDate,
-        top_k: topK,
-        dry_run: true,
+      if (forceRefresh) {
+        await queryClient.invalidateQueries({ queryKey: key });
+      }
+      const res = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: () =>
+          api.backtest({
+            symbols: symbolList,
+            start_date: startDate,
+            end_date: endDate,
+            top_k: topK,
+            dry_run: true,
+          }),
       });
       setResult(res);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatApiError(e));
     } finally {
       setLoading(false);
     }
@@ -38,7 +57,7 @@ export default function BacktestPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-display">📈 策略回测</h1>
+      <h1 className="text-3xl font-display">策略回测</h1>
 
       <Card>
         <CardTitle>策略配置</CardTitle>
@@ -82,7 +101,17 @@ export default function BacktestPage() {
           </div>
         </div>
         <div className="mt-4">
-          <Button onClick={handleBacktest} loading={loading}>运行回测</Button>
+          <Button onClick={() => handleBacktest(false)} loading={loading}>运行回测</Button>
+          {result && (
+            <Button
+              variant="secondary"
+              onClick={() => handleBacktest(true)}
+              loading={loading}
+              className="ml-3"
+            >
+              刷新回测
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -124,7 +153,7 @@ export default function BacktestPage() {
                   const height = ((point.equity - minEq) / range) * 100;
                   return (
                     <div
-                      key={i}
+                      key={`${point.date}-${point.equity}`}
                       className="flex-1 min-w-[4px] rounded-t"
                       style={{
                         height: `${Math.max(height, 2)}%`,
@@ -143,7 +172,7 @@ export default function BacktestPage() {
             </div>
           </Card>
 
-          <p className="text-xs text-gray-500 text-center">⚠️ {result.metadata.warning}</p>
+          <p className="text-xs text-gray-500 text-center">提示：{result.metadata.warning}</p>
         </>
       )}
     </div>

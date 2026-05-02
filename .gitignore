@@ -13,7 +13,7 @@ target/
 
 # Local data and model caches
 .cache/
-data/
+/data/
 logs/
 models/
 external/

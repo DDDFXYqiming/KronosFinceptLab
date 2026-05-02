@@ -1,21 +1,18 @@
 "use client";
 
 import { useAppStore } from "@/stores/app";
-import { useEffect, useState } from "react";
-import { api, HealthResponse } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 
 
 export function Header() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-
-  useEffect(() => {
-    api.health().then(setHealth).catch(() => {});
-    const interval = setInterval(() => {
-      api.health().then(setHealth).catch(() => {});
-    }, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health(),
+    queryFn: api.health,
+    refetchInterval: 30000,
+  });
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-card/80 backdrop-blur-md border-b border-border flex items-center px-6">

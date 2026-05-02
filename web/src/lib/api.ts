@@ -1,5 +1,35 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
+export class ApiError extends Error {
+  status: number;
+  requestId: string | null;
+  path: string;
+  type: string;
+
+  constructor(
+    message: string,
+    options: { status: number; requestId: string | null; path: string; type?: string }
+  ) {
+    super(message);
+    this.name = "ApiError";
+    this.status = options.status;
+    this.requestId = options.requestId;
+    this.path = options.path;
+    this.type = options.type || "api_error";
+  }
+}
+
+export function formatApiError(error: unknown, fallback = "请求失败"): string {
+  if (error instanceof ApiError) {
+    const requestId = error.requestId ? ` request_id=${error.requestId}` : "";
+    return `${error.message}${requestId}`;
+  }
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
 export interface ForecastRow {
   timestamp: string;
   open: number;
@@ -212,16 +242,23 @@ function logApiFailure(path: string, status: number, requestId: string | null, m
   });
 }
 
-async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+async function fetchApi<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     const message = err.error || err.detail || `HTTP ${res.status}`;
-    logApiFailure(path, res.status, res.headers.get("X-Request-ID"), message);
-    throw new Error(message);
+    const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || null;
+    const type = err.type || err.code || "api_error";
+    logApiFailure(path, res.status, requestId, message);
+    throw new ApiError(message, { status: res.status, requestId, path, type });
   }
   return res.json();
 }

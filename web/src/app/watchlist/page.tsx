@@ -1,16 +1,16 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useAppStore } from "@/stores/app";
 import { DEFAULT_MARKET, DEFAULT_SYMBOL, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { useSessionState } from "@/lib/useSessionState";
 
 export default function WatchlistPage() {
   const { watchlist, addToWatchlist, removeFromWatchlist } = useAppStore();
-  const [symbol, setSymbol] = useState("");
-  const [market, setMarket] = useState<Market>(DEFAULT_MARKET);
+  const [symbol, setSymbol] = useSessionState("kronos-watchlist-symbol", "");
+  const [market, setMarket] = useSessionState<Market>("kronos-watchlist-market", DEFAULT_MARKET);
 
   const handleAdd = () => {
     const trimmed = symbol.trim().toUpperCase();

@@ -2,10 +2,12 @@
 
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, AgentAnalyzeResponse } from "@/lib/api";
+import { api, AgentAnalyzeResponse, formatApiError } from "@/lib/api";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, type Market } from "@/lib/defaults";
+import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 
 const LOADING_STEPS = ["理解问题", "获取行情", "调用预测模型", "汇总报告"];
@@ -107,6 +109,7 @@ function ReportSection({ title, value }: { title: string; value?: string }) {
 
 function AnalysisContent() {
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const symbolParam = searchParams.get("symbol");
   const marketParam = searchParams.get("market") as Market | null;
   const initialQuestion = symbolParam
@@ -121,24 +124,43 @@ function AnalysisContent() {
   const [error, setError] = useSessionState("kronos-analysis-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-analysis-result", null);
 
-  const handleAnalyze = async (overrideQuestion?: string) => {
+  const handleAnalyze = async (overrideQuestion?: string, forceRefresh = false) => {
     const prompt = (overrideQuestion || question).trim();
     if (!prompt) return;
+    const key = queryKeys.agent({
+      question: prompt,
+      symbol: symbolParam || undefined,
+      market: marketParam || undefined,
+    });
+    const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
+    if (cached) {
+      setResult(cached);
+      setError("");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
-      const res = await api.agentAnalyze({
-        question: prompt,
-        symbol: symbolParam || undefined,
-        market: marketParam || undefined,
-        context: {
-          entry: "web-analysis",
-          default_symbol: DEFAULT_SYMBOL,
-        },
+      if (forceRefresh) {
+        await queryClient.invalidateQueries({ queryKey: key });
+      }
+      const res = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: () =>
+          api.agentAnalyze({
+            question: prompt,
+            symbol: symbolParam || undefined,
+            market: marketParam || undefined,
+            context: {
+              entry: "web-analysis",
+              default_symbol: DEFAULT_SYMBOL,
+            },
+          }),
       });
       setResult(res);
     } catch (e: any) {
-      setError(e.message || "分析请求失败");
+      setError(formatApiError(e, "分析请求失败"));
     } finally {
       setLoading(false);
     }
@@ -187,6 +209,17 @@ function AnalysisContent() {
             <Button type="submit" loading={loading} className="w-full lg:w-auto">
               开始分析
             </Button>
+            {result && (
+              <Button
+                type="button"
+                variant="secondary"
+                loading={loading}
+                onClick={() => handleAnalyze(undefined, true)}
+                className="w-full lg:w-auto"
+              >
+                重新分析
+              </Button>
+            )}
           </div>
         </form>
       </Card>
@@ -320,8 +353,8 @@ function AnalysisContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {result.kronos_prediction.forecast.map((row, index) => (
-                      <tr key={index} className="border-b border-gray-800 hover:bg-surface-overlay">
+                    {result.kronos_prediction.forecast.map((row) => (
+                      <tr key={`${row.timestamp}-${row.close}`} className="border-b border-gray-800 hover:bg-surface-overlay">
                         <td className="py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td>
                         <td className="py-1.5 text-right">{row.open.toFixed(2)}</td>
                         <td className="py-1.5 text-right">{row.high.toFixed(2)}</td>

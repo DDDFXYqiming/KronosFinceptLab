@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { api, ForecastRow } from "@/lib/api";
+import { api, ForecastRow, formatApiError } from "@/lib/api";
 import { DEFAULT_BATCH_SYMBOLS, DEFAULT_MARKET, MARKET_OPTIONS, type Market } from "@/lib/defaults";
+import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 import {
   BarChart,
@@ -25,6 +27,7 @@ interface BatchResult {
 }
 
 export default function BatchPage() {
+  const queryClient = useQueryClient();
   const [input, setInput] = useSessionState("kronos-batch-input", DEFAULT_BATCH_SYMBOLS);
   const [market, setMarket] = useSessionState<Market>("kronos-batch-market", DEFAULT_MARKET);
   const [predLen, setPredLen] = useSessionState("kronos-batch-pred-len", 5);
@@ -32,7 +35,7 @@ export default function BatchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-batch-error", "");
 
-  const handleCompare = async () => {
+  const handleCompare = async (forceRefresh = false) => {
     const symbols = input
       .split(",")
       .map((s) => s.trim())
@@ -46,66 +49,104 @@ export default function BatchPage() {
       return;
     }
 
+    const key = queryKeys.batch({ symbols, market, predLen });
+    const cached = forceRefresh ? undefined : queryClient.getQueryData<BatchResult[]>(key);
+    if (cached) {
+      setResults(cached);
+      setError("");
+      return;
+    }
+
     setLoading(true);
     setError("");
     setResults([]);
 
     try {
-      const collected: BatchResult[] = [];
-
-      for (let i = 0; i < symbols.length; i++) {
-        const sym = symbols[i];
-
-        try {
-          // Fetch historical data
-          let rows: ForecastRow[] = [];
-          try {
-            const dataRes =
-              market === "cn"
-                ? await api.getData(sym, "20250101", "20260430")
-                : await api.getGlobalData(sym, market, "20250101", "20260430");
-            rows = dataRes.rows || [];
-          } catch {
-            // proceed with empty rows
-          }
-
-          // Run forecast
-          const res = await api.forecast({
-            symbol: sym,
-            pred_len: predLen,
-            rows: rows.slice(-120),
-          });
-
-          if (res.forecast && res.forecast.length > 0) {
-            const lastClose =
-              rows.length > 0
-                ? rows[rows.length - 1].close
-                : res.forecast[0].open;
-            const predClose =
-              res.forecast[res.forecast.length - 1].close;
-            collected.push({
-              symbol: sym,
-              last_close: lastClose,
-              predicted_close: predClose,
-              predicted_return:
-                lastClose !== 0 ? (predClose - lastClose) / lastClose : 0,
-              rank: 0,
-            });
-          }
-        } catch {
-          // skip failed symbols
-        }
+      if (forceRefresh) {
+        await queryClient.invalidateQueries({ queryKey: key });
       }
+      const collected = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: async () => {
+          const nextResults: BatchResult[] = [];
 
-      // Sort by predicted return descending
-      collected.sort((a, b) => b.predicted_return - a.predicted_return);
-      collected.forEach((r, i) => {
-        r.rank = i + 1;
+          for (let i = 0; i < symbols.length; i++) {
+            const sym = symbols[i];
+
+            try {
+              // Fetch historical data
+              let rows: ForecastRow[] = [];
+              try {
+                const dataKey = queryKeys.data({
+                  symbol: sym,
+                  market,
+                  startDate: "20250101",
+                  endDate: "20260430",
+                });
+                const dataRes = await queryClient.fetchQuery({
+                  queryKey: dataKey,
+                  queryFn: () =>
+                    market === "cn"
+                      ? api.getData(sym, "20250101", "20260430")
+                      : api.getGlobalData(sym, market, "20250101", "20260430"),
+                });
+                rows = dataRes.rows || [];
+              } catch {
+                // proceed with empty rows
+              }
+
+              // Run forecast
+              const forecastRows = rows.slice(-120);
+              const forecastKey = queryKeys.forecast({
+                symbol: sym,
+                market,
+                predLen,
+                rowCount: forecastRows.length,
+                lastTimestamp: forecastRows[forecastRows.length - 1]?.timestamp,
+              });
+              const res = await queryClient.fetchQuery({
+                queryKey: forecastKey,
+                queryFn: () =>
+                  api.forecast({
+                    symbol: sym,
+                    pred_len: predLen,
+                    rows: forecastRows,
+                  }),
+              });
+
+              if (res.forecast && res.forecast.length > 0) {
+                const lastClose =
+                  rows.length > 0
+                    ? rows[rows.length - 1].close
+                    : res.forecast[0].open;
+                const predClose =
+                  res.forecast[res.forecast.length - 1].close;
+                nextResults.push({
+                  symbol: sym,
+                  last_close: lastClose,
+                  predicted_close: predClose,
+                  predicted_return:
+                    lastClose !== 0 ? (predClose - lastClose) / lastClose : 0,
+                  rank: 0,
+                });
+              }
+            } catch {
+              // skip failed symbols
+            }
+          }
+
+          // Sort by predicted return descending
+          nextResults.sort((a, b) => b.predicted_return - a.predicted_return);
+          nextResults.forEach((r, i) => {
+            r.rank = i + 1;
+          });
+          return nextResults;
+        },
       });
 
       setResults(collected);
     } catch (e: any) {
-      setError(e.message || "批量对比失败");
+      setError(formatApiError(e, "批量对比失败"));
     } finally {
       setLoading(false);
     }
@@ -166,9 +207,19 @@ export default function BatchPage() {
           </div>
         </div>
         <div className="mt-4">
-          <Button onClick={handleCompare} loading={loading}>
+          <Button onClick={() => handleCompare(false)} loading={loading}>
             开始对比
           </Button>
+          {results.length > 0 && (
+            <Button
+              variant="secondary"
+              onClick={() => handleCompare(true)}
+              loading={loading}
+              className="ml-3"
+            >
+              刷新对比
+            </Button>
+          )}
         </div>
       </Card>
 

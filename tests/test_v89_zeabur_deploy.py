@@ -66,10 +66,12 @@ def test_docker_context_excludes_local_secrets_and_build_cache():
     assert "logs" in dockerignore
 
 
-def test_readme_documents_zeabur_deployment():
+def test_zeabur_deployment_contract_survives_trimmed_readme():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    check_script = (ROOT / "scripts/check_zeabur_build.ps1").read_text(encoding="utf-8")
 
-    assert "Version: v8.9" in readme
-    assert "Zeabur" in readme
-    assert "NEXT_IGNORE_INCORRECT_LOCKFILE" in readme
-    assert "scripts/check_zeabur_build.ps1" in readme
+    assert "Version: v" in readme
+    assert "NEXT_IGNORE_INCORRECT_LOCKFILE" in dockerfile
+    assert (ROOT / "scripts/check_zeabur_build.ps1").exists()
+    assert ".next/standalone" in check_script
