@@ -196,11 +196,25 @@ def test_agent_kronos_failure_keeps_clear_error_without_mock(monkeypatch):
         "_build_risk_metrics",
         lambda symbol, input_rows: {"var_95": -0.02, "sharpe_ratio": 1.1, "max_drawdown": -0.08, "volatility": 0.2},
     )
+    monkeypatch.setattr(
+        agent,
+        "_call_deepseek_router",
+        lambda question, explicit_symbol=None, explicit_market=None: agent._local_route_decision(
+            question,
+            explicit_symbol=explicit_symbol,
+            explicit_market=explicit_market,
+        ),
+    )
     monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
     monkeypatch.setattr(
         agent,
         "_build_prediction",
         lambda symbol, rows, dry_run: (_ for _ in ()).throw(RuntimeError("model load failed")),
+    )
+    monkeypatch.setattr(
+        agent,
+        "_create_web_search_client",
+        lambda: type("DisabledSearchClient", (), {"provider": "", "is_configured": False})(),
     )
 
     result = agent.analyze_investment_question("帮我看看招商银行现在能不能买")

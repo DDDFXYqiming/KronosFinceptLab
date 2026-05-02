@@ -109,6 +109,24 @@ class DeepSeekConfig:
 
 
 @dataclass(frozen=True)
+class WebSearchConfig:
+    """Generic web search provider config for the stateless agent."""
+    provider: str = field(default_factory=lambda: _get("WEB_SEARCH_PROVIDER").strip().lower())
+    api_key: str = field(default_factory=lambda: _get("WEB_SEARCH_API_KEY"))
+    endpoint: str = field(default_factory=lambda: _get("WEB_SEARCH_ENDPOINT"))
+    timeout_seconds: int = field(default_factory=lambda: _get_int("WEB_SEARCH_TIMEOUT_SECONDS", 8))
+    max_results: int = field(default_factory=lambda: _get_int("WEB_SEARCH_MAX_RESULTS", 4))
+
+    @property
+    def is_configured(self) -> bool:
+        if self.provider in {"", "none", "disabled", "off"}:
+            return False
+        if self.provider == "custom":
+            return bool(self.endpoint)
+        return bool(self.api_key and not self.api_key.startswith("xxxx"))
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     """API server config."""
     host: str = field(default_factory=lambda: _get("API_HOST", "0.0.0.0"))
@@ -153,6 +171,7 @@ class Settings:
     """Top-level application settings."""
     kronos: KronosConfig = field(default_factory=KronosConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 

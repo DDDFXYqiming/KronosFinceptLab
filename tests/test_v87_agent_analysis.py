@@ -32,6 +32,19 @@ def _rows(n: int = 40) -> list[dict]:
 def _patch_agent_tools(monkeypatch):
     from kronos_fincept import agent
 
+    class DisabledSearchClient:
+        provider = ""
+        is_configured = False
+
+    monkeypatch.setattr(
+        agent,
+        "_call_deepseek_router",
+        lambda question, explicit_symbol=None, explicit_market=None: agent._local_route_decision(
+            question,
+            explicit_symbol=explicit_symbol,
+            explicit_market=explicit_market,
+        ),
+    )
     monkeypatch.setattr(agent, "_fetch_price_data", lambda symbol, market: _rows())
     monkeypatch.setattr(agent, "_fetch_financial_summary", lambda symbol, market: {"symbol": symbol})
     monkeypatch.setattr(agent, "_build_technical_indicators", lambda rows: {"rsi": {"current": 52.0}})
@@ -66,6 +79,7 @@ def _patch_agent_tools(monkeypatch):
             "disclaimer": "仅供研究。",
         },
     )
+    monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
 
 
 def test_agent_rejects_prompt_injection_before_tools():
@@ -92,7 +106,7 @@ def test_agent_resolves_natural_language_symbol_and_returns_trace(monkeypatch):
     tool_names = {item.name for item in result.tool_calls}
     step_names = [item.name for item in result.steps]
     assert {"market_data", "risk_metrics", "kronos_prediction", "deepseek_synthesis"} <= tool_names
-    assert ["理解问题", "获取行情", "调用预测模型", "汇总报告"] == step_names
+    assert ["理解问题", "获取行情", "调用预测模型", "网页检索", "汇总报告"] == step_names
 
 
 def test_agent_infers_us_market_without_web_default_override():

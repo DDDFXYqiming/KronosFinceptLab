@@ -18,6 +18,7 @@
 | | Yahoo Finance | 全球股票市场 |
 | | Binance | 加密货币（国际） |
 | | OKX | 加密货币（中国） |
+| **网页检索** | Tavily/Brave/Serper/custom | Agent 可选公开信息检索 |
 | **预测模型** | NeoQuasar/Kronos-base | 默认 K 线预测模型（CPU 推理） |
 | | NeoQuasar/Kronos-mini/base | 可选模型 |
 | | NeoQuasar/Kronos-Tokenizer-base | Tokenizer |
@@ -30,7 +31,9 @@
 
 ## Current status
 
-Version: v9.2.1
+Version: v9.2.4
+
+Agent 网页检索为可选能力：配置 `WEB_SEARCH_PROVIDER` 与对应 `WEB_SEARCH_API_KEY` 后启用。
 
 ## 快速开始
 
