@@ -32,7 +32,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
     KRONOS_REPO_PATH=/app/external/Kronos \
     HF_HOME=/app/.cache/huggingface \
     KRONOS_MODEL_ID=NeoQuasar/Kronos-small \
-    KRONOS_ENABLE_REAL_MODEL=0 \
+    KRONOS_ENABLE_REAL_MODEL=1 \
+    KRONOS_ALLOW_DRY_RUN=0 \
     MALLOC_ARENA_MAX=2 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
@@ -40,7 +41,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     TOKENIZERS_PARALLELISM=false
 
 ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git
-ARG INSTALL_KRONOS_RUNTIME=0
+ARG INSTALL_KRONOS_RUNTIME=1
 
 # Install Python deps
 COPY pyproject.toml requirements.txt ./

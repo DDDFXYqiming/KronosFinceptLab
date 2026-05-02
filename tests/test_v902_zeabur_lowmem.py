@@ -15,12 +15,13 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_dockerfile_defaults_to_kronos_small_lowmem_runtime():
+def test_dockerfile_defaults_to_kronos_small_real_runtime_with_light_health():
     dockerfile = read("Dockerfile")
 
     assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-small" in dockerfile
-    assert "KRONOS_ENABLE_REAL_MODEL=0" in dockerfile
-    assert "ARG INSTALL_KRONOS_RUNTIME=0" in dockerfile
+    assert "KRONOS_ENABLE_REAL_MODEL=1" in dockerfile
+    assert "KRONOS_ALLOW_DRY_RUN=0" in dockerfile
+    assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
     assert 'pip install --no-cache-dir -e ".[deploy]"' in dockerfile
     assert 'pip install --no-cache-dir -e ".[kronos]"' in dockerfile
 
@@ -128,7 +129,7 @@ def test_disabled_real_model_forecast_returns_error_without_wrapper(monkeypatch)
     monkeypatch.setattr(
         service,
         "settings",
-        SimpleNamespace(kronos=SimpleNamespace(enable_real_model=False)),
+        SimpleNamespace(kronos=SimpleNamespace(enable_real_model=False, allow_dry_run=True)),
     )
     monkeypatch.setattr(
         service,
@@ -160,7 +161,13 @@ def test_service_uses_configured_kronos_small_when_request_uses_default(monkeypa
     monkeypatch.setattr(
         service,
         "settings",
-        SimpleNamespace(kronos=SimpleNamespace(enable_real_model=False, model_id="NeoQuasar/Kronos-small")),
+        SimpleNamespace(
+            kronos=SimpleNamespace(
+                enable_real_model=False,
+                allow_dry_run=True,
+                model_id="NeoQuasar/Kronos-small",
+            )
+        ),
     )
 
     req = ForecastRequest(

@@ -77,6 +77,12 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
     df, timestamps = rows_to_dataframe(request.rows_as_dicts())
 
     if request.dry_run:
+        if not settings.kronos.allow_dry_run:
+            return build_error_response(
+                "Dry-run/mock predictor is disabled in this environment. "
+                "Use real Kronos inference or enable KRONOS_ALLOW_DRY_RUN=1 explicitly.",
+                request.symbol,
+            )
         # Dry-run: simple deterministic prediction
         predictor = DryRunPredictor()
         result = predictor.predict(df=df, x_timestamp=timestamps, pred_len=request.pred_len)

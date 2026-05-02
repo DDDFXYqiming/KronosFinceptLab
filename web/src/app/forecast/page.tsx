@@ -233,7 +233,7 @@ function ForecastContent() {
       predLen: 5,
       rowCount: data.length,
       lastTimestamp: data[data.length - 1]?.timestamp,
-      dryRun: true,
+      dryRun: false,
     });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<ForecastResponse>(key);
     if (cached) {
@@ -254,7 +254,7 @@ function ForecastContent() {
             symbol,
             pred_len: 5,
             rows: data,
-            dry_run: true,
+            dry_run: false,
           }),
       });
       applyForecastResponse(res);

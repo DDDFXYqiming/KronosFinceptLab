@@ -44,7 +44,7 @@ export default function BacktestPage() {
             start_date: startDate,
             end_date: endDate,
             top_k: topK,
-            dry_run: true,
+            dry_run: false,
           }),
       });
       setResult(res);
