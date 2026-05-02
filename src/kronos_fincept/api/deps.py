@@ -37,10 +37,26 @@ def get_predictor(
     )
 
 
-@lru_cache(maxsize=1)
-def get_model_info() -> dict[str, Any]:
-    """Return info about the currently configured model."""
+MODEL_CAPABILITY_NAMES = [
+    "torch",
+    "huggingface_hub",
+    "einops",
+    "safetensors",
+    "kronos_repo",
+    "kronos_code",
+]
+
+
+@lru_cache(maxsize=4)
+def get_model_info(deep: bool = False) -> dict[str, Any]:
+    """Return info about the currently configured model.
+
+    The default path is intentionally lightweight for cloud health probes: it
+    does not import torch or upstream Kronos code. Use deep=True for an explicit
+    operator diagnostic that validates heavyweight imports.
+    """
     device = "cpu"
+    model_enabled = settings.kronos.enable_real_model
     capabilities: dict[str, bool] = {
         "akshare": _has_module("akshare"),
         "baostock": _has_module("baostock"),
@@ -54,13 +70,6 @@ def get_model_info() -> dict[str, Any]:
     }
     model_error: str | None = None
 
-    try:
-        import torch
-        if torch.cuda.is_available():
-            device = "cuda:0"
-    except Exception as exc:
-        model_error = f"torch unavailable: {exc}"
-
     # Check for AMD ROCm
     rocm = os.environ.get("ROCR_VISIBLE_DEVICES")
     if rocm:
@@ -69,31 +78,55 @@ def get_model_info() -> dict[str, Any]:
     repo = _resolve_kronos_repo()
     capabilities["kronos_repo"] = repo is not None
     if repo is not None:
+        capabilities["kronos_code"] = (repo / "model" / "__init__.py").is_file()
+
+    if not model_enabled:
+        model_error = "Real Kronos inference is disabled by KRONOS_ENABLE_REAL_MODEL=0."
+    elif deep:
         try:
-            _ensure_kronos_on_syspath()
-            from model import Kronos, KronosPredictor, KronosTokenizer  # noqa: F401
-            capabilities["kronos_code"] = True
+            import torch
+            if torch.cuda.is_available():
+                device = "cuda:0"
         except Exception as exc:
-            capabilities["kronos_code"] = False
-            model_error = f"kronos code unavailable: {exc}"
-    elif model_error is None:
+            model_error = f"torch unavailable: {exc}"
+
+        if repo is not None:
+            try:
+                _ensure_kronos_on_syspath()
+                from model import Kronos, KronosPredictor, KronosTokenizer  # noqa: F401
+                capabilities["kronos_code"] = True
+            except Exception as exc:
+                capabilities["kronos_code"] = False
+                model_error = f"kronos code unavailable: {exc}"
+        elif model_error is None:
+            model_error = (
+                "KRONOS_REPO_PATH is unset or does not point to a Kronos repo, "
+                "and external/Kronos was not found."
+            )
+    elif repo is None:
         model_error = (
             "KRONOS_REPO_PATH is unset or does not point to a Kronos repo, "
             "and external/Kronos was not found."
         )
 
-    model_loaded = all(
+    model_ready = all(capabilities[name] for name in MODEL_CAPABILITY_NAMES)
+    if model_enabled and model_error is None and not model_ready:
+        missing = ", ".join(name for name in MODEL_CAPABILITY_NAMES if not capabilities[name])
+        model_error = f"missing model prerequisites: {missing}"
+    model_loaded = model_enabled and deep and model_ready and model_error is None
+    data_sources_ready = all(
         capabilities[name]
         for name in [
-            "torch",
-            "huggingface_hub",
-            "einops",
-            "safetensors",
-            "kronos_repo",
-            "kronos_code",
+            "akshare",
+            "baostock",
+            "yfinance",
         ]
     )
-    status = "ok" if all(capabilities.values()) else "degraded"
+    model_runtime_ready = True
+    if model_enabled:
+        model_runtime_ready = model_ready and (model_error is None or not deep)
+
+    status = "ok" if data_sources_ready and model_runtime_ready else "degraded"
 
     return {
         "status": status,
@@ -101,6 +134,9 @@ def get_model_info() -> dict[str, Any]:
         "model_id": settings.kronos.model_id or DEFAULT_MODEL_ID,
         "tokenizer_id": settings.kronos.tokenizer_id or DEFAULT_TOKENIZER_ID,
         "device": device,
+        "runtime_mode": "standard" if model_enabled else "lowmem",
+        "model_enabled": model_enabled,
+        "deep_check": deep,
         "capabilities": capabilities,
         "model_error": None if model_loaded else model_error,
     }

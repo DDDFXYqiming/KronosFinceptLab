@@ -7,9 +7,16 @@ from typing import Any
 
 import pandas as pd
 
+from kronos_fincept.config import settings
 from kronos_fincept.data_adapter import rows_to_dataframe
 from kronos_fincept.predictor import DryRunPredictor, KronosPredictorWrapper, ProbabilisticForecastResult
-from kronos_fincept.schemas import ForecastRequest, RESEARCH_WARNING
+from kronos_fincept.schemas import DEFAULT_MODEL_ID, ForecastRequest, RESEARCH_WARNING, build_error_response
+
+
+def _effective_model_id(model_id: str) -> str:
+    if model_id == DEFAULT_MODEL_ID and settings.kronos.model_id:
+        return settings.kronos.model_id
+    return model_id
 
 
 def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
@@ -45,7 +52,7 @@ def _build_forecast_response(
         "ok": True,
         "symbol": request.symbol,
         "timeframe": request.timeframe,
-        "model_id": request.model_id,
+        "model_id": _effective_model_id(request.model_id),
         "tokenizer_id": request.tokenizer_id,
         "pred_len": request.pred_len,
         "forecast": _frame_to_records(frame),
@@ -77,9 +84,16 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             request, result.frame, result.device, result.elapsed_ms, result.backend,
         )
 
+    if not settings.kronos.enable_real_model:
+        return build_error_response(
+            "Real Kronos inference is disabled by KRONOS_ENABLE_REAL_MODEL=0. "
+            "Use dry_run=true or enable the model runtime explicitly.",
+            request.symbol,
+        )
+
     # Real inference
     predictor = KronosPredictorWrapper(
-        model_id=request.model_id,
+        model_id=_effective_model_id(request.model_id),
         tokenizer_id=request.tokenizer_id,
         max_context=request.max_context,
         temperature=request.temperature,
@@ -145,6 +159,9 @@ def batch_forecast_from_requests(
     if not requests:
         return []
 
+    if any(not req.dry_run for req in requests) and not settings.kronos.enable_real_model:
+        return []
+
     # Check if we should use batch prediction
     # Use batch when all requests are single-sample (not probabilistic)
     use_batch = (
@@ -156,7 +173,7 @@ def batch_forecast_from_requests(
     if use_batch:
         # Prepare batch inputs
         predictor = KronosPredictorWrapper(
-            model_id=requests[0].model_id,
+            model_id=_effective_model_id(requests[0].model_id),
             tokenizer_id=requests[0].tokenizer_id,
             max_context=requests[0].max_context,
             temperature=requests[0].temperature,

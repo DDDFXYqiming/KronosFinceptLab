@@ -30,15 +30,24 @@ ENV PATH="/opt/venv/bin:$PATH" \
     INTERNAL_API_URL=http://localhost:8000 \
     API_PORT=8000 \
     KRONOS_REPO_PATH=/app/external/Kronos \
-    HF_HOME=/app/.cache/huggingface
+    HF_HOME=/app/.cache/huggingface \
+    KRONOS_MODEL_ID=NeoQuasar/Kronos-small \
+    KRONOS_ENABLE_REAL_MODEL=0 \
+    MALLOC_ARENA_MAX=2 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_MAX_THREADS=1 \
+    TOKENIZERS_PARALLELISM=false
 
 ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git
+ARG INSTALL_KRONOS_RUNTIME=0
 
 # Install Python deps
 COPY pyproject.toml requirements.txt ./
 COPY src/ src/
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e ".[deploy]"
+    && pip install --no-cache-dir -e ".[deploy]" \
+    && if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then pip install --no-cache-dir -e ".[kronos]"; fi
 
 # Fetch upstream Kronos source code for real inference. Model weights stay out of git/image.
 RUN mkdir -p external \

@@ -14,10 +14,20 @@ router = APIRouter()
 
 @router.get("/health", response_model=HealthResponseOut)
 async def health_check(request: Request) -> HealthResponseOut:
-    """Return service health status."""
+    """Return lightweight service health status."""
+    return _build_health_response(request, deep=False)
+
+
+@router.get("/health/deep", response_model=HealthResponseOut)
+async def deep_health_check(request: Request) -> HealthResponseOut:
+    """Return heavyweight runtime diagnostics for operator checks."""
+    return _build_health_response(request, deep=True)
+
+
+def _build_health_response(request: Request, deep: bool) -> HealthResponseOut:
     start_time = getattr(request.app.state, "start_time", time.time())
     uptime = time.time() - start_time
-    model_info = get_model_info()
+    model_info = get_model_info(deep=deep)
 
     return HealthResponseOut(
         status=model_info["status"],
@@ -27,6 +37,9 @@ async def health_check(request: Request) -> HealthResponseOut:
         tokenizer_id=model_info["tokenizer_id"],
         device=model_info["device"],
         uptime_seconds=round(uptime, 1),
+        runtime_mode=model_info["runtime_mode"],
+        model_enabled=model_info["model_enabled"],
+        deep_check=model_info["deep_check"],
         capabilities=model_info["capabilities"],
         model_error=model_info["model_error"],
     )

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from kronos_fincept.api.models import (
     ForecastMetadataOut,
     ForecastRequestIn,
@@ -29,8 +29,7 @@ async def predict(req: ForecastRequestIn) -> ForecastResponseOut:
     result = await asyncio.to_thread(forecast_from_request, internal_req)
 
     if not result.get("ok"):
-        from kronos_fincept.schemas import build_error_response
-        return ForecastResponseOut(**build_error_response(result.get("error", "unknown"), req.symbol))
+        raise HTTPException(status_code=503, detail=result.get("error", "unknown"))
 
     return ForecastResponseOut(
         ok=True,

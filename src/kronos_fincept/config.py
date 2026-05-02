@@ -69,6 +69,7 @@ class KronosConfig:
     hf_home: str = field(default_factory=lambda: _get("HF_HOME"))
     model_id: str = field(default_factory=lambda: _get("KRONOS_MODEL_ID", "NeoQuasar/Kronos-base"))
     tokenizer_id: str = "NeoQuasar/Kronos-Tokenizer-base"
+    enable_real_model: bool = field(default_factory=lambda: _get_bool("KRONOS_ENABLE_REAL_MODEL", True))
 
 
 @dataclass(frozen=True)

@@ -70,6 +70,10 @@ PROMPT_INJECTION_PATTERNS = [
 ]
 
 
+def _active_kronos_model_id() -> str:
+    return settings.kronos.model_id or DEFAULT_MODEL_ID
+
+
 @dataclass(frozen=True)
 class AgentStep:
     name: str
@@ -221,7 +225,7 @@ def analyze_investment_question(
         AgentStep(
             name="调用预测模型",
             status="completed" if has_prediction else "failed",
-            summary=f"已尝试调用 {DEFAULT_MODEL_ID} 生成短期预测。",
+            summary=f"已尝试调用 {_active_kronos_model_id()} 生成短期预测。",
             elapsed_ms=_elapsed_ms(started_at),
         )
     )
@@ -355,7 +359,7 @@ def _build_asset_context(item: ResolvedSymbol, *, dry_run: bool) -> tuple[dict[s
         "symbol": item.symbol,
         "market": item.market,
         "name": item.name,
-        "model": DEFAULT_MODEL_ID,
+        "model": _active_kronos_model_id(),
     }
 
     started = time.perf_counter()
@@ -429,12 +433,12 @@ def _build_asset_context(item: ResolvedSymbol, *, dry_run: bool) -> tuple[dict[s
                 name="kronos_prediction",
                 status="completed" if asset["kronos_prediction"] else "failed",
                 summary=(
-                    f"已调用 {DEFAULT_MODEL_ID} 生成短期预测。"
+                    f"已调用 {_active_kronos_model_id()} 生成短期预测。"
                     if asset["kronos_prediction"]
                     else "Kronos 预测失败或数据不足。"
                 ),
                 elapsed_ms=_elapsed_ms(started),
-                metadata={"symbol": item.symbol, "model": DEFAULT_MODEL_ID},
+                metadata={"symbol": item.symbol, "model": _active_kronos_model_id()},
             )
         )
 
@@ -595,6 +599,7 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
             timeframe="1d",
             rows=forecast_rows,
             pred_len=5,
+            model_id=_active_kronos_model_id(),
             dry_run=dry_run,
             sample_count=1,
         )
@@ -602,7 +607,7 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
         if not response.get("ok"):
             return None
         return {
-            "model": response.get("model_id", DEFAULT_MODEL_ID),
+            "model": response.get("model_id", _active_kronos_model_id()),
             "prediction_days": response.get("pred_len", 5),
             "forecast": response.get("forecast", []),
             "probabilistic": response.get("probabilistic"),

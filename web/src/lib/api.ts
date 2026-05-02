@@ -117,6 +117,9 @@ export interface HealthResponse {
   tokenizer_id?: string | null;
   device: string;
   uptime_seconds: number;
+  runtime_mode: string;
+  model_enabled: boolean;
+  deep_check: boolean;
   capabilities?: Record<string, boolean>;
   model_error?: string | null;
 }

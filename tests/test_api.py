@@ -70,6 +70,9 @@ class TestHealth:
         assert "model_loaded" in data
         assert "capabilities" in data
         assert "device" in data
+        assert "runtime_mode" in data
+        assert "model_enabled" in data
+        assert "deep_check" in data
         assert "uptime_seconds" in data
 
 

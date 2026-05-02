@@ -173,6 +173,9 @@ class HealthResponseOut(BaseModel):
     tokenizer_id: str | None = None
     device: str
     uptime_seconds: float
+    runtime_mode: str = "standard"
+    model_enabled: bool = True
+    deep_check: bool = False
     capabilities: dict[str, bool] = Field(default_factory=dict)
     model_error: str | None = None
 

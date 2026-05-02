@@ -28,6 +28,7 @@ def test_deploy_extra_contains_runtime_data_and_model_dependencies():
         assert dep in requirements
 
     assert "deploy = [" in pyproject
+    assert "deploy-model = [" in pyproject
     assert "astock = [" in pyproject
     assert "kronos = [" in pyproject
 
@@ -55,7 +56,11 @@ def test_health_contract_reports_capabilities_and_degraded_state():
     assert '"yfinance": _has_module("yfinance")' in deps
     assert '"kronos_repo": False' in deps
     assert '"kronos_code": False' in deps
-    assert 'status = "ok" if all(capabilities.values()) else "degraded"' in deps
+    assert "runtime_mode" in deps
+    assert "model_enabled" in deps
+    assert "deep_check" in deps
+    assert "data_sources_ready" in deps
+    assert "model_runtime_ready" in deps
     assert "model_loaded=model_info" in health
     assert "capabilities=model_info" in health
 
