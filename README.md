@@ -31,7 +31,7 @@
 
 ## Current status
 
-Version: v9.3
+Version: v9.4
 
 Agent 网页检索为可选能力：配置 `WEB_SEARCH_PROVIDER` 与对应 `WEB_SEARCH_API_KEY` 后启用。
 

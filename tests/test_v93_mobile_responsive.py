@@ -52,6 +52,8 @@ def test_v93_tables_charts_and_inputs_have_mobile_bounds():
     backtest = read("web/src/app/backtest/page.tsx")
     data = read("web/src/app/data/page.tsx")
     globals_css = read("web/src/app/globals.css")
+    return_chart = read("web/src/components/charts/ReturnComparisonChart.tsx")
+    equity_chart = read("web/src/components/charts/BacktestEquityChart.tsx")
 
     assert "app-input" in globals_css
     assert "min-height: 44px" in globals_css
@@ -64,13 +66,15 @@ def test_v93_tables_charts_and_inputs_have_mobile_bounds():
     assert "min-w-[42rem]" in forecast
     assert "xl:grid-cols-5" in analysis
     assert "table-scroll" in analysis
-    assert "chart-frame h-72" in batch
+    assert "ReturnComparisonChart" in batch
+    assert "chart-frame h-72" in return_chart
     assert "min-w-[44rem]" in batch
-    assert "min-w-[40rem]" in backtest
+    assert "BacktestEquityChart" in backtest
+    assert "chart-frame h-72 md:h-80" in equity_chart
     assert "table-scroll" in data
 
 
 def test_v93_version_label_is_updated():
-    assert "Version: v9.3" in read("README.md")
-    assert "v9.3" in read("web/src/components/layout/Sidebar.tsx")
-    assert "v9.3" in read("web/src/components/layout/Header.tsx")
+    assert "Version: v9.4" in read("README.md")
+    assert "v9.4" in read("web/src/components/layout/Sidebar.tsx")
+    assert "v9.4" in read("web/src/components/layout/Header.tsx")

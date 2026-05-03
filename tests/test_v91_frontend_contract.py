@@ -88,4 +88,5 @@ def test_v91_react_list_keys_no_longer_use_array_index_for_changed_paths():
 
     assert "key={`${call.name}-${index}`}" not in analysis
     assert "key={`cell-${index}`}" not in batch
-    assert "key={`return-${entry.name}`}" in batch
+    assert "ReturnComparisonChart" in batch
+    assert 'from "recharts"' not in batch

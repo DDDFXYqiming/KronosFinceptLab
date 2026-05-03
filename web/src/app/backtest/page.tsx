@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { BacktestEquityChart } from "@/components/charts/BacktestEquityChart";
 import { api, formatApiError } from "@/lib/api";
 import { formatPercent, formatNumber } from "@/lib/utils";
 import { DEFAULT_BACKTEST_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
@@ -55,11 +56,6 @@ export default function BacktestPage() {
       setLoading(false);
     }
   };
-
-  const equityValues = result?.equity_curve.map((point) => point.equity) || [];
-  const minEquity = equityValues.length ? Math.min(...equityValues) : 0;
-  const maxEquity = equityValues.length ? Math.max(...equityValues) : 0;
-  const equityRange = maxEquity - minEquity || 1;
 
   return (
     <div className="page-shell space-y-6">
@@ -150,29 +146,7 @@ export default function BacktestPage() {
           {/* Equity curve */}
           <Card>
             <CardTitle>权益曲线</CardTitle>
-            <div className="chart-frame h-72 overflow-x-auto">
-              <div className="flex h-full min-w-[40rem] items-end gap-1 md:min-w-0">
-                {result.equity_curve.map((point, i) => {
-                  const height = ((point.equity - minEquity) / equityRange) * 100;
-                  return (
-                    <div
-                      key={`${point.date}-${point.equity}`}
-                      className="flex-1 min-w-[4px] rounded-t"
-                      style={{
-                        height: `${Math.max(height, 2)}%`,
-                        backgroundColor: point.return >= 0 ? "#10B981" : "#EF4444",
-                        opacity: 0.7 + (i / result.equity_curve.length) * 0.3,
-                      }}
-                      title={`${point.date}: ${point.equity.toFixed(0)} (${(point.return * 100).toFixed(2)}%)`}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex justify-between text-xs text-gray-500 mt-2">
-              <span>{result.equity_curve[0]?.date}</span>
-              <span>{result.equity_curve[result.equity_curve.length - 1]?.date}</span>
-            </div>
+            <BacktestEquityChart equityCurve={result.equity_curve} />
           </Card>
 
           <p className="text-xs text-gray-500 text-center">提示：{result.metadata.warning}</p>

@@ -9,29 +9,15 @@ import { ApiError, api, formatApiError } from "@/lib/api";
 import { DEFAULT_MARKET, MARKET_OPTIONS, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
+import { toCandlestickSeriesData, toForecastLineData } from "@/lib/chartData";
 import { useSessionState } from "@/lib/useSessionState";
 import type { DataResponse, ForecastResponse, ForecastRow } from "@/types/api";
 import {
   createChart,
-  IChartApi,
-  ISeriesApi,
-  CandlestickData,
-  LineData,
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
-
-function toChartTime(ts: string, baseDate?: string): string {
-  // Handle relative dates like "D1", "D2", etc.
-  const match = ts.match(/^D(\d+)$/);
-  if (match) {
-    const days = parseInt(match[1], 10);
-    const base = baseDate ? new Date(baseDate) : new Date();
-    base.setDate(base.getDate() + days);
-    return base.toISOString().slice(0, 10);
-  }
-  return ts.slice(0, 10);
-}
+import type { IChartApi, ISeriesApi } from "lightweight-charts";
 
 function formatForecastDataError(
   error: unknown,
@@ -244,13 +230,7 @@ function ForecastContent() {
       candlestickSeriesRef.current.setData([]);
       return;
     }
-    const ohlcData: CandlestickData[] = data.map((row) => ({
-      time: toChartTime(row.timestamp),
-      open: row.open,
-      high: row.high,
-      low: row.low,
-      close: row.close,
-    }));
+    const ohlcData = toCandlestickSeriesData(data);
     candlestickSeriesRef.current.setData(ohlcData);
     chartRef.current?.timeScale().fitContent();
   }, [data]);
@@ -259,15 +239,22 @@ function ForecastContent() {
   useEffect(() => {
     if (!lineSeriesRef.current || !prediction || prediction.length === 0) {
       lineSeriesRef.current?.setData([]);
+      lineSeriesRef.current?.setMarkers([]);
       return;
     }
-    // Use the last date from historical data as base for relative dates
-    const baseDate = data.length > 0 ? data[data.length - 1].timestamp : undefined;
-    const lineData: LineData[] = prediction.map((row) => ({
-      time: toChartTime(row.timestamp, baseDate),
-      value: row.close,
-    }));
+    const lineData = toForecastLineData(data, prediction);
     lineSeriesRef.current.setData(lineData);
+    lineSeriesRef.current.setMarkers(
+      lineData.length > 1
+        ? [{
+          time: lineData[0].time,
+          position: "inBar",
+          color: "#60A5FA",
+          shape: "circle",
+          text: "预测起点",
+        }]
+        : []
+    );
     chartRef.current?.timeScale().fitContent();
   }, [prediction, data]);
 
@@ -443,6 +430,19 @@ function ForecastContent() {
             )}
           </CardTitle>
           <div ref={chartContainerRef} className="chart-frame h-[360px] md:h-[500px]" />
+          <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-accent-green" />
+              实际 OHLC
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-5 rounded-full bg-accent" />
+              Kronos 预测路径
+            </span>
+            {prediction && prediction.length > 0 && (
+              <span>预测区间：未来 {prediction.length} 步</span>
+            )}
+          </div>
         </Card>
       ) : (
         <ForecastEmptyState symbol={normalizeSymbol(symbol)} />

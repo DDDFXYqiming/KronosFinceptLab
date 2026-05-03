@@ -4,23 +4,13 @@ import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { ReturnComparisonChart } from "@/components/charts/ReturnComparisonChart";
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { DEFAULT_MARKET, MARKET_OPTIONS, type Market } from "@/lib/markets";
 import { DEFAULT_BATCH_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 import type { ForecastRequest, ForecastRow, RankedSignal } from "@/types/api";
-import {
-  BarChart,
-  Bar,
-  Cell,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
-
 const BATCH_CONCURRENCY = 4;
 const BATCH_START_DATE = "20250101";
 const BATCH_END_DATE = "20260430";
@@ -488,35 +478,7 @@ export default function BatchPage() {
         <>
           <Card>
             <CardTitle>预测收益率对比</CardTitle>
-            <div className="chart-frame h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
-                  <XAxis dataKey="name" tick={{ fill: "#9CA3AF", fontSize: 12 }} />
-                  <YAxis
-                    tick={{ fill: "#9CA3AF", fontSize: 12 }}
-                    tickFormatter={(value: number) => `${value}%`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#111827",
-                      border: "1px solid #374151",
-                      borderRadius: "8px",
-                      color: "#E5E7EB",
-                    }}
-                    formatter={(value: number) => [
-                      `${value.toFixed(2)}%`,
-                      "预测收益率",
-                    ]}
-                  />
-                  <Bar dataKey="return" radius={[4, 4, 0, 0]}>
-                    {chartData.map((entry) => (
-                      <Cell key={`return-${entry.name}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <ReturnComparisonChart data={chartData} />
           </Card>
 
           <Card>
