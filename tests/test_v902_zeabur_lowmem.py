@@ -15,10 +15,10 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_dockerfile_defaults_to_kronos_base_real_runtime_with_light_health():
+def test_dockerfile_defaults_to_kronos_small_real_runtime_with_light_health():
     dockerfile = read("Dockerfile")
 
-    assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-base" in dockerfile
+    assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-small" in dockerfile
     assert "KRONOS_ENABLE_REAL_MODEL=1" in dockerfile
     assert "KRONOS_ALLOW_DRY_RUN=0" in dockerfile
     assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
