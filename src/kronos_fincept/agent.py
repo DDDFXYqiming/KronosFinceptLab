@@ -1663,7 +1663,7 @@ macro_analysis, macro_signals, cross_validation, contradictions, probability_sce
 macro_signals 为数组，每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
 probability_scenarios 为数组，每项包含 scenario, probability, basis。请基于至少 3 个独立宏观维度做交叉验证；不足 3 个时明确说明缺口，不要编造。
 asset_reports: [
-  {
+  {{
     "symbol": "600036",
     "market": "cn",
     "name": "招商银行",
@@ -1677,7 +1677,7 @@ asset_reports: [
     "confidence": 0.6,
     "risk_level": "中",
     "disclaimer": "仅供研究"
-  }
+  }}
 ]。单标的也可以返回 asset_reports。"""
         user_prompt = {
             "question": question,
