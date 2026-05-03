@@ -106,5 +106,5 @@ def test_v90_version_markers_are_updated():
     readme = read("README.md")
     sidebar = read("web/src/components/layout/Sidebar.tsx")
 
-    assert "Version: v9." in readme
-    assert "v9." in sidebar
+    assert "Version: v10.0" in readme
+    assert "v10.0" in sidebar

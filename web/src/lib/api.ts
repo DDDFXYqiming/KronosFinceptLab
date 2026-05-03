@@ -38,6 +38,7 @@ export type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 const DEFAULT_TIMEOUT_MS = 45000;
+const AGENT_ANALYZE_TIMEOUT_MS = 90000;
 
 export interface ApiClientOptions {
   signal?: AbortSignal;
@@ -85,10 +86,18 @@ function logApiFailure(path: string, status: number, requestId: string | null, m
   });
 }
 
-function enrichGatewayError(status: number, message: string): string {
-  if (![502, 503, 504].includes(status)) return message;
+function enrichGatewayError(status: number, message: string, path: string): string {
+  const isAgentAnalyze = path.includes("/v1/analyze/agent");
+  if (![502, 503, 504].includes(status) && !(isAgentAnalyze && status === 500)) return message;
+  const prefix = message || `HTTP ${status}`;
+  if (isAgentAnalyze) {
+    return (
+      `${prefix}。` +
+      "Agent 分析包含行情、Kronos、网页检索和 DeepSeek 汇总，线上偶发 500/502 通常表示后端进程、Zeabur 代理或上游模型调用被中断；请重试并用 Runtime Logs 对照 request_id。"
+    );
+  }
   return (
-    `${message || `HTTP ${status}`}。` +
+    `${prefix}。` +
     "这通常表示 Zeabur 网关、容器重启、推理超时或内存压力中断了请求；请稍后重试并用 Runtime Logs 对照 request_id。"
   );
 }
@@ -151,7 +160,7 @@ async function fetchApi<T>(
 
     if (!res.ok) {
       const err = await parseErrorResponse(res);
-      const message = enrichGatewayError(res.status, err.error || err.detail || `HTTP ${res.status}`);
+      const message = enrichGatewayError(res.status, err.error || err.detail || `HTTP ${res.status}`, path);
       const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || null;
       const type = err.type || err.code || "api_error";
       logApiFailure(path, res.status, requestId, message);
@@ -229,7 +238,10 @@ export const api = {
     post<AIAnalyzeResponse>("/v1/analyze/ai", req, options),
 
   agentAnalyze: (req: AgentAnalyzeRequest, options?: ApiClientOptions) =>
-    post<AgentAnalyzeResponse>("/v1/analyze/agent", req, options),
+    post<AgentAnalyzeResponse>("/v1/analyze/agent", req, {
+      timeoutMs: AGENT_ANALYZE_TIMEOUT_MS,
+      ...options,
+    }),
 
   analyzeDcf: (symbol: string, market: string, options?: ApiClientOptions) =>
     post<any>("/v1/analyze/dcf", { symbol, market }, options),

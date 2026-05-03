@@ -29,6 +29,7 @@ const EXAMPLES = [
 ];
 
 const DEFAULT_QUESTION = `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`;
+const MAX_ANALYSIS_TURNS = 5;
 
 function formatElapsedMs(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "-";
@@ -373,6 +374,16 @@ function AnalysisContent() {
   const inFlightRef = useRef(false);
   const [error, setError] = useSessionState("kronos-analysis-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-analysis-result", null);
+  const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-analysis-history", []);
+
+  const appendHistory = (entry: AgentAnalyzeResponse) => {
+    setHistory((current) => {
+      const deduped = current.filter(
+        (item) => !(item.timestamp === entry.timestamp && item.question === entry.question)
+      );
+      return [...deduped, entry].slice(-MAX_ANALYSIS_TURNS);
+    });
+  };
 
   const handleAnalyze = async (overrideQuestion?: string, forceRefresh = false) => {
     if (inFlightRef.current) return;
@@ -386,6 +397,7 @@ function AnalysisContent() {
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
       setResult(cached);
+      appendHistory(cached);
       setError("");
       return;
     }
@@ -407,10 +419,13 @@ function AnalysisContent() {
             context: {
               entry: "web-analysis",
               default_symbol: DEFAULT_SYMBOL,
+              turn_index: Math.min(history.length + 1, MAX_ANALYSIS_TURNS),
+              max_turns: MAX_ANALYSIS_TURNS,
             },
           }, { signal }),
       });
       setResult(res);
+      appendHistory(res);
     } catch (e: any) {
       setError(formatApiError(e, "分析请求失败"));
     } finally {
@@ -428,6 +443,7 @@ function AnalysisContent() {
     queryClient.removeQueries({ queryKey: [...queryKeys.all, "agent"] });
     setQuestion(DEFAULT_QUESTION);
     setResult(null);
+    setHistory([]);
     setError("");
   };
 
@@ -498,6 +514,41 @@ function AnalysisContent() {
         <Card>
           <CardTitle>Agent 执行时间线</CardTitle>
           <StepList result={result} loading={loading} />
+        </Card>
+      )}
+
+      {history.length > 1 && (
+        <Card>
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <CardTitle>本轮历史</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              保留最近 {MAX_ANALYSIS_TURNS} 轮临时结果，不写入长期记忆。
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {[...history].reverse().map((item, index) => (
+              <button
+                key={`${item.timestamp}-${index}`}
+                type="button"
+                onClick={() => {
+                  setResult(item);
+                  setQuestion(item.question);
+                  setError("");
+                }}
+                className="rounded-lg border border-border bg-surface px-3 py-2 text-left transition-colors hover:border-accent"
+              >
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {item.symbols.length ? item.symbols.join(" / ") : "待澄清"}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {(item.confidence * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <p className="line-clamp-2 text-xs text-muted-foreground">{item.question}</p>
+              </button>
+            ))}
+          </div>
         </Card>
       )}
 

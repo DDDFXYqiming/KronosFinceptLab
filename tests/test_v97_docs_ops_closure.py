@@ -11,7 +11,7 @@ def read(path: str) -> str:
 def test_v97_readme_has_compact_three_surface_capability_matrix():
     readme = read("README.md")
 
-    assert "Version: v9.7.1" in readme
+    assert "Version: v10.0" in readme
     assert "## 三端能力对照" in readme
     assert "| 能力 | Web | API | CLI |" in readme
     assert "POST /api/v1/analyze/agent" in readme
@@ -28,6 +28,7 @@ def test_v97_readme_has_deploy_quality_and_ignore_boundaries():
         "DEEPSEEK_API_KEY",
         "DEEPSEEK_BASE_URL",
         "DEEPSEEK_MODEL",
+        "Digital Oracle",
         "WEB_SEARCH_PROVIDER",
         "WEB_SEARCH_API_KEY",
     ]:
