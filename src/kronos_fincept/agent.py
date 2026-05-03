@@ -676,14 +676,13 @@ market 只能是 cn, hk, us, commodity。港股小米通常是 1810.hk；诺基�
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
                 ],
-                "temperature": 0,
-                "max_tokens": 900,
+                **_deepseek_structured_json_options(temperature=0, max_tokens=900),
             },
             timeout=20,
         )
         if response.status_code != 200:
             return None
-        content = response.json()["choices"][0]["message"]["content"]
+        content = _deepseek_message_content(response.json())
         parsed = _extract_json_object(content)
         if not isinstance(parsed, dict):
             return None
@@ -1592,6 +1591,50 @@ def _serialize_deepseek_user_prompt(user_prompt: dict[str, Any]) -> str | None:
         return None
 
 
+def _deepseek_structured_json_options(
+    *, temperature: float, max_tokens: int, model: str | None = None
+) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    selected_model = (model or settings.llm.deepseek.model).lower()
+    if selected_model.startswith("deepseek-v4-"):
+        options["thinking"] = {"type": "disabled"}
+    return options
+
+
+def _deepseek_message_content(payload: dict[str, Any]) -> str | None:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    message = first.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content
+    reasoning_content = message.get("reasoning_content")
+    if isinstance(reasoning_content, str) and reasoning_content.strip():
+        return reasoning_content
+    return None
+
+
+def _deepseek_finish_reason(payload: dict[str, Any]) -> str | None:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    reason = first.get("finish_reason")
+    return str(reason) if reason is not None else None
+
+
 def _call_deepseek_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
     if not settings.llm.deepseek.is_configured:
         log_event(
@@ -1657,8 +1700,7 @@ asset_reports: [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ],
-                "temperature": 0.2,
-                "max_tokens": 1800,
+                **_deepseek_structured_json_options(temperature=0.2, max_tokens=1800),
             },
             timeout=45,
         )
@@ -1687,7 +1729,7 @@ asset_reports: [
                 response_body=response.text[:500],
             )
             return None
-        content = payload["choices"][0]["message"]["content"]
+        content = _deepseek_message_content(payload)
         parsed = _extract_json_object(content)
         if not parsed:
             log_event(
@@ -1697,6 +1739,7 @@ asset_reports: [
                 "DeepSeek report synthesis response did not contain a JSON object.",
                 model=settings.llm.deepseek.model,
                 content_preview=str(content)[:500],
+                finish_reason=_deepseek_finish_reason(payload),
             )
             return None
         return _normalize_report(parsed)
@@ -2115,7 +2158,9 @@ def _clarification_result(question: str, message: str, timestamp: str) -> AgentA
     )
 
 
-def _extract_json_object(text: str) -> dict[str, Any] | None:
+def _extract_json_object(text: Any) -> dict[str, Any] | None:
+    if not isinstance(text, str):
+        return None
     try:
         return json.loads(text)
     except json.JSONDecodeError:
