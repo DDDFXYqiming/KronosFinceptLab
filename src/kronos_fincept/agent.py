@@ -13,7 +13,7 @@ from io import StringIO
 from typing import Any
 
 from kronos_fincept.config import settings
-from kronos_fincept.logging_config import log_event
+from kronos_fincept.logging_config import get_request_id, log_event
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, ForecastRequest, ForecastRow
 from kronos_fincept.web_search import WebSearchClient, WebSearchResponse
 
@@ -205,12 +205,21 @@ def analyze_investment_question(
         AgentStep(
             name="理解问题",
             status="completed",
-            summary=(
-                f"通过 {route.source} 识别到 {len(resolved)} 个标的："
-                + ", ".join(item.symbol for item in resolved)
-            ),
+            summary="已接收本轮无记忆分析问题，不读取长期偏好或历史画像。",
             elapsed_ms=_elapsed_ms(started_at),
-        )
+        ),
+        AgentStep(
+            name="范围/安全检查",
+            status="completed",
+            summary=f"通过 {route.source} 完成项目能力范围与 prompt 注入边界校验。",
+            elapsed_ms=_elapsed_ms(started_at),
+        ),
+        AgentStep(
+            name="解析标的",
+            status="completed",
+            summary=f"识别到 {len(resolved)} 个标的：" + ", ".join(item.symbol for item in resolved),
+            elapsed_ms=_elapsed_ms(started_at),
+        ),
     ]
     tool_calls: list[AgentToolCall] = []
     asset_contexts: list[dict[str, Any]] = []
@@ -248,7 +257,7 @@ def analyze_investment_question(
     )
     steps.append(
         AgentStep(
-            name="调用预测模型",
+            name="调用 Kronos",
             status="completed" if has_prediction else "failed",
             summary=f"已尝试调用 {_active_kronos_model_id()} 生成短期预测。",
             elapsed_ms=_elapsed_ms(started_at),
@@ -292,9 +301,17 @@ def analyze_investment_question(
     tool_calls.append(llm_call)
     steps.append(
         AgentStep(
-            name="汇总报告",
+            name="DeepSeek 汇总",
+            status=llm_call.status,
+            summary=llm_call.summary,
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+    )
+    steps.append(
+        AgentStep(
+            name="生成报告",
             status="completed",
-            summary="DeepSeek 已处理报告；若 DeepSeek 不可用则使用本地结构化降级报告。",
+            summary="结构化报告已生成，包含结论、依据、短期预测、技术面、基本面、风险和声明。",
             elapsed_ms=_elapsed_ms(started_at),
         )
     )
@@ -578,6 +595,14 @@ def resolve_symbols(
     return resolved
 
 
+def _tool_metadata(**fields: Any) -> dict[str, Any]:
+    """Attach stable trace fields to tool calls returned by Web/API/CLI."""
+
+    metadata = dict(fields)
+    metadata.setdefault("request_id", get_request_id())
+    return metadata
+
+
 def _build_asset_context(
     item: ResolvedSymbol,
     *,
@@ -614,7 +639,11 @@ def _build_asset_context(
                 status="completed" if rows else "failed",
                 summary=f"{item.symbol} 行情数据 {len(rows)} 条。",
                 elapsed_ms=_elapsed_ms(started),
-                metadata={"symbol": item.symbol, "market": item.market, "source": _market_source_name(item.market)},
+                metadata=_tool_metadata(
+                    symbol=item.symbol,
+                    market=item.market,
+                    source=_market_source_name(item.market),
+                ),
             )
         )
     except Exception as exc:
@@ -625,7 +654,7 @@ def _build_asset_context(
                 status="failed",
                 summary=f"{item.symbol} 行情获取失败：{exc}",
                 elapsed_ms=_elapsed_ms(started),
-                metadata={"symbol": item.symbol, "market": item.market},
+                metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
 
@@ -638,7 +667,7 @@ def _build_asset_context(
             status="completed" if financial_data else "skipped",
             summary="已尝试获取财务摘要。" if financial_data else "当前数据源未返回可用财务摘要。",
             elapsed_ms=_elapsed_ms(started),
-            metadata={"symbol": item.symbol, "market": item.market},
+            metadata=_tool_metadata(symbol=item.symbol, market=item.market),
         )
     )
 
@@ -651,7 +680,7 @@ def _build_asset_context(
                 status="completed" if asset["technical_indicators"] else "skipped",
                 summary="已计算技术指标。" if asset["technical_indicators"] else "K线数量不足，跳过技术指标。",
                 elapsed_ms=_elapsed_ms(started),
-                metadata={"symbol": item.symbol},
+                metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
 
@@ -663,7 +692,7 @@ def _build_asset_context(
                 status="completed" if asset["risk_metrics"] else "failed",
                 summary="已计算风险指标。" if asset["risk_metrics"] else "风险指标计算失败或数据不足。",
                 elapsed_ms=_elapsed_ms(started),
-                metadata={"symbol": item.symbol},
+                metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
 
@@ -676,11 +705,12 @@ def _build_asset_context(
                     status="completed",
                     summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
                     elapsed_ms=_elapsed_ms(started),
-                    metadata={
-                        "symbol": item.symbol,
-                        "model": _active_kronos_model_id(),
-                        "metadata": asset["kronos_prediction"].get("metadata"),
-                    },
+                    metadata=_tool_metadata(
+                        symbol=item.symbol,
+                        market=item.market,
+                        model=_active_kronos_model_id(),
+                        metadata=asset["kronos_prediction"].get("metadata"),
+                    ),
                 )
             )
         except Exception as exc:
@@ -692,11 +722,12 @@ def _build_asset_context(
                     status="failed",
                     summary=f"Kronos 真实预测失败：{error_summary}",
                     elapsed_ms=_elapsed_ms(started),
-                    metadata={
-                        "symbol": item.symbol,
-                        "model": _active_kronos_model_id(),
-                        "error_type": type(exc).__name__,
-                    },
+                    metadata=_tool_metadata(
+                        symbol=item.symbol,
+                        market=item.market,
+                        model=_active_kronos_model_id(),
+                        error_type=type(exc).__name__,
+                    ),
                 )
             )
 
@@ -745,12 +776,12 @@ def _build_online_research(item: ResolvedSymbol, *, question: str) -> tuple[dict
             status="skipped",
             summary=summary,
             elapsed_ms=_elapsed_ms(started),
-            metadata={
-                "symbol": item.symbol,
-                "market": item.market,
-                "enabled": False,
-                "provider": client.provider or None,
-            },
+            metadata=_tool_metadata(
+                symbol=item.symbol,
+                market=item.market,
+                enabled=False,
+                provider=client.provider or None,
+            ),
         )
 
     responses: list[WebSearchResponse] = []
@@ -792,14 +823,14 @@ def _build_online_research(item: ResolvedSymbol, *, question: str) -> tuple[dict
             status="completed",
             summary=f"网页检索完成：{len(queries)} 个查询返回 {len(result_payloads)} 条公开结果。",
             elapsed_ms=_elapsed_ms(started),
-            metadata={
-                "symbol": item.symbol,
-                "market": item.market,
-                "enabled": True,
-                "provider": client.provider,
-                "result_count": len(result_payloads),
-                "queries": queries,
-            },
+            metadata=_tool_metadata(
+                symbol=item.symbol,
+                market=item.market,
+                enabled=True,
+                provider=client.provider,
+                result_count=len(result_payloads),
+                queries=queries,
+            ),
         )
 
     errors = [response.error for response in responses if response.error]
@@ -809,14 +840,14 @@ def _build_online_research(item: ResolvedSymbol, *, question: str) -> tuple[dict
         status="failed",
         summary=summary,
         elapsed_ms=_elapsed_ms(started),
-        metadata={
-            "symbol": item.symbol,
-            "market": item.market,
-            "enabled": True,
-            "provider": client.provider,
-            "queries": queries,
-            "errors": errors,
-        },
+        metadata=_tool_metadata(
+            symbol=item.symbol,
+            market=item.market,
+            enabled=True,
+            provider=client.provider,
+            queries=queries,
+            errors=errors,
+        ),
     )
 
 
@@ -1022,7 +1053,7 @@ def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, 
             status="completed",
             summary="DeepSeek 已基于项目工具结果生成结构化报告。",
             elapsed_ms=_elapsed_ms(started),
-            metadata={"model": settings.llm.deepseek.model},
+            metadata=_tool_metadata(model=settings.llm.deepseek.model),
         )
 
     return _fallback_report(context), AgentToolCall(
@@ -1030,7 +1061,7 @@ def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, 
         status="fallback",
         summary="DeepSeek 未配置或调用失败，已使用本地结构化报告模板。",
         elapsed_ms=_elapsed_ms(started),
-        metadata={"model": settings.llm.deepseek.model, "fallback": True},
+        metadata=_tool_metadata(model=settings.llm.deepseek.model, fallback=True),
     )
 
 

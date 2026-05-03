@@ -12,12 +12,56 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 import type { AgentAnalyzeResponse } from "@/types/api";
 
-const LOADING_STEPS = ["理解问题", "获取行情", "调用预测模型", "网页检索", "汇总报告"];
+const LOADING_STEPS = [
+  "理解问题",
+  "范围/安全检查",
+  "解析标的",
+  "获取行情",
+  "调用 Kronos",
+  "网页检索",
+  "DeepSeek 汇总",
+  "生成报告",
+];
 const EXAMPLES = [
   `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`,
   "比较招商银行和贵州茅台的中短期风险",
   "分析一下 AAPL 和 NVDA 最近走势",
 ];
+
+const DEFAULT_QUESTION = `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`;
+
+function formatElapsedMs(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  return `${(value / 1000).toFixed(1)}s`;
+}
+
+function statusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    completed: "完成",
+    running: "进行中",
+    pending: "等待",
+    failed: "失败",
+    blocked: "阻断",
+    skipped: "跳过",
+    fallback: "降级",
+    needs_clarification: "需澄清",
+  };
+  return labels[status] || status;
+}
+
+function buildEvidenceSummary(result: AgentAnalyzeResponse): string {
+  const completed = result.tool_calls
+    .filter((call) => ["completed", "fallback", "skipped"].includes(call.status))
+    .map((call) => {
+      const symbol = call.metadata?.symbol ? ` ${call.metadata.symbol}` : "";
+      const requestId = call.metadata?.request_id ? ` request_id=${call.metadata.request_id}` : "";
+      return `${call.name}${symbol}：${call.summary}${requestId}`;
+    });
+  return completed.length
+    ? completed.join("\n")
+    : "本轮没有可用工具依据；请查看执行状态和错误信息。";
+}
 
 function getConfidenceColor(value: number): string {
   const pct = value * 100;
@@ -72,27 +116,89 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
   }));
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-      {steps.map((step) => {
+    <div className="space-y-3">
+      {steps.map((step, index) => {
         const active = step.status === "completed";
         const failed = ["failed", "blocked"].includes(step.status);
+        const running = step.status === "running";
         return (
           <div
             key={step.name}
-            className={`border rounded-lg px-3 py-2 ${
+            className={`grid grid-cols-[2rem_1fr] gap-3 rounded-lg border px-3 py-3 ${
               failed
                 ? "border-red-200 bg-red-50"
-                : active
+                : active || running
                   ? "border-green-200 bg-green-50"
                   : "border-border bg-muted"
             }`}
           >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium text-foreground">{step.name}</span>
-              <span className="text-xs text-muted-foreground">{step.status}</span>
+            <div
+              className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                failed
+                  ? "bg-red-100 text-red-700"
+                  : active || running
+                    ? "bg-green-100 text-green-700"
+                    : "bg-background text-muted-foreground"
+              }`}
+            >
+              {index + 1}
             </div>
-            {step.summary && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{step.summary}</p>}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-foreground">{step.name}</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {statusLabel(step.status)} · {formatElapsedMs(step.elapsed_ms)}
+                </span>
+              </div>
+              {step.summary && <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">{step.summary}</p>}
+            </div>
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ToolCallList({ result }: { result: AgentAnalyzeResponse }) {
+  return (
+    <div className="space-y-3">
+      {result.tool_calls.map((call) => {
+        const symbol = call.metadata?.symbol ? String(call.metadata.symbol) : "";
+        const market = call.metadata?.market ? String(call.metadata.market) : "";
+        const requestId = call.metadata?.request_id ? String(call.metadata.request_id) : "";
+        return (
+          <details
+            key={`${call.name}-${call.status}-${call.elapsed_ms}-${call.summary.slice(0, 24)}`}
+            className="rounded-lg border border-border bg-muted px-3 py-2"
+          >
+            <summary className="cursor-pointer list-none">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="break-all font-mono text-sm font-semibold text-foreground">{call.name}</span>
+                    <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground">{statusLabel(call.status)}</span>
+                    {symbol && <span className="rounded bg-background px-2 py-0.5 font-mono text-xs text-muted-foreground">{symbol}</span>}
+                    {market && <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground">{market}</span>}
+                  </div>
+                  <p className="mt-1 break-words text-sm text-muted-foreground">{call.summary}</p>
+                </div>
+                <div className="shrink-0 text-xs text-muted-foreground">
+                  <span className="font-mono">{formatElapsedMs(call.elapsed_ms)}</span>
+                </div>
+              </div>
+            </summary>
+            <div className="mt-3 rounded-md border border-border bg-background p-3">
+              <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                <p><span className="font-semibold text-foreground">symbol：</span>{symbol || "-"}</p>
+                <p><span className="font-semibold text-foreground">market：</span>{market || "-"}</p>
+                <p><span className="font-semibold text-foreground">request_id：</span><span className="font-mono">{requestId || "-"}</span></p>
+                <p><span className="font-semibold text-foreground">elapsed：</span>{formatElapsedMs(call.elapsed_ms)}</p>
+              </div>
+              <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-raised p-3 text-xs text-muted-foreground">
+                {JSON.stringify(call.metadata || {}, null, 2)}
+              </pre>
+            </div>
+          </details>
         );
       })}
     </div>
@@ -118,7 +224,7 @@ function AnalysisContent() {
   const normalizedSymbolParam = symbolParam ? normalizeSymbol(symbolParam) : undefined;
   const initialQuestion = symbolParam
     ? `分析 ${normalizedSymbolParam || symbolParam} 的短期走势和风险`
-    : `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`;
+    : DEFAULT_QUESTION;
   const [question, setQuestion] = useSessionState(
     "kronos-analysis-question",
     initialQuestion,
@@ -179,6 +285,13 @@ function AnalysisContent() {
     handleAnalyze();
   };
 
+  const handleNewChat = () => {
+    queryClient.removeQueries({ queryKey: [...queryKeys.all, "agent"] });
+    setQuestion(DEFAULT_QUESTION);
+    setResult(null);
+    setError("");
+  };
+
   useEffect(() => {
     if (symbolParam) {
       handleAnalyze(initialQuestion);
@@ -217,6 +330,15 @@ function AnalysisContent() {
             <Button type="submit" loading={loading} className="w-full lg:w-auto">
               开始分析
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={loading}
+              onClick={handleNewChat}
+              className="w-full lg:w-auto"
+            >
+              新建对话/清空本轮
+            </Button>
             {result && (
               <Button
                 type="button"
@@ -234,7 +356,7 @@ function AnalysisContent() {
 
       {(loading || result) && (
         <Card>
-          <CardTitle>执行状态</CardTitle>
+          <CardTitle>Agent 执行时间线</CardTitle>
           <StepList result={result} loading={loading} />
         </Card>
       )}
@@ -297,6 +419,8 @@ function AnalysisContent() {
 
           <Card>
             <CardTitle>研究报告</CardTitle>
+            <ReportSection title="结论" value={report?.conclusion} />
+            <ReportSection title="依据" value={buildEvidenceSummary(result)} />
             <ReportSection title="短期预测" value={report?.short_term_prediction} />
             <ReportSection title="技术面" value={report?.technical} />
             <ReportSection title="基本面" value={report?.fundamentals} />
@@ -308,20 +432,7 @@ function AnalysisContent() {
           {result.tool_calls.length > 0 && (
             <Card>
               <CardTitle>工具调用</CardTitle>
-              <div className="space-y-3">
-                {result.tool_calls.map((call) => (
-                  <div
-                    key={`${call.name}-${call.status}-${call.elapsed_ms}-${call.summary.slice(0, 24)}`}
-                    className="flex flex-col gap-1 border border-border rounded-lg px-3 py-2 bg-muted"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="break-all text-sm font-mono text-foreground">{call.name}</span>
-                      <span className="text-xs text-muted-foreground">{call.status}</span>
-                    </div>
-                    <p className="break-words text-sm text-muted-foreground">{call.summary}</p>
-                  </div>
-                ))}
-              </div>
+              <ToolCallList result={result} />
             </Card>
           )}
 

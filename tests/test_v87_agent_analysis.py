@@ -106,7 +106,16 @@ def test_agent_resolves_natural_language_symbol_and_returns_trace(monkeypatch):
     tool_names = {item.name for item in result.tool_calls}
     step_names = [item.name for item in result.steps]
     assert {"market_data", "risk_metrics", "kronos_prediction", "deepseek_synthesis"} <= tool_names
-    assert ["理解问题", "获取行情", "调用预测模型", "网页检索", "汇总报告"] == step_names
+    assert [
+        "理解问题",
+        "范围/安全检查",
+        "解析标的",
+        "获取行情",
+        "调用 Kronos",
+        "网页检索",
+        "DeepSeek 汇总",
+        "生成报告",
+    ] == step_names
 
 
 def test_agent_infers_us_market_without_web_default_override():

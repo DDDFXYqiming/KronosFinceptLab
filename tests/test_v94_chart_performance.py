@@ -54,6 +54,6 @@ def test_v94_batch_removes_recharts_runtime_dependency():
 
 
 def test_v94_version_labels_are_current():
-    assert "Version: v9.4" in read("README.md")
-    assert "v9.4" in read("web/src/components/layout/Sidebar.tsx")
-    assert "v9.4" in read("web/src/components/layout/Header.tsx")
+    assert "Version: v9.5" in read("README.md")
+    assert "v9.5" in read("web/src/components/layout/Sidebar.tsx")
+    assert "v9.5" in read("web/src/components/layout/Header.tsx")

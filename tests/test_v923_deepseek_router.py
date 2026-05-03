@@ -79,7 +79,8 @@ def test_deepseek_router_is_primary_for_symbol_resolution(monkeypatch):
     assert result.ok is True
     assert result.symbol == "SAP"
     assert result.market == "us"
-    assert "deepseek_router" in result.steps[0].summary
+    scope_step = next(step for step in result.steps if step.name == "范围/安全检查")
+    assert "deepseek_router" in scope_step.summary
 
 
 def test_deepseek_router_rejection_blocks_tools(monkeypatch):
