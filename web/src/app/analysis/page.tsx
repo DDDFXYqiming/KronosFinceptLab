@@ -10,7 +10,7 @@ import { normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
-import type { AgentAnalyzeResponse } from "@/types/api";
+import type { AgentAnalyzeResponse, AgentAssetResult } from "@/types/api";
 
 const LOADING_STEPS = [
   "理解问题",
@@ -215,6 +215,145 @@ function ReportSection({ title, value }: { title: string; value?: string }) {
   );
 }
 
+function getAssetResults(result: AgentAnalyzeResponse): AgentAssetResult[] {
+  if (result.asset_results?.length) return result.asset_results;
+  if (!result.symbol) return [];
+  return [
+    {
+      symbol: result.symbol,
+      market: result.market || "",
+      name: null,
+      report: result.report,
+      final_report: result.final_report,
+      recommendation: result.recommendation,
+      confidence: result.confidence,
+      risk_level: result.risk_level,
+      current_price: result.current_price,
+      risk_metrics: result.risk_metrics,
+      kronos_prediction: result.kronos_prediction,
+      tool_status: {},
+    },
+  ];
+}
+
+function ForecastTable({ asset }: { asset: AgentAssetResult }) {
+  const forecast = asset.kronos_prediction?.forecast || [];
+  if (!forecast.length) {
+    return asset.kronos_prediction_error ? (
+      <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+        {asset.kronos_prediction_error}
+      </p>
+    ) : null;
+  }
+
+  return (
+    <div className="table-scroll max-h-80 overflow-y-auto">
+      <table className="min-w-[36rem] w-full text-sm">
+        <thead className="sticky top-0 bg-muted">
+          <tr className="border-b border-border text-muted-foreground">
+            <th className="py-2 text-left">日期</th>
+            <th className="py-2 text-right">开盘</th>
+            <th className="py-2 text-right">最高</th>
+            <th className="py-2 text-right">最低</th>
+            <th className="py-2 text-right">收盘</th>
+          </tr>
+        </thead>
+        <tbody>
+          {forecast.map((row) => (
+            <tr key={`${asset.symbol}-${row.timestamp}-${row.close}`} className="border-b border-border text-foreground hover:bg-muted">
+              <td className="py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td>
+              <td className="py-1.5 text-right">{row.open.toFixed(2)}</td>
+              <td className="py-1.5 text-right">{row.high.toFixed(2)}</td>
+              <td className="py-1.5 text-right">{row.low.toFixed(2)}</td>
+              <td className="py-1.5 text-right font-semibold">{row.close.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AssetAnalysisCard({ asset }: { asset: AgentAssetResult }) {
+  const report = asset.report;
+  return (
+    <Card>
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-3">
+            <CardTitle>{asset.name ? `${asset.name} ${asset.symbol}` : asset.symbol}</CardTitle>
+            {asset.market && (
+              <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                {asset.market}
+              </span>
+            )}
+            {asset.data_points ? (
+              <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                {asset.data_points} 根K线
+              </span>
+            ) : null}
+          </div>
+          {typeof asset.current_price === "number" && (
+            <p className="text-2xl font-bold text-foreground">{asset.current_price.toFixed(2)}</p>
+          )}
+        </div>
+        <RecommendationBadge rec={asset.recommendation} />
+      </div>
+
+      <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">置信度</p>
+          <div className="flex items-center gap-2">
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className={`h-full rounded-full transition-all ${getConfidenceBg(asset.confidence)}`}
+                style={{ width: `${(asset.confidence || 0) * 100}%` }}
+              />
+            </div>
+            <span className={`text-sm font-bold ${getConfidenceColor(asset.confidence)}`}>
+              {(asset.confidence * 100).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">风险等级</p>
+          <RiskBadge level={asset.risk_level} />
+        </div>
+        <div>
+          <p className="mb-1 text-sm text-muted-foreground">模型</p>
+          <p className="truncate text-sm font-mono text-foreground">
+            {asset.kronos_prediction?.model || "未返回"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-5">
+        <ReportSection title="结论" value={report?.conclusion} />
+        <ReportSection title="短期预测" value={report?.short_term_prediction} />
+        <ReportSection title="技术面" value={report?.technical} />
+        <ReportSection title="基本面" value={report?.fundamentals} />
+        <ReportSection title="风险指标" value={report?.risk} />
+        <ReportSection title="关键不确定性" value={report?.uncertainties} />
+      </div>
+
+      {asset.risk_metrics && (
+        <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-5">
+          {Object.entries(asset.risk_metrics).map(([key, value]) => (
+            <div key={`${asset.symbol}-${key}`}>
+              <p className="text-sm text-muted-foreground">{key.replace(/_/g, " ")}</p>
+              <p className="text-lg font-bold text-foreground">
+                {typeof value === "number" ? value.toFixed(4) : String(value)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <ForecastTable asset={asset} />
+    </Card>
+  );
+}
+
 function AnalysisContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -300,6 +439,7 @@ function AnalysisContent() {
   }, []);
 
   const report = result?.report;
+  const assetResults = result ? getAssetResults(result) : [];
 
   return (
     <div className="page-shell space-y-6">
@@ -370,21 +510,18 @@ function AnalysisContent() {
       {result && (
         <>
           <Card>
+            <CardTitle>汇总结论</CardTitle>
             <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-3 mb-2">
                   <CardTitle>{result.symbols.length ? result.symbols.join(" / ") : "待澄清"}</CardTitle>
-                  {result.market && (
-                    <span className="px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground">
-                      {result.market}
-                    </span>
-                  )}
+                  <span className="px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground">
+                    {assetResults.length} 个标的
+                  </span>
                 </div>
-                {typeof result.current_price === "number" && (
-                  <p className="text-2xl font-bold text-foreground">
-                    {result.current_price.toFixed(2)}
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  多标的请求按标的拆分展示，顶部仅保留整体比较结论。
+                </p>
               </div>
               <RecommendationBadge rec={result.recommendation} />
             </div>
@@ -418,7 +555,7 @@ function AnalysisContent() {
           </Card>
 
           <Card>
-            <CardTitle>研究报告</CardTitle>
+            <CardTitle>汇总研究报告</CardTitle>
             <ReportSection title="结论" value={report?.conclusion} />
             <ReportSection title="依据" value={buildEvidenceSummary(result)} />
             <ReportSection title="短期预测" value={report?.short_term_prediction} />
@@ -429,63 +566,21 @@ function AnalysisContent() {
             <ReportSection title="非投资建议声明" value={report?.disclaimer} />
           </Card>
 
+          {assetResults.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-foreground">各标的分析</h2>
+              {assetResults.map((asset) => (
+                <AssetAnalysisCard key={`${asset.market}-${asset.symbol}`} asset={asset} />
+              ))}
+            </div>
+          )}
+
           {result.tool_calls.length > 0 && (
             <Card>
               <CardTitle>工具调用</CardTitle>
               <ToolCallList result={result} />
             </Card>
           )}
-
-          {result.risk_metrics && (
-            <Card>
-              <CardTitle>风险指标</CardTitle>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {Object.entries(result.risk_metrics).map(([key, value]) => (
-                  <div key={key}>
-                    <p className="text-sm text-muted-foreground">{key.replace(/_/g, " ")}</p>
-                    <p className="text-lg font-bold text-foreground">
-                      {typeof value === "number" ? value.toFixed(4) : String(value)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {result.kronos_prediction?.forecast?.length ? (
-            <Card>
-              <CardTitle>
-                Kronos 预测
-                <span className="text-sm font-normal text-muted-foreground ml-3">
-                  {result.kronos_prediction.model} · {result.kronos_prediction.prediction_days} days
-                </span>
-              </CardTitle>
-              <div className="table-scroll max-h-80 overflow-y-auto">
-                <table className="min-w-[36rem] w-full text-sm">
-                  <thead className="sticky top-0 bg-muted">
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th className="py-2 text-left">日期</th>
-                      <th className="py-2 text-right">开盘</th>
-                      <th className="py-2 text-right">最高</th>
-                      <th className="py-2 text-right">最低</th>
-                      <th className="py-2 text-right">收盘</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.kronos_prediction.forecast.map((row) => (
-                      <tr key={`${row.timestamp}-${row.close}`} className="border-b border-border text-foreground hover:bg-muted">
-                        <td className="py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td>
-                        <td className="py-1.5 text-right">{row.open.toFixed(2)}</td>
-                        <td className="py-1.5 text-right">{row.high.toFixed(2)}</td>
-                        <td className="py-1.5 text-right">{row.low.toFixed(2)}</td>
-                        <td className="py-1.5 text-right font-semibold">{row.close.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ) : null}
         </>
       )}
 

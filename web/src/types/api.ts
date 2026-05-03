@@ -163,6 +163,29 @@ export interface AgentReport {
   disclaimer: string;
 }
 
+export interface AgentAssetResult {
+  symbol: string;
+  market: string;
+  name?: string | null;
+  report: AgentReport;
+  final_report: string;
+  recommendation: string;
+  confidence: number;
+  risk_level: string;
+  current_price: number | null;
+  data_points?: number;
+  risk_metrics: Record<string, number> | null;
+  kronos_prediction: {
+    model: string;
+    prediction_days: number;
+    forecast: ForecastRow[];
+    probabilistic: Record<string, any> | null;
+    metadata?: Record<string, any>;
+  } | null;
+  kronos_prediction_error?: string | null;
+  tool_status?: Record<string, string>;
+}
+
 export interface AgentAnalyzeRequest {
   question: string;
   symbol?: string;
@@ -191,6 +214,7 @@ export interface AgentAnalyzeResponse {
     probabilistic: Record<string, any> | null;
     metadata?: Record<string, any>;
   } | null;
+  asset_results: AgentAssetResult[];
   tool_calls: AgentToolCall[];
   steps: AgentStep[];
   timestamp: string;

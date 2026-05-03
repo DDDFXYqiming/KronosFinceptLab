@@ -108,6 +108,6 @@ def test_v95_web_analysis_page_has_agent_workspace_controls():
 
 
 def test_v95_version_labels_are_current():
-    assert "Version: v9.7" in read("README.md")
-    assert "v9.7" in read("web/src/components/layout/Sidebar.tsx")
-    assert "v9.7" in read("web/src/components/layout/Header.tsx")
+    assert "Version: v9.7.1" in read("README.md")
+    assert "v9.7.1" in read("web/src/components/layout/Sidebar.tsx")
+    assert "v9.7.1" in read("web/src/components/layout/Header.tsx")

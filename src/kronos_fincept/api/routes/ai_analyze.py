@@ -71,6 +71,7 @@ class AgentAnalyzeResponse(BaseModel):
     current_price: float | None = None
     risk_metrics: dict[str, Any] | None = None
     kronos_prediction: dict[str, Any] | None = None
+    asset_results: list[dict[str, Any]] = Field(default_factory=list)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     steps: list[dict[str, Any]] = Field(default_factory=list)
     timestamp: str

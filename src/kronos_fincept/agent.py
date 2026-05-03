@@ -139,6 +139,7 @@ class AgentAnalysisResult:
     clarification_required: bool = False
     clarifying_question: str | None = None
     error: str | None = None
+    asset_results: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -224,8 +225,14 @@ def analyze_investment_question(
     tool_calls: list[AgentToolCall] = []
     asset_contexts: list[dict[str, Any]] = []
 
-    for item in resolved[:3]:
-        asset_context, calls = _build_asset_context(item, question=clean_question, dry_run=dry_run)
+    search_query_limit = 1 if len(resolved) > 1 else 3
+    for item in resolved:
+        asset_context, calls = _build_asset_context(
+            item,
+            question=clean_question,
+            dry_run=dry_run,
+            search_query_limit=search_query_limit,
+        )
         asset_contexts.append(asset_context)
         tool_calls.extend(calls)
         for call in calls:
@@ -299,6 +306,7 @@ def analyze_investment_question(
         model=llm_call.metadata.get("model"),
     )
     tool_calls.append(llm_call)
+    asset_results = _build_asset_results(asset_contexts, report)
     steps.append(
         AgentStep(
             name="DeepSeek 汇总",
@@ -311,7 +319,7 @@ def analyze_investment_question(
         AgentStep(
             name="生成报告",
             status="completed",
-            summary="结构化报告已生成，包含结论、依据、短期预测、技术面、基本面、风险和声明。",
+            summary=f"结构化报告已生成，包含顶部汇总和 {len(asset_results)} 个标的分析卡片。",
             elapsed_ms=_elapsed_ms(started_at),
         )
     )
@@ -338,6 +346,7 @@ def analyze_investment_question(
         tool_calls=tool_calls,
         steps=steps,
         timestamp=now,
+        asset_results=asset_results,
     )
 
 
@@ -608,6 +617,7 @@ def _build_asset_context(
     *,
     question: str,
     dry_run: bool,
+    search_query_limit: int = 3,
 ) -> tuple[dict[str, Any], list[AgentToolCall]]:
     asset_started = time.perf_counter()
     calls: list[AgentToolCall] = []
@@ -731,7 +741,7 @@ def _build_asset_context(
                 )
             )
 
-    research, research_call = _build_online_research(item, question=question)
+    research, research_call = _build_online_research(item, question=question, query_limit=search_query_limit)
     asset["online_research"] = research
     calls.append(research_call)
     log_event(
@@ -749,10 +759,15 @@ def _build_asset_context(
     return asset, calls
 
 
-def _build_online_research(item: ResolvedSymbol, *, question: str) -> tuple[dict[str, Any], AgentToolCall]:
+def _build_online_research(
+    item: ResolvedSymbol,
+    *,
+    question: str,
+    query_limit: int = 3,
+) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
     client = _create_web_search_client()
-    queries = _build_research_queries(item, question)
+    queries = _build_research_queries(item, question, max_queries=query_limit)
     research: dict[str, Any] = {
         "enabled": client.is_configured,
         "provider": client.provider or None,
@@ -855,7 +870,7 @@ def _create_web_search_client() -> WebSearchClient:
     return WebSearchClient()
 
 
-def _build_research_queries(item: ResolvedSymbol, question: str) -> list[str]:
+def _build_research_queries(item: ResolvedSymbol, question: str, *, max_queries: int = 3) -> list[str]:
     display = item.name or item.symbol
     base = f"{display} {item.symbol}".strip()
     query_candidates = [
@@ -874,7 +889,7 @@ def _build_research_queries(item: ResolvedSymbol, question: str) -> list[str]:
             continue
         seen.add(query)
         queries.append(query)
-        if len(queries) >= 3:
+        if len(queries) >= max(1, max_queries):
             break
     return queries
 
@@ -1044,6 +1059,142 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
     }
 
 
+def _build_asset_results(asset_contexts: list[dict[str, Any]], report: dict[str, Any]) -> list[dict[str, Any]]:
+    llm_reports = _asset_reports_by_key(report)
+    results: list[dict[str, Any]] = []
+    for asset in asset_contexts:
+        key = _asset_key(str(asset.get("symbol") or ""), str(asset.get("market") or ""))
+        results.append(_build_asset_result(asset, llm_reports.get(key)))
+    return results
+
+
+def _asset_reports_by_key(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    reports: dict[str, dict[str, Any]] = {}
+    raw_reports = report.get("asset_reports") or []
+    if not isinstance(raw_reports, list):
+        return reports
+    for raw in raw_reports:
+        if not isinstance(raw, dict):
+            continue
+        symbol = str(raw.get("symbol") or "").strip()
+        market = str(raw.get("market") or "").strip()
+        if not symbol:
+            continue
+        reports[_asset_key(symbol, market)] = raw
+    return reports
+
+
+def _asset_key(symbol: str, market: str | None) -> str:
+    return f"{(market or '').lower()}:{symbol.upper()}"
+
+
+def _build_asset_result(asset: dict[str, Any], llm_asset_report: dict[str, Any] | None = None) -> dict[str, Any]:
+    symbol = str(asset.get("symbol") or "")
+    market = str(asset.get("market") or "")
+    market_data = asset.get("market_data") or {}
+    risk_metrics = asset.get("risk_metrics")
+    prediction = asset.get("kronos_prediction")
+    report_payload = None
+    if llm_asset_report:
+        report_payload = llm_asset_report.get("report") if isinstance(llm_asset_report.get("report"), dict) else llm_asset_report
+    asset_report = _normalize_report(report_payload) if report_payload else _default_asset_report(asset)
+    current_price = market_data.get("current_price")
+
+    return {
+        "symbol": symbol,
+        "market": market,
+        "name": asset.get("name"),
+        "report": asset_report,
+        "final_report": _format_report(asset_report),
+        "recommendation": asset_report.get("recommendation") or "持有",
+        "confidence": asset_report.get("confidence") or 0.5,
+        "risk_level": asset_report.get("risk_level") or "中",
+        "current_price": current_price,
+        "data_points": market_data.get("data_points", 0),
+        "risk_metrics": risk_metrics,
+        "kronos_prediction": prediction,
+        "kronos_prediction_error": asset.get("kronos_prediction_error"),
+        "tool_status": _asset_tool_status(asset),
+    }
+
+
+def _asset_tool_status(asset: dict[str, Any]) -> dict[str, str]:
+    research = asset.get("online_research") or {}
+    return {
+        "market_data": "completed" if asset.get("market_data") else "failed",
+        "financial_data": "completed" if asset.get("financial_data") else "skipped",
+        "technical_indicators": "completed" if asset.get("technical_indicators") else "skipped",
+        "risk_metrics": "completed" if asset.get("risk_metrics") else "failed",
+        "kronos_prediction": "completed" if asset.get("kronos_prediction") else "failed",
+        "online_research": (
+            "completed"
+            if research.get("results")
+            else ("failed" if research.get("enabled") else "skipped")
+        ),
+    }
+
+
+def _default_asset_report(asset: dict[str, Any]) -> dict[str, Any]:
+    symbol = str(asset.get("symbol") or "未识别标的")
+    name = asset.get("name")
+    label = f"{name}({symbol})" if name else symbol
+    market_data = asset.get("market_data") or {}
+    prediction = asset.get("kronos_prediction") or {}
+    prediction_error = asset.get("kronos_prediction_error")
+    risk_metrics = asset.get("risk_metrics") or {}
+    risk_level = _risk_level_from_metrics(risk_metrics)
+    short_term, expected_return = _prediction_summary(market_data, prediction, prediction_error)
+    confidence = 0.58 if market_data and prediction else 0.42 if market_data else 0.25
+    recommendation = "持有"
+    if expected_return is not None:
+        if expected_return >= 2 and risk_level != "高":
+            recommendation = "关注"
+        elif expected_return <= -2:
+            recommendation = "谨慎"
+
+    return _normalize_report(
+        {
+            "conclusion": f"{label} 的工具链分析已完成；结论基于真实行情、Kronos 预测、风险指标和可用公开信息。",
+            "short_term_prediction": short_term,
+            "technical": "已基于可用 K 线计算技术指标；若指标缺失，通常是历史样本不足或数据源失败。",
+            "fundamentals": "已尝试获取财务摘要；未返回时不编造基本面数据。",
+            "risk": f"风险等级暂定为{risk_level}，请结合波动率、最大回撤、VaR 与网页检索结果判断。",
+            "uncertainties": "行情源延迟、模型误差、突发事件、财务数据缺失和网页信息时效都会影响结论。",
+            "recommendation": recommendation,
+            "confidence": confidence,
+            "risk_level": risk_level,
+            "disclaimer": RESEARCH_DISCLAIMER,
+        }
+    )
+
+
+def _prediction_summary(
+    market_data: dict[str, Any],
+    prediction: dict[str, Any],
+    prediction_error: str | None,
+) -> tuple[str, float | None]:
+    forecast = prediction.get("forecast") or []
+    current_price = market_data.get("current_price")
+    if forecast and current_price:
+        predicted_close = _safe_float(forecast[-1].get("close"))
+        current = _safe_float(current_price)
+        expected_return = _pct_change(predicted_close, current)
+        return f"Kronos 5 日末收盘预测相对当前价格约 {expected_return:.2f}%。", expected_return
+    if prediction_error:
+        return f"真实 Kronos 未返回预测：{prediction_error}", None
+    return "真实 Kronos 短期预测不可用，需先确认模型或行情数据是否可用。", None
+
+
+def _risk_level_from_metrics(risk_metrics: dict[str, Any]) -> str:
+    volatility = risk_metrics.get("volatility")
+    if isinstance(volatility, (int, float)):
+        if volatility >= 0.35:
+            return "高"
+        if volatility <= 0.18:
+            return "低"
+    return "中"
+
+
 def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
     report = _call_deepseek_report(question, context)
@@ -1079,7 +1230,25 @@ def _call_deepseek_report(question: str, context: dict[str, Any]) -> dict[str, A
 4. 不要承诺本项目未实现的能力；数据不足时明确说明。
 5. 如果使用 online_research.results 中的公开网页信息，必须在对应结论里保留来源 URL；没有 URL 的外部信息不能写成事实。
 6. 输出必须是 JSON，不要输出 Markdown。
-JSON 字段：conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties, recommendation, confidence, risk_level, disclaimer。"""
+JSON 字段：
+conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties, recommendation, confidence, risk_level, disclaimer,
+asset_reports: [
+  {
+    "symbol": "600036",
+    "market": "cn",
+    "name": "招商银行",
+    "conclusion": "该标的单独结论",
+    "short_term_prediction": "该标的短期预测",
+    "technical": "该标的技术面",
+    "fundamentals": "该标的基本面",
+    "risk": "该标的风险",
+    "uncertainties": "该标的不确定性",
+    "recommendation": "持有",
+    "confidence": 0.6,
+    "risk_level": "中",
+    "disclaimer": "仅供研究"
+  }
+]。单标的也可以返回 asset_reports。"""
         user_prompt = {
             "question": question,
             "trusted_project_context": context,
@@ -1121,6 +1290,42 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
     prediction_error = primary.get("kronos_prediction_error")
     risk_metrics = primary.get("risk_metrics") or {}
     symbol = primary.get("symbol") or "未识别标的"
+    asset_reports = [
+        {
+            "symbol": asset.get("symbol"),
+            "market": asset.get("market"),
+            "name": asset.get("name"),
+            **_default_asset_report(asset),
+        }
+        for asset in assets
+    ]
+
+    if len(assets) > 1:
+        labels = [str(asset.get("symbol") or "") for asset in assets if asset.get("symbol")]
+        prediction_lines = [
+            f"{asset.get('symbol')}: {_prediction_summary(asset.get('market_data') or {}, asset.get('kronos_prediction') or {}, asset.get('kronos_prediction_error'))[0]}"
+            for asset in assets
+        ]
+        risk_lines = [
+            f"{asset.get('symbol')}: {_risk_level_from_metrics(asset.get('risk_metrics') or {})}"
+            for asset in assets
+            if asset.get("symbol")
+        ]
+        return _normalize_report(
+            {
+                "conclusion": f"已完成 {len(assets)} 个标的的并列分析：" + "、".join(labels) + "。请优先查看下方各标的独立卡片。",
+                "short_term_prediction": "；".join(prediction_lines),
+                "technical": "各标的技术面已分别基于可用 K 线计算；缺失项不会被编造。",
+                "fundamentals": "已分别尝试获取财务摘要；非 A 股或数据源缺失时保持空缺说明。",
+                "risk": "；".join(risk_lines) if risk_lines else "风险指标暂不可用，请结合各标的卡片查看失败原因。",
+                "uncertainties": "多标的比较会受行情源延迟、模型误差、行业差异、网页信息时效和缺失财务数据共同影响。",
+                "recommendation": "分标的查看",
+                "confidence": 0.55,
+                "risk_level": "中",
+                "disclaimer": RESEARCH_DISCLAIMER,
+                "asset_reports": asset_reports,
+            }
+        )
 
     forecast = prediction.get("forecast") or []
     if forecast and market_data.get("current_price"):
@@ -1153,6 +1358,7 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
             "confidence": 0.55,
             "risk_level": risk_level,
             "disclaimer": RESEARCH_DISCLAIMER,
+            "asset_reports": asset_reports,
         }
     )
 
@@ -1167,7 +1373,7 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
         confidence = 0.5
     confidence = max(0.0, min(1.0, confidence))
 
-    return {
+    normalized = {
         "conclusion": str(payload.get("conclusion") or payload.get("summary") or ""),
         "short_term_prediction": str(payload.get("short_term_prediction") or ""),
         "technical": str(payload.get("technical") or ""),
@@ -1179,6 +1385,49 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
         "risk_level": str(payload.get("risk_level") or "中"),
         "disclaimer": str(payload.get("disclaimer") or RESEARCH_DISCLAIMER),
     }
+    asset_reports = _normalize_asset_reports(payload.get("asset_reports"))
+    if asset_reports:
+        normalized["asset_reports"] = asset_reports
+    return normalized
+
+
+def _normalize_asset_reports(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    reports: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        market = str(item.get("market") or _infer_market(symbol)).strip().lower()
+        report_payload = item.get("report") if isinstance(item.get("report"), dict) else item
+        normalized_report = _normalize_report({k: report_payload.get(k) for k in [
+            "conclusion",
+            "summary",
+            "short_term_prediction",
+            "technical",
+            "fundamentals",
+            "risk",
+            "uncertainties",
+            "recommendation",
+            "confidence",
+            "risk_level",
+            "disclaimer",
+        ]})
+        reports.append(
+            {
+                "symbol": symbol.upper() if market == "us" else symbol,
+                "market": market,
+                "name": item.get("name"),
+                "report": normalized_report,
+                "recommendation": normalized_report["recommendation"],
+                "confidence": normalized_report["confidence"],
+                "risk_level": normalized_report["risk_level"],
+            }
+        )
+    return reports
 
 
 def _format_report(report: dict[str, Any]) -> str:

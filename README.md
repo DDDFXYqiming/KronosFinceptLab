@@ -31,9 +31,9 @@
 
 ## Current status
 
-Version: v9.7
+Version: v9.7.1
 
-V9 已收束：Web 移动端、图表性能、Agent 工作区、网页检索、前端质量闸门与部署文档完成。Agent 网页检索为可选能力：配置 `WEB_SEARCH_PROVIDER` 与对应 `WEB_SEARCH_API_KEY` 后启用。
+V9 已收束：Web 移动端、图表性能、Agent 工作区、网页检索、前端质量闸门与部署文档完成。v9.7.1 修复 Agent 多标的分析展示，支持顶部汇总结论与逐标的分析卡片。Agent 网页检索为可选能力：配置 `WEB_SEARCH_PROVIDER` 与对应 `WEB_SEARCH_API_KEY` 后启用。
 
 ## 三端能力对照
 

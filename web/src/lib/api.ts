@@ -18,6 +18,7 @@ export type {
   AIAnalyzeResponse,
   AgentAnalyzeRequest,
   AgentAnalyzeResponse,
+  AgentAssetResult,
   AgentReport,
   AgentStep,
   AgentToolCall,
