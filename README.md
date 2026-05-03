@@ -32,9 +32,9 @@
 
 ## Current status
 
-Version: v10.0
+Version: v10.1
 
-V10 已启动：v10.0 先完成线上已知 Bug 修复与部署加固，包括 Agent 多标的稳定展示、DeepSeek endpoint 容错、分析页最近 5 轮临时历史、常见标的别名补全和移动端/Zeabur 错误提示增强。Digital Oracle 将作为后续宏观信号层的开发参考。
+V10 已启动：v10.1 完成 Digital Oracle 风格宏观 Provider 后端基础层，新增 `kronos_fincept.macro.MacroDataManager`、14 个宏观 provider 适配器、统一 `MacroSignal` 输出、并行 gather、缓存和单 provider 失败降级。Agent/API/Web 接入宏观信号留给 v10.2+。
 
 ## 三端能力对照
 

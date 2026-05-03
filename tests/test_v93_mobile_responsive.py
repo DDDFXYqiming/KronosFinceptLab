@@ -75,6 +75,6 @@ def test_v93_tables_charts_and_inputs_have_mobile_bounds():
 
 
 def test_v93_version_label_is_updated():
-    assert "Version: v10.0" in read("README.md")
-    assert "v10.0" in read("web/src/components/layout/Sidebar.tsx")
-    assert "v10.0" in read("web/src/components/layout/Header.tsx")
+    assert "Version: v10.1" in read("README.md")
+    assert "v10.1" in read("web/src/components/layout/Sidebar.tsx")
+    assert "v10.1" in read("web/src/components/layout/Header.tsx")

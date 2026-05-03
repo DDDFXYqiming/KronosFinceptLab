@@ -50,7 +50,7 @@ def test_v100_analysis_page_keeps_five_temporary_turns_and_agent_timeout():
 def test_v100_readme_documents_digital_oracle_and_deepseek_endpoint():
     readme = read("README.md")
 
-    assert "Version: v10.0" in readme
+    assert "Version: v10.1" in readme
     assert "https://github.com/komako-workshop/digital-oracle" in readme
     assert "https://api.deepseek.com" in readme
     assert "chat/completions" in readme
