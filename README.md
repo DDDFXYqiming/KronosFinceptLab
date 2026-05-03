@@ -31,9 +31,44 @@
 
 ## Current status
 
-Version: v9.5
+Version: v9.7
 
-Agent 网页检索为可选能力：配置 `WEB_SEARCH_PROVIDER` 与对应 `WEB_SEARCH_API_KEY` 后启用。
+V9 已收束：Web 移动端、图表性能、Agent 工作区、网页检索、前端质量闸门与部署文档完成。Agent 网页检索为可选能力：配置 `WEB_SEARCH_PROVIDER` 与对应 `WEB_SEARCH_API_KEY` 后启用。
+
+## 三端能力对照
+
+| 能力 | Web | API | CLI |
+|---|---|---|---|
+| 行情获取 | `/data`, `/forecast` | `GET /api/data/*` | `kronos data fetch` |
+| Kronos 预测 | `/forecast`, `/batch` | `POST /api/forecast`, `POST /api/batch` | `kronos forecast`, `kronos batch` |
+| Agent 分析 | `/analysis` | `POST /api/v1/analyze/agent` | `kronos analyze agent` |
+| 风险/估值/组合 | `/analysis` 汇总展示 | `POST /api/v1/analyze/*` | `kronos analyze risk/dcf/portfolio` |
+| 回测 | `/backtest` | `POST /api/backtest/ranking` | `kronos backtest ranking` |
+| 健康检查 | Header 状态 | `GET /api/health` | `kronos serve` 后访问 health |
+
+## Zeabur 配置
+
+必要变量：`PORT`、`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`JWT_SECRET`。
+
+可选变量：`KRONOS_MODEL_ID`、`HF_TOKEN`、`WEB_SEARCH_PROVIDER`、`WEB_SEARCH_API_KEY`、`WEB_SEARCH_MAX_RESULTS`、`WEB_SEARCH_TIMEOUT_SECONDS`。
+
+忽略边界：`.env`、`SPEC.md`、`external/`、`models/`、`.cache/`、`logs/`、`web/node_modules/`、`web/.next/` 不进入 git；Docker 镜像同样排除这些路径。
+
+## 质量闸门
+
+```bash
+python -m pytest tests -q
+
+cd web
+npm run typecheck
+npm run lint
+npm run test:frontend
+npm run build:zeabur
+npm run check:bundle
+
+# 本地 Web 已启动时执行
+npm run smoke:pages
+```
 
 ## 快速开始
 
@@ -144,7 +179,9 @@ npm run dev
 ## 测试
 
 ```bash
-PYTHONPATH=src python3 -m pytest tests -v
+python -m pytest tests -q
+cd web && npm run typecheck && npm run lint && npm run test:frontend
+cd web && npm run build:zeabur && npm run check:bundle
 ```
 
 ## 日志与运维

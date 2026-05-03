@@ -7,7 +7,11 @@
     "build": "next build",
     "build:zeabur": "node scripts/build_zeabur.js",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "node scripts/lint_static.js",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test:frontend": "node scripts/test_frontend_contract.js",
+    "smoke:pages": "node scripts/smoke_pages.js",
+    "check:bundle": "node scripts/check_bundle.js"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.8",
