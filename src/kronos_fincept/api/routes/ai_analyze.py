@@ -57,6 +57,14 @@ class AgentAnalyzeRequest(BaseModel):
     dry_run: bool = Field(default=False, description="Use deterministic Kronos dry-run for tests")
 
 
+class MacroAnalyzeRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="Macro or cross-market analysis question")
+    symbols: list[str] = Field(default_factory=list, description="Optional related symbols")
+    market: str | None = Field(default=None, description="Optional market hint")
+    provider_ids: list[str] | None = Field(default=None, description="Optional provider id override")
+    context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
+
+
 class AgentAnalyzeResponse(BaseModel):
     ok: bool
     question: str
@@ -113,6 +121,44 @@ async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
                 "disclaimer": "本报告仅供研究，不构成投资建议。",
             },
             final_report=f"Agent 分析失败：{exc}",
+            recommendation="失败",
+            confidence=0.0,
+            risk_level="未知",
+            tool_calls=[],
+            steps=[{"name": "执行", "status": "failed", "summary": str(exc), "elapsed_ms": 0}],
+            timestamp=datetime.now().isoformat(),
+            error=str(exc),
+        )
+
+
+@router.post("/macro", response_model=AgentAnalyzeResponse)
+async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
+    """Run macro-only signal analysis backed by Digital Oracle style providers."""
+    try:
+        from kronos_fincept.agent import analyze_macro_question
+
+        result = await asyncio.to_thread(
+            analyze_macro_question,
+            req.question,
+            symbols=req.symbols,
+            market=req.market,
+            provider_ids=req.provider_ids,
+            context=req.context,
+        )
+        return AgentAnalyzeResponse(**result.to_dict())
+    except Exception as exc:
+        logger.exception("Macro analysis failed")
+        from datetime import datetime
+
+        return AgentAnalyzeResponse(
+            ok=False,
+            question=req.question,
+            report={
+                "conclusion": "宏观分析失败。",
+                "risk": str(exc),
+                "disclaimer": "本报告仅供研究，不构成投资建议。",
+            },
+            final_report=f"宏观分析失败：{exc}",
             recommendation="失败",
             confidence=0.0,
             risk_level="未知",

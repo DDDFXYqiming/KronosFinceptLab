@@ -568,6 +568,50 @@ def agent(ctx, question, symbol, market, dry_run, output_format):
         return 1
 
 
+@analyze_group.command("macro")
+@click.option("--question", required=True, help="Macro or cross-market analysis question")
+@click.option("--symbols", default="", help="Optional comma-separated related symbols")
+@click.option("--market", type=click.Choice(["cn", "hk", "us", "commodity", "crypto"]), default=None, help="Optional market hint")
+@click.option("--providers", default="", help="Optional comma-separated macro provider ids")
+@click.option("--output", "output_format", type=click.Choice(["json", "text"]), default="text")
+@click.pass_context
+def macro(ctx, question, symbols, market, providers, output_format):
+    """Macro signal analysis using Digital Oracle style providers."""
+    try:
+        from kronos_fincept.agent import analyze_macro_question
+
+        symbol_list = [item.strip() for item in symbols.split(",") if item.strip()]
+        provider_ids = [item.strip() for item in providers.split(",") if item.strip()] or None
+        result = analyze_macro_question(
+            question,
+            symbols=symbol_list,
+            market=market,
+            provider_ids=provider_ids,
+        )
+        payload = result.to_dict()
+
+        if output_format == "json":
+            click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            click.echo("KronosFinceptLab Macro Agent")
+            click.echo("=" * 50)
+            if result.rejected:
+                click.echo(f"Rejected: {result.security_reason}")
+            elif result.clarification_required:
+                click.echo(result.clarifying_question)
+            else:
+                click.echo(result.final_report)
+                click.echo("\nTool Calls:")
+                for call in result.tool_calls:
+                    click.echo(f"- [{call.status}] {call.name}: {call.summary}")
+
+        return 0
+
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1
+
+
 @analyze_group.command()
 @click.option('--symbol', required=True, help='Stock symbol')
 @click.option('--market', type=click.Choice(['cn', 'hk', 'us', 'commodity']), default='cn', help='Market: cn=A股, hk=港股, us=美股, commodity=大宗商品')
