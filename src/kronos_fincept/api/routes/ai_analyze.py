@@ -193,11 +193,7 @@ async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
             try:
                 from kronos_fincept.financial import GlobalMarketSource
                 gms = GlobalMarketSource()
-                # Map market to Yahoo suffix
-                yahoo_suffix = {"hk": ".HK", "us": "", "commodity": ""}
-                suff = yahoo_suffix.get(req.market, "")
-                yahoo_symbol = f"{req.symbol}{suff}" if suff else req.symbol
-                raw_data = gms.fetch_data(yahoo_symbol)
+                raw_data = gms.fetch_data(req.symbol, market=req.market)
                 if raw_data and len(raw_data) > 0:
                     price_data = raw_data
             except Exception as e:

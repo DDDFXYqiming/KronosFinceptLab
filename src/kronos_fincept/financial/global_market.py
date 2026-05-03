@@ -3,6 +3,7 @@ Global market data sources (US, HK stocks).
 """
 import logging
 from collections import OrderedDict
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import pandas as pd
 
@@ -57,14 +58,13 @@ class GlobalMarketSource:
         Returns:
             Yahoo Finance symbol format
         """
+        symbol = str(symbol).strip().upper()
         if market == 'us':
             # US stocks - no suffix needed
-            return symbol.upper()
+            return symbol
         elif market == 'hk':
             # HK stocks - add .HK suffix
-            if '.HK' not in symbol:
-                return f"{symbol}.HK"
-            return symbol
+            return self._normalize_hk_symbol(symbol)
         elif market == 'crypto':
             # Crypto - add -USD suffix
             if '-USD' not in symbol:
@@ -72,15 +72,85 @@ class GlobalMarketSource:
             return symbol
         else:
             # Auto detect
-            if symbol.startswith('0') and len(symbol) == 5:
-                # HK stock (e.g., 0700)
-                return f"{symbol}.HK"
+            if symbol.endswith(".HK") or (symbol.startswith("HK") and symbol[2:].isdigit()):
+                return self._normalize_hk_symbol(symbol)
+            elif symbol.isdigit() and 4 <= len(symbol) <= 5:
+                return self._normalize_hk_symbol(symbol)
             elif '-' in symbol:
                 # Crypto
                 return symbol
             else:
                 # US stock
-                return symbol.upper()
+                return symbol
+
+    @staticmethod
+    def _normalize_hk_symbol(symbol: str) -> str:
+        base = str(symbol).strip().upper()
+        if base.endswith(".HK"):
+            base = base[:-3]
+        if base.startswith("HK") and base[2:].isdigit():
+            base = base[2:]
+        if base.isdigit() and len(base) < 4:
+            base = base.zfill(4)
+        return f"{base}.HK"
+
+    @staticmethod
+    def _parse_yyyymmdd(value: str | None) -> str | None:
+        if not value:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        if len(normalized) == 8 and normalized.isdigit():
+            return datetime.strptime(normalized, "%Y%m%d").strftime("%Y-%m-%d")
+        return normalized
+
+    @staticmethod
+    def _exclusive_end_date(value: str | None) -> str | None:
+        parsed = GlobalMarketSource._parse_yyyymmdd(value)
+        if parsed is None:
+            return None
+        try:
+            return (datetime.strptime(parsed, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        except ValueError:
+            return parsed
+
+    @staticmethod
+    def _standardize_history_frame(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        result = df.rename(columns={
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        }).copy()
+        result['timestamp'] = result.index
+        return result[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+
+    @staticmethod
+    def _frame_to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+        if df is None or df.empty:
+            return []
+
+        rows: list[dict[str, Any]] = []
+        for row in df.to_dict(orient="records"):
+            timestamp = row.get("timestamp")
+            if hasattr(timestamp, "isoformat"):
+                row["timestamp"] = timestamp.isoformat()
+            elif timestamp is not None:
+                row["timestamp"] = str(timestamp)
+            for key in ("open", "high", "low", "close", "volume"):
+                value = row.get(key)
+                if pd.isna(value):
+                    row[key] = 0.0
+                else:
+                    row[key] = float(value)
+            row.setdefault("amount", 0.0)
+            rows.append(row)
+        return rows
     
     def get_stock_data(
         self,
@@ -116,25 +186,47 @@ class GlobalMarketSource:
             if df.empty:
                 return None
             
-            # Standardize column names
-            df = df.rename(columns={
-                'Open': 'open',
-                'High': 'high',
-                'Low': 'low',
-                'Close': 'close',
-                'Volume': 'volume'
-            })
-            
-            # Add timestamp column
-            df['timestamp'] = df.index
-            
-            result = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            result = self._standardize_history_frame(df)
             self._save_cached(cache_key, result)
             return result.copy()
             
         except Exception as e:
             logger.warning("Error getting data for %s: %s", symbol, e)
             return None
+
+    def fetch_data(
+        self,
+        symbol: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        *,
+        market: str = 'auto',
+        interval: str = '1d',
+        period: str = '1y',
+    ) -> list[dict[str, Any]]:
+        """Compatibility wrapper returning JSON-ready OHLCV rows.
+
+        Older API routes still expect ``fetch_data`` and date-range rows. This
+        method keeps that contract while using the current Yahoo Finance source.
+        """
+        try:
+            import yfinance as yf
+
+            yahoo_symbol = self._convert_symbol(symbol, market)
+            start = self._parse_yyyymmdd(start_date)
+            end = self._exclusive_end_date(end_date)
+            ticker = yf.Ticker(yahoo_symbol)
+            if start or end:
+                df = ticker.history(start=start, end=end, interval=interval)
+            else:
+                df = ticker.history(period=period, interval=interval)
+            result = self._standardize_history_frame(df)
+            if result.empty:
+                return []
+            return self._frame_to_records(result)
+        except Exception as e:
+            logger.warning("Error fetching global data for %s: %s", symbol, e)
+            return []
     
     def get_us_stock_data(
         self,

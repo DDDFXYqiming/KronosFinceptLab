@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from contextlib import redirect_stdout
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import date, datetime, timedelta
 from io import StringIO
 from typing import Any
 
@@ -1536,8 +1537,70 @@ def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, 
     )
 
 
+def _json_safe(value: Any, *, _depth: int = 0) -> Any:
+    if _depth > 12:
+        return str(value)
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(asdict(value), _depth=_depth + 1)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item, _depth=_depth + 1) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item, _depth=_depth + 1) for item in value]
+
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _json_safe(item(), _depth=_depth + 1)
+        except Exception:
+            pass
+
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        try:
+            return isoformat()
+        except Exception:
+            pass
+
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return _json_safe(to_dict(), _depth=_depth + 1)
+        except Exception:
+            pass
+
+    return str(value)
+
+
+def _serialize_deepseek_user_prompt(user_prompt: dict[str, Any]) -> str | None:
+    try:
+        return json.dumps(_json_safe(user_prompt), ensure_ascii=False, allow_nan=False)
+    except Exception as exc:
+        log_event(
+            logger,
+            logging.WARNING,
+            "agent.deepseek.report.payload_error",
+            f"DeepSeek report payload serialization failed: {_short_error(exc)}",
+            error_type=type(exc).__name__,
+            model=settings.llm.deepseek.model,
+        )
+        return None
+
+
 def _call_deepseek_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
     if not settings.llm.deepseek.is_configured:
+        log_event(
+            logger,
+            logging.INFO,
+            "agent.deepseek.report.disabled",
+            "DeepSeek report synthesis skipped because DEEPSEEK_API_KEY is not configured.",
+            model=settings.llm.deepseek.model,
+        )
         return None
     try:
         import requests
@@ -1578,6 +1641,10 @@ asset_reports: [
             "trusted_project_context": context,
             "output_language": "zh-CN",
         }
+        user_content = _serialize_deepseek_user_prompt(user_prompt)
+        if user_content is None:
+            return None
+
         response = requests.post(
             _deepseek_chat_url(),
             headers={
@@ -1588,7 +1655,7 @@ asset_reports: [
                 "model": settings.llm.deepseek.model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
+                    {"role": "user", "content": user_content},
                 ],
                 "temperature": 0.2,
                 "max_tokens": 1800,
@@ -1596,13 +1663,53 @@ asset_reports: [
             timeout=45,
         )
         if response.status_code != 200:
+            log_event(
+                logger,
+                logging.WARNING,
+                "agent.deepseek.report.http_error",
+                f"DeepSeek report synthesis returned HTTP {response.status_code}.",
+                model=settings.llm.deepseek.model,
+                status_code=response.status_code,
+                endpoint=_deepseek_chat_url(),
+                response_body=response.text[:500],
+            )
             return None
-        content = response.json()["choices"][0]["message"]["content"]
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            log_event(
+                logger,
+                logging.WARNING,
+                "agent.deepseek.report.invalid_json_response",
+                f"DeepSeek report synthesis returned invalid JSON response: {_short_error(exc)}",
+                model=settings.llm.deepseek.model,
+                error_type=type(exc).__name__,
+                response_body=response.text[:500],
+            )
+            return None
+        content = payload["choices"][0]["message"]["content"]
         parsed = _extract_json_object(content)
         if not parsed:
+            log_event(
+                logger,
+                logging.WARNING,
+                "agent.deepseek.report.unparseable_content",
+                "DeepSeek report synthesis response did not contain a JSON object.",
+                model=settings.llm.deepseek.model,
+                content_preview=str(content)[:500],
+            )
             return None
         return _normalize_report(parsed)
-    except Exception:
+    except Exception as exc:
+        log_event(
+            logger,
+            logging.WARNING,
+            "agent.deepseek.report.exception",
+            f"DeepSeek report synthesis failed: {_short_error(exc)}",
+            model=settings.llm.deepseek.model,
+            endpoint=_deepseek_chat_url(),
+            error_type=type(exc).__name__,
+        )
         return None
 
 

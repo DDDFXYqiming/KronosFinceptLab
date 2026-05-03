@@ -27,10 +27,7 @@ async def get_global_market_data(
 
         def _fetch():
             gms = GlobalMarketSource()
-            yahoo_suffix = {"hk": ".HK", "us": "", "commodity": ""}
-            suff = yahoo_suffix.get(market, "")
-            yahoo_symbol = f"{symbol}{suff}" if suff else symbol
-            return gms.fetch_data(yahoo_symbol, start_date, end_date)
+            return gms.fetch_data(symbol, start_date, end_date, market=market)
 
         raw_data = await asyncio.to_thread(_fetch)
         if not raw_data or len(raw_data) == 0:
@@ -62,10 +59,7 @@ async def get_technical_indicators(
                 return fetch_a_stock_ohlcv(symbol, "20250101", "20260430")
             else:
                 gms = GlobalMarketSource()
-                yahoo_suffix = {"hk": ".HK", "us": "", "commodity": ""}
-                suff = yahoo_suffix.get(market, "")
-                yahoo_symbol = f"{symbol}{suff}" if suff else symbol
-                return gms.fetch_data(yahoo_symbol, "20250101", "20260430")
+                return gms.fetch_data(symbol, "20250101", "20260430", market=market)
 
         rows = await asyncio.to_thread(_fetch_data)
 
