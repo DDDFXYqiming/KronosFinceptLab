@@ -49,6 +49,7 @@ def _patch_agent_tools(monkeypatch, search_client):
         },
     )
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: search_client)
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: SimpleNamespace(provider="", is_configured=False))
 
 
 def _report_payload(context):

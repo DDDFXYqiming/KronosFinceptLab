@@ -66,6 +66,7 @@ def _patch_agent_tools(monkeypatch):
         },
     )
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
 
 def test_v95_agent_steps_are_traceable_for_web_api_cli(monkeypatch):

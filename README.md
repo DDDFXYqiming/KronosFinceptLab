@@ -19,6 +19,7 @@
 | | Binance | 加密货币（国际） |
 | | OKX | 加密货币（中国） |
 | **网页检索** | Tavily/Brave/Serper/custom | Agent 可选公开信息检索 |
+| **官方披露** | 巨潮资讯网 | A 股公告、定期报告、业绩预告、回购/分红等一手披露 |
 | **预测模型** | NeoQuasar/Kronos-base | 默认 K 线预测模型（CPU 推理） |
 | | NeoQuasar/Kronos-mini/base | 可选模型 |
 | | NeoQuasar/Kronos-Tokenizer-base | Tokenizer |
@@ -32,9 +33,9 @@
 
 ## Current status
 
-Version: v10.2
+Version: v10.2.4
 
-V10 已推进到 v10.2：`MacroDataManager` 宏观 Provider 后端基础层已接入 Agent 工具链，新增 `analyze_macro_question()`、`POST /api/v1/analyze/macro` 和 `kronos analyze macro --question ...`。现有个股分析链路保持不自动触发宏观信号，Web 独立宏观页面留给 v10.3。
+V10 已推进到 v10.2.4：`MacroDataManager` 宏观 Provider 后端基础层已接入 Agent 工具链，新增 `analyze_macro_question()`、`POST /api/v1/analyze/macro` 和 `kronos analyze macro --question ...`。现有个股分析链路在公开信息检索层新增巨潮资讯网官方披露源，A 股分析会优先补充公告、定期报告等一手信息，不再只依赖通用网页搜索。Web 独立宏观页面留给 v10.3。
 
 ## 三端能力对照
 

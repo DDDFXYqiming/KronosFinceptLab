@@ -80,6 +80,7 @@ def _patch_agent_tools(monkeypatch):
         },
     )
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
 
 def test_agent_rejects_prompt_injection_before_tools():

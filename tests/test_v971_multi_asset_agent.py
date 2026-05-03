@@ -61,6 +61,7 @@ def _patch_multi_asset_tools(monkeypatch, *, deepseek_report=True):
         },
     )
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
     if deepseek_report:
         monkeypatch.setattr(

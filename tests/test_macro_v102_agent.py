@@ -161,6 +161,7 @@ def test_v102_existing_stock_agent_does_not_auto_call_macro(monkeypatch):
         is_configured = False
 
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
     result = agent.analyze_investment_question("帮我看看招商银行现在能不能买")
 

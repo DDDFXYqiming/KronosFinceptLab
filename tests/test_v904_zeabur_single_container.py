@@ -216,6 +216,11 @@ def test_agent_kronos_failure_keeps_clear_error_without_mock(monkeypatch):
         "_create_web_search_client",
         lambda: type("DisabledSearchClient", (), {"provider": "", "is_configured": False})(),
     )
+    monkeypatch.setattr(
+        agent,
+        "_create_cninfo_client",
+        lambda: type("DisabledCninfoClient", (), {"provider": "", "is_configured": False})(),
+    )
 
     result = agent.analyze_investment_question("帮我看看招商银行现在能不能买")
     prediction_call = next(call for call in result.tool_calls if call.name == "kronos_prediction")

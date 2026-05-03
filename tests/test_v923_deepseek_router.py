@@ -58,6 +58,7 @@ def _patch_tools(monkeypatch):
         },
     )
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
 
 def test_deepseek_router_is_primary_for_symbol_resolution(monkeypatch):

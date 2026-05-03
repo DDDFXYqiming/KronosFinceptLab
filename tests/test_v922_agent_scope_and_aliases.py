@@ -70,6 +70,7 @@ def _patch_agent_tools(monkeypatch):
         },
     )
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
 
 def test_agent_safety_allows_common_stock_price_questions():
