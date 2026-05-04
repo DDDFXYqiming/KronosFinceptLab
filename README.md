@@ -33,9 +33,9 @@
 
 ## Current status
 
-Version: v10.6
+Version: v10.6.1
 
-V10 已推进到 v10.6：在 v10.5.4 分析页 Zeabur 稳定性修复基础上，新增部署版本指纹与健康诊断能力。`/api/health` 和 `/api/health/deep` 现在会返回安全的 `app_version`、`build_commit`、`build_ref`、`build_source`，仪表盘同步展示部署版本和短 commit，方便核对 GitHub main 与 Zeabur 线上镜像是否一致。
+V10 已推进到 v10.6.1：在 v10.6 部署版本指纹与健康诊断基础上，修复 Zeabur frontend-builder 阶段 `npm ci --include=optional` 因 npm registry 网络抖动直接中断构建的问题。Docker 前端构建层已增加 npm 拉取超时、重试、禁用 audit/fund 和 registry fallback，避免一次网络错误导致整次部署失败。
 
 宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与黄金/商品资产映射。Agent 分析页在显式宏观问题中仍会融合宏观信号，普通 A 股交易问法优先保障响应稳定性；部署排障时可直接用健康接口确认运行版本。
 

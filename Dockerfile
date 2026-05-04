@@ -2,11 +2,33 @@
 # Stage 1: Build Next.js frontend
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app/web
+ARG NPM_REGISTRY=https://registry.npmjs.org/
 ENV NEXT_IGNORE_INCORRECT_LOCKFILE=1 \
     NEXT_TELEMETRY_DISABLED=1 \
-    INTERNAL_API_URL=http://localhost:8000
+    INTERNAL_API_URL=http://localhost:8000 \
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    NPM_CONFIG_FETCH_RETRIES=5 \
+    NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
+    NPM_CONFIG_FETCH_TIMEOUT=300000 \
+    NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false
 COPY web/package.json web/package-lock.json ./
-RUN npm ci --include=optional
+RUN set -eux; \
+    npm config set registry "$NPM_CONFIG_REGISTRY"; \
+    for registry in "$NPM_CONFIG_REGISTRY" "https://registry.npmmirror.com"; do \
+        npm config set registry "$registry"; \
+        for attempt in 1 2 3; do \
+            if npm ci --include=optional --no-audit --no-fund; then \
+                exit 0; \
+            fi; \
+            if [ "$registry" = "https://registry.npmmirror.com" ] && [ "$attempt" = "3" ]; then \
+                exit 1; \
+            fi; \
+            sleep $((attempt * 10)); \
+        done; \
+    done
 COPY web/ .
 RUN npm run build:zeabur \
     && test -d .next/standalone \
@@ -43,7 +65,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git
 ARG INSTALL_KRONOS_RUNTIME=1
-ARG KRONOS_APP_VERSION=v10.6
+ARG KRONOS_APP_VERSION=v10.6.1
 ARG KRONOS_BUILD_COMMIT=unknown
 ARG KRONOS_BUILD_REF=unknown
 ARG KRONOS_BUILD_SOURCE=docker
