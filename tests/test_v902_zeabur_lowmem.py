@@ -15,12 +15,13 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_dockerfile_defaults_to_kronos_small_real_runtime_with_light_health():
+def test_dockerfile_defaults_to_single_kronos_base_runtime_with_light_health():
     dockerfile = read("Dockerfile")
 
-    assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-small" in dockerfile
+    assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-base" in dockerfile
     assert "KRONOS_ENABLE_REAL_MODEL=1" in dockerfile
     assert "KRONOS_ALLOW_DRY_RUN=0" in dockerfile
+    assert "KRONOS_PREWARM_ON_STARTUP=1" in dockerfile
     assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
     assert 'pip install --no-cache-dir -e ".[deploy]"' in dockerfile
     assert 'pip install --no-cache-dir -e ".[kronos]"' in dockerfile
@@ -75,7 +76,7 @@ def test_light_health_does_not_touch_heavy_kronos_import_path(monkeypatch, tmp_p
         SimpleNamespace(
             kronos=SimpleNamespace(
                 enable_real_model=False,
-                model_id="NeoQuasar/Kronos-small",
+                model_id="NeoQuasar/Kronos-base",
                 tokenizer_id="NeoQuasar/Kronos-Tokenizer-base",
             )
         ),
@@ -102,7 +103,7 @@ def test_health_and_deep_health_routes_are_separate(monkeypatch):
         return {
             "status": "ok",
             "model_loaded": deep,
-            "model_id": "NeoQuasar/Kronos-small",
+            "model_id": "NeoQuasar/Kronos-base",
             "tokenizer_id": "NeoQuasar/Kronos-Tokenizer-base",
             "device": "cpu",
             "runtime_mode": "lowmem",
@@ -155,7 +156,7 @@ def test_disabled_real_model_forecast_returns_error_without_wrapper(monkeypatch)
     assert "KRONOS_ENABLE_REAL_MODEL=0" in result["error"]
 
 
-def test_service_uses_configured_kronos_small_when_request_uses_default(monkeypatch):
+def test_service_uses_configured_kronos_base_when_request_uses_default(monkeypatch):
     from kronos_fincept import service
 
     monkeypatch.setattr(
@@ -165,7 +166,7 @@ def test_service_uses_configured_kronos_small_when_request_uses_default(monkeypa
             kronos=SimpleNamespace(
                 enable_real_model=False,
                 allow_dry_run=True,
-                model_id="NeoQuasar/Kronos-small",
+                model_id="NeoQuasar/Kronos-base",
             )
         ),
     )
@@ -184,4 +185,4 @@ def test_service_uses_configured_kronos_small_when_request_uses_default(monkeypa
     result = service.forecast_from_request(req)
 
     assert result["ok"] is True
-    assert result["model_id"] == "NeoQuasar/Kronos-small"
+    assert result["model_id"] == "NeoQuasar/Kronos-base"

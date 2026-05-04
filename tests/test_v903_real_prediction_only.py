@@ -14,7 +14,7 @@ def read(path: str) -> str:
 def test_zeabur_production_disables_dry_run_and_installs_real_kronos_runtime():
     dockerfile = read("Dockerfile")
 
-    assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-small" in dockerfile
+    assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-base" in dockerfile
     assert "KRONOS_ENABLE_REAL_MODEL=1" in dockerfile
     assert "KRONOS_ALLOW_DRY_RUN=0" in dockerfile
     assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
@@ -43,7 +43,7 @@ def test_service_rejects_dry_run_when_environment_disallows_it(monkeypatch):
             kronos=SimpleNamespace(
                 allow_dry_run=False,
                 enable_real_model=True,
-                model_id="NeoQuasar/Kronos-small",
+                model_id="NeoQuasar/Kronos-base",
             )
         ),
     )

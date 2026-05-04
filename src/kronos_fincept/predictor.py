@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 import time
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,12 +20,14 @@ import numpy as np
 import pandas as pd
 
 from kronos_fincept.data_adapter import make_future_timestamps
+from kronos_fincept.logging_config import log_event
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
 
 _KRONOS_REPO_ENV = "KRONOS_REPO_PATH"
 _PREDICTOR_CACHE_LOCK = threading.RLock()
 _INFERENCE_LOCK = threading.Lock()
 _PREDICTOR_CACHE: dict[tuple[str, str, int, str], "_CachedPredictor"] = {}
+logger = logging.getLogger("kronos_fincept.predictor")
 
 
 def _resolve_kronos_repo() -> Path | None:
@@ -130,6 +133,55 @@ def predictor_cache_stats() -> dict[str, Any]:
         }
 
 
+def prewarm_predictor(
+    *,
+    model_id: str = DEFAULT_MODEL_ID,
+    tokenizer_id: str = DEFAULT_TOKENIZER_ID,
+    max_context: int = 512,
+    device: str | None = None,
+) -> dict[str, Any]:
+    """Load the configured Kronos predictor into the process cache without inference."""
+    started = time.perf_counter()
+    wrapper = KronosPredictorWrapper(
+        model_id=model_id,
+        tokenizer_id=tokenizer_id,
+        max_context=max_context,
+        device=device,
+    )
+    try:
+        wrapper._load()
+    except Exception:
+        log_event(
+            logger,
+            logging.ERROR,
+            "kronos.model.prewarm_failure",
+            "Kronos predictor prewarm failed",
+            model_id=model_id,
+            tokenizer_id=tokenizer_id,
+            cache_key=wrapper.cache_key,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            exc_info=True,
+        )
+        raise
+    stats = {
+        "model_id": model_id,
+        "tokenizer_id": tokenizer_id,
+        "cache_key": wrapper.cache_key,
+        "device": wrapper._resolved_device,
+        "model_cached": wrapper._model_cached,
+        "elapsed_ms": int((time.perf_counter() - started) * 1000),
+    }
+    log_event(
+        logger,
+        logging.INFO,
+        "kronos.model.prewarm_success",
+        "Kronos predictor prewarmed",
+        **stats,
+        duration_ms=stats["elapsed_ms"],
+    )
+    return stats
+
+
 class DryRunPredictor:
     """Deterministic predictor used before real Kronos dependencies are available."""
 
@@ -209,21 +261,86 @@ class KronosPredictorWrapper:
             return self._predictor
 
         wait_started = time.perf_counter()
+        log_event(
+            logger,
+            logging.INFO,
+            "kronos.model.lock_wait_start",
+            "Waiting for Kronos model cache lock",
+            model_id=self.model_id,
+            tokenizer_id=self.tokenizer_id,
+            cache_key=self.cache_key,
+        )
         _PREDICTOR_CACHE_LOCK.acquire()
         self._load_wait_ms = int((time.perf_counter() - wait_started) * 1000)
+        if self._load_wait_ms:
+            log_event(
+                logger,
+                logging.INFO,
+                "kronos.model.lock_wait_done",
+                "Kronos model cache lock acquired",
+                model_id=self.model_id,
+                tokenizer_id=self.tokenizer_id,
+                cache_key=self.cache_key,
+                duration_ms=self._load_wait_ms,
+            )
         try:
             cached = _PREDICTOR_CACHE.get(self._cache_key)
             if cached is not None:
                 self._predictor = cached.predictor
                 self._resolved_device = cached.device
                 self._model_cached = True
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "kronos.model.cache_hit",
+                    "Reusing cached Kronos predictor",
+                    model_id=self.model_id,
+                    tokenizer_id=self.tokenizer_id,
+                    cache_key=self.cache_key,
+                    device=self._resolved_device,
+                )
                 return self._predictor
 
-            predictor, device = self._load_uncached()
+            load_started = time.perf_counter()
+            log_event(
+                logger,
+                logging.INFO,
+                "kronos.model.load_start",
+                "Loading Kronos predictor",
+                model_id=self.model_id,
+                tokenizer_id=self.tokenizer_id,
+                cache_key=self.cache_key,
+            )
+            try:
+                predictor, device = self._load_uncached()
+            except Exception:
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "kronos.model.load_failure",
+                    "Failed to load Kronos predictor",
+                    model_id=self.model_id,
+                    tokenizer_id=self.tokenizer_id,
+                    cache_key=self.cache_key,
+                    duration_ms=int((time.perf_counter() - load_started) * 1000),
+                    exc_info=True,
+                )
+                raise
             self._predictor = predictor
             self._resolved_device = device
             self._model_cached = False
             _PREDICTOR_CACHE[self._cache_key] = _CachedPredictor(predictor=predictor, device=device)
+            log_event(
+                logger,
+                logging.INFO,
+                "kronos.model.load_success",
+                "Kronos predictor loaded and cached",
+                model_id=self.model_id,
+                tokenizer_id=self.tokenizer_id,
+                cache_key=self.cache_key,
+                device=device,
+                duration_ms=int((time.perf_counter() - load_started) * 1000),
+            )
             return self._predictor
         finally:
             _PREDICTOR_CACHE_LOCK.release()
@@ -286,6 +403,17 @@ class KronosPredictorWrapper:
         wait_started = time.perf_counter()
         _INFERENCE_LOCK.acquire()
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
+        log_event(
+            logger,
+            logging.INFO,
+            "kronos.inference.start",
+            "Running Kronos inference",
+            model_id=self.model_id,
+            cache_key=self.cache_key,
+            pred_len=pred_len,
+            sample_count=self.sample_count,
+            inference_wait_ms=inference_wait_ms,
+        )
         try:
             frame = predictor.predict(
                 df=df,
@@ -298,6 +426,33 @@ class KronosPredictorWrapper:
                 sample_count=self.sample_count,
                 verbose=False,
             )
+            log_event(
+                logger,
+                logging.INFO,
+                "kronos.inference.success",
+                "Kronos inference completed",
+                model_id=self.model_id,
+                cache_key=self.cache_key,
+                pred_len=pred_len,
+                sample_count=self.sample_count,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                inference_wait_ms=inference_wait_ms,
+            )
+        except Exception:
+            log_event(
+                logger,
+                logging.ERROR,
+                "kronos.inference.failure",
+                "Kronos inference failed",
+                model_id=self.model_id,
+                cache_key=self.cache_key,
+                pred_len=pred_len,
+                sample_count=self.sample_count,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                inference_wait_ms=inference_wait_ms,
+                exc_info=True,
+            )
+            raise
         finally:
             _INFERENCE_LOCK.release()
         frame = frame.reset_index(drop=False)
@@ -353,6 +508,17 @@ class KronosPredictorWrapper:
         wait_started = time.perf_counter()
         _INFERENCE_LOCK.acquire()
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
+        log_event(
+            logger,
+            logging.INFO,
+            "kronos.inference.start",
+            "Running Kronos probabilistic inference",
+            model_id=self.model_id,
+            cache_key=self.cache_key,
+            pred_len=pred_len,
+            sample_count=self.sample_count,
+            inference_wait_ms=inference_wait_ms,
+        )
         try:
             for i in range(self.sample_count):
                 frame = predictor.predict(
@@ -371,6 +537,33 @@ class KronosPredictorWrapper:
                     frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
                 samples.append(frame)
                 final_closes.append(float(frame.iloc[-1]["close"]))
+            log_event(
+                logger,
+                logging.INFO,
+                "kronos.inference.success",
+                "Kronos probabilistic inference completed",
+                model_id=self.model_id,
+                cache_key=self.cache_key,
+                pred_len=pred_len,
+                sample_count=self.sample_count,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                inference_wait_ms=inference_wait_ms,
+            )
+        except Exception:
+            log_event(
+                logger,
+                logging.ERROR,
+                "kronos.inference.failure",
+                "Kronos probabilistic inference failed",
+                model_id=self.model_id,
+                cache_key=self.cache_key,
+                pred_len=pred_len,
+                sample_count=self.sample_count,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                inference_wait_ms=inference_wait_ms,
+                exc_info=True,
+            )
+            raise
         finally:
             _INFERENCE_LOCK.release()
 
@@ -450,6 +643,18 @@ class KronosPredictorWrapper:
         wait_started = time.perf_counter()
         _INFERENCE_LOCK.acquire()
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
+        log_event(
+            logger,
+            logging.INFO,
+            "kronos.inference.start",
+            "Running Kronos batch inference",
+            model_id=self.model_id,
+            cache_key=self.cache_key,
+            pred_len=pred_len,
+            batch_size=len(dfs),
+            sample_count=self.sample_count,
+            inference_wait_ms=inference_wait_ms,
+        )
         try:
             try:
                 # Use upstream predict_batch
@@ -481,6 +686,35 @@ class KronosPredictorWrapper:
                         verbose=False,
                     )
                     frames.append(frame)
+            log_event(
+                logger,
+                logging.INFO,
+                "kronos.inference.success",
+                "Kronos batch inference completed",
+                model_id=self.model_id,
+                cache_key=self.cache_key,
+                pred_len=pred_len,
+                batch_size=len(dfs),
+                sample_count=self.sample_count,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                inference_wait_ms=inference_wait_ms,
+            )
+        except Exception:
+            log_event(
+                logger,
+                logging.ERROR,
+                "kronos.inference.failure",
+                "Kronos batch inference failed",
+                model_id=self.model_id,
+                cache_key=self.cache_key,
+                pred_len=pred_len,
+                batch_size=len(dfs),
+                sample_count=self.sample_count,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                inference_wait_ms=inference_wait_ms,
+                exc_info=True,
+            )
+            raise
         finally:
             _INFERENCE_LOCK.release()
 

@@ -54,12 +54,31 @@ def _patch_multi_asset_tools(monkeypatch, *, deepseek_report=True):
         agent,
         "_build_prediction",
         lambda symbol, rows, dry_run: {
-            "model": "NeoQuasar/Kronos-small",
+            "model": "NeoQuasar/Kronos-base",
             "prediction_days": 5,
             "forecast": [{"timestamp": "D1", "open": 10, "high": 10.5, "low": 9.8, "close": 10.3}],
             "probabilistic": None,
         },
     )
+    def fake_batch_predictions(items, asset_contexts, dry_run):
+        calls = []
+        for item, asset in zip(items, asset_contexts):
+            asset["kronos_prediction"] = {
+                "model": "NeoQuasar/Kronos-base",
+                "prediction_days": 5,
+                "forecast": [{"timestamp": "D1", "open": 10, "high": 10.5, "low": 9.8, "close": 10.3}],
+                "probabilistic": None,
+            }
+            calls.append(
+                agent.AgentToolCall(
+                    name="kronos_prediction",
+                    status="completed",
+                    summary=f"{item.symbol} 已通过批量模式调用 NeoQuasar/Kronos-base 生成真实短期预测。",
+                )
+            )
+        return calls
+
+    monkeypatch.setattr(agent, "_build_batch_predictions", fake_batch_predictions)
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
     monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
@@ -128,7 +147,7 @@ def test_v971_agent_returns_per_asset_results_for_multi_symbol_question(monkeypa
     assert [item["symbol"] for item in result.asset_results] == ["600036", "600519"]
     assert result.report["conclusion"].startswith("招商银行与贵州茅台")
     assert result.asset_results[0]["report"]["conclusion"] == "招商银行单独结论。"
-    assert result.asset_results[1]["kronos_prediction"]["model"] == "NeoQuasar/Kronos-small"
+    assert result.asset_results[1]["kronos_prediction"]["model"] == "NeoQuasar/Kronos-base"
 
 
 def test_v971_fallback_report_still_returns_real_tool_derived_asset_cards(monkeypatch):

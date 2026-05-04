@@ -71,6 +71,7 @@ class KronosConfig:
     tokenizer_id: str = "NeoQuasar/Kronos-Tokenizer-base"
     enable_real_model: bool = field(default_factory=lambda: _get_bool("KRONOS_ENABLE_REAL_MODEL", True))
     allow_dry_run: bool = field(default_factory=lambda: _get_bool("KRONOS_ALLOW_DRY_RUN", True))
+    prewarm_on_startup: bool = field(default_factory=lambda: _get_bool("KRONOS_PREWARM_ON_STARTUP", False))
 
 
 @dataclass(frozen=True)

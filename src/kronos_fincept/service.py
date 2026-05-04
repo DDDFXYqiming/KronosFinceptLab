@@ -9,7 +9,12 @@ import pandas as pd
 
 from kronos_fincept.config import settings
 from kronos_fincept.data_adapter import rows_to_dataframe
-from kronos_fincept.predictor import DryRunPredictor, KronosPredictorWrapper, ProbabilisticForecastResult
+from kronos_fincept.predictor import (
+    DryRunPredictor,
+    KronosPredictorWrapper,
+    ProbabilisticForecastResult,
+    prewarm_predictor,
+)
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, ForecastRequest, RESEARCH_WARNING, build_error_response
 
 
@@ -155,6 +160,14 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             load_wait_ms=result.load_wait_ms,
             inference_wait_ms=result.inference_wait_ms,
         )
+
+
+def prewarm_default_predictor() -> dict[str, Any]:
+    """Preload the configured real Kronos predictor into the shared process cache."""
+    return prewarm_predictor(
+        model_id=_effective_model_id(DEFAULT_MODEL_ID),
+        tokenizer_id=settings.kronos.tokenizer_id,
+    )
 
 
 @dataclass

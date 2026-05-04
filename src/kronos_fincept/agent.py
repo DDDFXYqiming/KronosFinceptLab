@@ -288,12 +288,14 @@ def analyze_investment_question(
     macro_context: dict[str, Any] | None = None
 
     search_query_limit = 1 if len(resolved) > 1 else 3
+    defer_kronos_predictions = len(resolved) > 1
     for item in resolved:
         asset_context, calls = _build_asset_context(
             item,
             question=clean_question,
             dry_run=dry_run,
             search_query_limit=search_query_limit,
+            include_prediction=not defer_kronos_predictions,
         )
         asset_contexts.append(asset_context)
         tool_calls.extend(calls)
@@ -308,6 +310,23 @@ def analyze_investment_question(
                 tool=call.name,
                 status=call.status,
                 duration_ms=call.elapsed_ms,
+                model=call.metadata.get("model"),
+            )
+
+    if defer_kronos_predictions:
+        calls = _build_batch_predictions(resolved, asset_contexts, dry_run=dry_run)
+        tool_calls.extend(calls)
+        for call in calls:
+            log_event(
+                logger,
+                logging.INFO if call.status in {"completed", "skipped", "fallback"} else logging.WARNING,
+                "agent.tool_call",
+                call.summary,
+                tool=call.name,
+                status=call.status,
+                duration_ms=call.elapsed_ms,
+                symbol=call.metadata.get("symbol"),
+                market=call.metadata.get("market"),
                 model=call.metadata.get("model"),
             )
 
@@ -909,6 +928,7 @@ def _build_asset_context(
     question: str,
     dry_run: bool,
     search_query_limit: int = 3,
+    include_prediction: bool = True,
 ) -> tuple[dict[str, Any], list[AgentToolCall]]:
     asset_started = time.perf_counter()
     calls: list[AgentToolCall] = []
@@ -997,40 +1017,43 @@ def _build_asset_context(
             )
         )
 
-        started = time.perf_counter()
-        try:
-            asset["kronos_prediction"] = _call_quietly(_build_prediction, item.symbol, rows, dry_run=dry_run)
-            calls.append(
-                AgentToolCall(
-                    name="kronos_prediction",
-                    status="completed",
-                    summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
-                    elapsed_ms=_elapsed_ms(started),
-                    metadata=_tool_metadata(
-                        symbol=item.symbol,
-                        market=item.market,
-                        model=_active_kronos_model_id(),
-                        metadata=asset["kronos_prediction"].get("metadata"),
-                    ),
+        if include_prediction:
+            started = time.perf_counter()
+            try:
+                asset["kronos_prediction"] = _call_quietly(_build_prediction, item.symbol, rows, dry_run=dry_run)
+                calls.append(
+                    AgentToolCall(
+                        name="kronos_prediction",
+                        status="completed",
+                        summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
+                        elapsed_ms=_elapsed_ms(started),
+                        metadata=_tool_metadata(
+                            symbol=item.symbol,
+                            market=item.market,
+                            model=_active_kronos_model_id(),
+                            metadata=asset["kronos_prediction"].get("metadata"),
+                        ),
+                    )
                 )
-            )
-        except Exception as exc:
-            error_summary = _short_error(exc)
-            asset["kronos_prediction_error"] = error_summary
-            calls.append(
-                AgentToolCall(
-                    name="kronos_prediction",
-                    status="failed",
-                    summary=f"Kronos 真实预测失败：{error_summary}",
-                    elapsed_ms=_elapsed_ms(started),
-                    metadata=_tool_metadata(
-                        symbol=item.symbol,
-                        market=item.market,
-                        model=_active_kronos_model_id(),
-                        error_type=type(exc).__name__,
-                    ),
+            except Exception as exc:
+                error_summary = _short_error(exc)
+                asset["kronos_prediction_error"] = error_summary
+                calls.append(
+                    AgentToolCall(
+                        name="kronos_prediction",
+                        status="failed",
+                        summary=f"Kronos 真实预测失败：{error_summary}",
+                        elapsed_ms=_elapsed_ms(started),
+                        metadata=_tool_metadata(
+                            symbol=item.symbol,
+                            market=item.market,
+                            model=_active_kronos_model_id(),
+                            error_type=type(exc).__name__,
+                        ),
+                    )
                 )
-            )
+        else:
+            asset["kronos_prediction_deferred"] = True
 
     research, research_call = _build_online_research(item, question=question, query_limit=search_query_limit)
     asset["online_research"] = research
@@ -1599,11 +1622,9 @@ def _build_risk_metrics(symbol: str, rows: list[dict[str, Any]]) -> dict[str, An
         return None
 
 
-def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool) -> dict[str, Any]:
+def _forecast_request_for_rows(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool) -> ForecastRequest:
     if len(rows) < 3:
         raise ValueError("Kronos prediction requires at least 3 OHLCV rows.")
-
-    from kronos_fincept.service import forecast_from_request
 
     forecast_rows = [
         ForecastRow(
@@ -1617,7 +1638,7 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
         )
         for row in rows[-100:]
     ]
-    request = ForecastRequest(
+    return ForecastRequest(
         symbol=symbol,
         timeframe="1d",
         rows=forecast_rows,
@@ -1626,6 +1647,12 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
         dry_run=dry_run,
         sample_count=1,
     )
+
+
+def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool) -> dict[str, Any]:
+    from kronos_fincept.service import forecast_from_request
+
+    request = _forecast_request_for_rows(symbol, rows, dry_run=dry_run)
     response = forecast_from_request(request)
     if not response.get("ok"):
         raise RuntimeError(str(response.get("error") or "Kronos forecast returned ok=false."))
@@ -1639,6 +1666,158 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
         "probabilistic": response.get("probabilistic"),
         "metadata": response.get("metadata"),
     }
+
+
+def _build_batch_predictions(
+    items: list[ResolvedSymbol],
+    asset_contexts: list[dict[str, Any]],
+    *,
+    dry_run: bool,
+) -> list[AgentToolCall]:
+    started = time.perf_counter()
+    log_event(
+        logger,
+        logging.INFO,
+        "agent.kronos.batch_start",
+        "Starting shared Kronos batch prediction for agent assets",
+        model=_active_kronos_model_id(),
+        asset_count=len(asset_contexts),
+        dry_run=dry_run,
+    )
+    eligible: list[tuple[ResolvedSymbol, dict[str, Any], ForecastRequest]] = []
+    calls: list[AgentToolCall] = []
+    for item, asset in zip(items, asset_contexts):
+        rows = asset.get("market_data", {}).get("rows") or []
+        if not rows:
+            continue
+        try:
+            request = _forecast_request_for_rows(item.symbol, rows, dry_run=dry_run)
+        except Exception as exc:
+            error_summary = _short_error(exc)
+            asset["kronos_prediction_error"] = error_summary
+            calls.append(
+                AgentToolCall(
+                    name="kronos_prediction",
+                    status="failed",
+                    summary=f"{item.symbol} Kronos 真实预测失败：{error_summary}",
+                    elapsed_ms=_elapsed_ms(started),
+                    metadata=_tool_metadata(
+                        symbol=item.symbol,
+                        market=item.market,
+                        model=_active_kronos_model_id(),
+                        error_type=type(exc).__name__,
+                    ),
+                )
+            )
+            continue
+        eligible.append((item, asset, request))
+
+    if not eligible:
+        return calls
+
+    if len(eligible) == 1:
+        item, asset, _ = eligible[0]
+        try:
+            prediction = _build_prediction(item.symbol, asset.get("market_data", {}).get("rows") or [], dry_run=dry_run)
+            asset["kronos_prediction"] = prediction
+            return [
+                AgentToolCall(
+                    name="kronos_prediction",
+                    status="completed",
+                    summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
+                    elapsed_ms=_elapsed_ms(started),
+                    metadata=_tool_metadata(
+                        symbol=item.symbol,
+                        market=item.market,
+                        model=_active_kronos_model_id(),
+                        metadata=prediction.get("metadata"),
+                    ),
+                )
+            ]
+        except Exception as exc:
+            error_summary = _short_error(exc)
+            asset["kronos_prediction_error"] = error_summary
+            return [
+                AgentToolCall(
+                    name="kronos_prediction",
+                    status="failed",
+                    summary=f"{item.symbol} Kronos 真实预测失败：{error_summary}",
+                    elapsed_ms=_elapsed_ms(started),
+                    metadata=_tool_metadata(
+                        symbol=item.symbol,
+                        market=item.market,
+                        model=_active_kronos_model_id(),
+                        error_type=type(exc).__name__,
+                    ),
+                )
+            ]
+
+    from kronos_fincept.service import batch_forecast_from_requests
+
+    try:
+        signals = batch_forecast_from_requests([request for _, _, request in eligible])
+    except Exception as exc:
+        error_summary = _short_error(exc)
+        for item, asset, _ in eligible:
+            asset["kronos_prediction_error"] = error_summary
+            calls.append(
+                AgentToolCall(
+                    name="kronos_prediction",
+                    status="failed",
+                    summary=f"{item.symbol} Kronos 批量预测失败：{error_summary}",
+                    elapsed_ms=_elapsed_ms(started),
+                    metadata=_tool_metadata(
+                        symbol=item.symbol,
+                        market=item.market,
+                        model=_active_kronos_model_id(),
+                        error_type=type(exc).__name__,
+                    ),
+                )
+            )
+        return calls
+
+    signal_by_symbol = {signal.symbol: signal for signal in signals}
+    for item, asset, _ in eligible:
+        signal = signal_by_symbol.get(item.symbol)
+        if signal is None:
+            error_summary = "Kronos batch forecast returned no result for this symbol."
+            asset["kronos_prediction_error"] = error_summary
+            calls.append(
+                AgentToolCall(
+                    name="kronos_prediction",
+                    status="failed",
+                    summary=f"{item.symbol} Kronos 真实预测失败：{error_summary}",
+                    elapsed_ms=_elapsed_ms(started),
+                    metadata=_tool_metadata(symbol=item.symbol, market=item.market, model=_active_kronos_model_id()),
+                )
+            )
+            continue
+        prediction = {
+            "model": _active_kronos_model_id(),
+            "prediction_days": 5,
+            "forecast": signal.forecast,
+            "probabilistic": None,
+            "metadata": {
+                "backend": "kronos_batch",
+                "elapsed_ms": signal.elapsed_ms,
+            },
+        }
+        asset["kronos_prediction"] = prediction
+        calls.append(
+            AgentToolCall(
+                name="kronos_prediction",
+                status="completed",
+                summary=f"{item.symbol} 已通过批量模式调用 {_active_kronos_model_id()} 生成真实短期预测。",
+                elapsed_ms=_elapsed_ms(started),
+                metadata=_tool_metadata(
+                    symbol=item.symbol,
+                    market=item.market,
+                    model=_active_kronos_model_id(),
+                    metadata=prediction.get("metadata"),
+                ),
+            )
+        )
+    return calls
 
 
 def _build_asset_results(asset_contexts: list[dict[str, Any]], report: dict[str, Any]) -> list[dict[str, Any]]:

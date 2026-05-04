@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from kronos_fincept.api.routes import backtest, batch, data, forecast, health, analyze, ai_analyze, alert
+from kronos_fincept.config import settings
 from kronos_fincept.logging_config import configure_logging, log_event, reset_request_id, set_request_id
 
 logger = logging.getLogger("kronos_fincept.api")
@@ -21,12 +23,43 @@ logger = logging.getLogger("kronos_fincept.api")
 _start_time: float = 0.0
 
 
+def _start_kronos_prewarm_thread() -> None:
+    """Warm the single configured Kronos model in the background after API startup."""
+    if not settings.kronos.enable_real_model or not settings.kronos.prewarm_on_startup:
+        return
+
+    def _run() -> None:
+        try:
+            from kronos_fincept.service import prewarm_default_predictor
+
+            prewarm_default_predictor()
+        except Exception:
+            log_event(
+                logger,
+                logging.WARNING,
+                "api.kronos.prewarm_failed",
+                "Kronos model prewarm failed; first forecast request will retry lazy loading",
+                exc_info=True,
+            )
+
+    thread = threading.Thread(target=_run, name="kronos-prewarm", daemon=True)
+    thread.start()
+    log_event(
+        logger,
+        logging.INFO,
+        "api.kronos.prewarm_started",
+        "Kronos model prewarm started in background",
+        model_id=settings.kronos.model_id,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler — startup and shutdown."""
     global _start_time
     _start_time = time.time()
     log_event(logger, logging.INFO, "api.startup", "KronosFinceptLab API starting up")
+    _start_kronos_prewarm_thread()
     yield
     log_event(logger, logging.INFO, "api.shutdown", "KronosFinceptLab API shutting down")
 

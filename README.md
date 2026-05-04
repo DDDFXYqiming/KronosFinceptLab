@@ -33,9 +33,9 @@
 
 ## Current status
 
-Version: v10.5.1
+Version: v10.5.2
 
-V10 已推进到 v10.5.1：在 v10.5 的 Digital Oracle 概率报告基础上，修复移动端导航抽屉方向，并优化手机端卡片、标题、进度条和表格的窄屏展示。
+V10 已推进到 v10.5.2：在 v10.5 的 Digital Oracle 概率报告基础上，修复移动端导航与卡片适配，并优化 Zeabur 单容器内的 Kronos-base 模型复用、预热和多标的批量预测。
 
 宏观数据入口由 `MacroDataManager` 统一调度。
 
@@ -55,7 +55,9 @@ V10 已推进到 v10.5.1：在 v10.5 的 Digital Oracle 概率报告基础上，
 
 必要变量：`PORT`、`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`JWT_SECRET`。`DEEPSEEK_BASE_URL` 推荐填写根地址 `https://api.deepseek.com`；若误填完整 `https://api.deepseek.com/chat/completions`，后端会兼容处理。
 
-可选变量：`KRONOS_MODEL_ID`、`HF_TOKEN`、`WEB_SEARCH_PROVIDER`、`WEB_SEARCH_API_KEY`、`WEB_SEARCH_MAX_RESULTS`、`WEB_SEARCH_TIMEOUT_SECONDS`。
+可选变量：`KRONOS_MODEL_ID`、`KRONOS_PREWARM_ON_STARTUP`、`HF_TOKEN`、`WEB_SEARCH_PROVIDER`、`WEB_SEARCH_API_KEY`、`WEB_SEARCH_MAX_RESULTS`、`WEB_SEARCH_TIMEOUT_SECONDS`。
+
+线上默认只加载一套 Kronos 模型。若 `KRONOS_MODEL_ID=NeoQuasar/Kronos-base`，不要再额外配置 Agent 专用小模型；预测页、分析页、API 与 CLI 会复用同一个 predictor cache。
 
 忽略边界：`.env`、`SPEC.md`、`external/`、`models/`、`.cache/`、`logs/`、`web/node_modules/`、`web/.next/` 不进入 git；Docker 镜像同样排除这些路径。
 
