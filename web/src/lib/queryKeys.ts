@@ -57,4 +57,12 @@ export const queryKeys = {
       params.symbol ? normalizeSymbol(params.symbol) : "",
       params.market || "",
     ] as const,
+  macro: (params: { question: string; market?: Market | string | null; providers?: string[] }) =>
+    [
+      ...queryKeys.all,
+      "macro",
+      params.question.trim(),
+      params.market || "",
+      (params.providers || []).join(","),
+    ] as const,
 };

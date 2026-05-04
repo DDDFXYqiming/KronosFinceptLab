@@ -33,9 +33,11 @@
 
 ## Current status
 
-Version: v10.2.4
+Version: v10.5.1
 
-V10 已推进到 v10.2.4：`MacroDataManager` 宏观 Provider 后端基础层已接入 Agent 工具链，新增 `analyze_macro_question()`、`POST /api/v1/analyze/macro` 和 `kronos analyze macro --question ...`。现有个股分析链路在公开信息检索层新增巨潮资讯网官方披露源，A 股分析会优先补充公告、定期报告等一手信息，不再只依赖通用网页搜索。Web 独立宏观页面留给 v10.3。
+V10 已推进到 v10.5.1：在 v10.5 的 Digital Oracle 概率报告基础上，修复移动端导航抽屉方向，并优化手机端卡片、标题、进度条和表格的窄屏展示。
+
+宏观数据入口由 `MacroDataManager` 统一调度。
 
 ## 三端能力对照
 
@@ -44,7 +46,7 @@ V10 已推进到 v10.2.4：`MacroDataManager` 宏观 Provider 后端基础层已
 | 行情获取 | `/data`, `/forecast` | `GET /api/data/*` | `kronos data fetch` |
 | Kronos 预测 | `/forecast`, `/batch` | `POST /api/forecast`, `POST /api/batch` | `kronos forecast`, `kronos batch` |
 | Agent 分析 | `/analysis` | `POST /api/v1/analyze/agent` | `kronos analyze agent` |
-| 宏观分析 | 后续 `/macro` | `POST /api/v1/analyze/macro` | `kronos analyze macro` |
+| 宏观分析 | `/macro` + `/analysis` 按需融合 | `POST /api/v1/analyze/macro` | `kronos analyze macro` |
 | 风险/估值/组合 | `/analysis` 汇总展示 | `POST /api/v1/analyze/*` | `kronos analyze risk/dcf/portfolio` |
 | 回测 | `/backtest` | `POST /api/backtest/ranking` | `kronos backtest ranking` |
 | 健康检查 | Header 状态 | `GET /api/health` | `kronos serve` 后访问 health |

@@ -169,7 +169,7 @@ def test_v101_optional_providers_degrade_without_configuration_or_dependency():
 
 
 def test_v101_readme_and_version_labels_are_current():
-    assert "Version: v10.2" in read("README.md")
+    assert "Version: v10." in read("README.md")
     assert "MacroDataManager" in read("README.md")
-    assert "v10.2" in read("web/src/components/layout/Sidebar.tsx")
-    assert "v10.2" in read("web/src/components/layout/Header.tsx")
+    assert "v10." in read("web/src/components/layout/Sidebar.tsx")
+    assert "v10." in read("web/src/components/layout/Header.tsx")

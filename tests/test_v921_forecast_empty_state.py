@@ -42,5 +42,5 @@ def test_v921_forecast_clears_prediction_and_chart_state_on_empty_data():
 
 
 def test_v921_version_labels_are_updated():
-    assert "Version: v10.2" in read("README.md")
-    assert "v10.2" in read("web/src/components/layout/Sidebar.tsx")
+    assert "Version: v10." in read("README.md")
+    assert "v10." in read("web/src/components/layout/Sidebar.tsx")

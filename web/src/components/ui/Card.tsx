@@ -30,12 +30,12 @@ interface CardTitleProps {
 
 export function CardTitle({ children, subtitle, action }: CardTitleProps) {
   return (
-    <div className="mb-4 flex min-w-0 items-start justify-between gap-3">
+    <div className="mb-3 flex min-w-0 flex-col gap-2 sm:mb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
       <div className="min-w-0">
-        <h3 className="text-lg font-semibold text-foreground">{children}</h3>
+        <h3 className="break-words text-base font-semibold text-foreground sm:text-lg">{children}</h3>
         {subtitle && <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="w-full shrink-0 sm:w-auto">{action}</div>}
     </div>
   );
 }

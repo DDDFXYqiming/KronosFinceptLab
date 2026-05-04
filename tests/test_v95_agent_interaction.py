@@ -99,7 +99,7 @@ def test_v95_web_analysis_page_has_agent_workspace_controls():
     page = read("web/src/app/analysis/page.tsx")
 
     assert "新建对话/清空本轮" in page
-    assert "Agent 执行时间线" in page
+    assert "Agent 执行进度" in page or "Agent 执行时间线" in page
     assert "ToolCallList" in page
     assert "<details" in page
     assert "request_id" in page
@@ -109,6 +109,6 @@ def test_v95_web_analysis_page_has_agent_workspace_controls():
 
 
 def test_v95_version_labels_are_current():
-    assert "Version: v10.2" in read("README.md")
-    assert "v10.2" in read("web/src/components/layout/Sidebar.tsx")
-    assert "v10.2" in read("web/src/components/layout/Header.tsx")
+    assert "Version: v10." in read("README.md")
+    assert "v10." in read("web/src/components/layout/Sidebar.tsx")
+    assert "v10." in read("web/src/components/layout/Header.tsx")

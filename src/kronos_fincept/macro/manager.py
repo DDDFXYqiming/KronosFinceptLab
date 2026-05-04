@@ -19,13 +19,21 @@ class MacroDataManager:
         *,
         cache_ttl_seconds: int = 300,
         timeout_seconds: float = 20.0,
+        per_provider_timeout_seconds: float = 10.0,
+        failure_threshold: int = 3,
+        failure_cooldown_seconds: int = 300,
         max_workers: int | None = None,
     ) -> None:
         self.providers = {provider.provider_id: provider for provider in (providers or create_default_providers())}
         self.cache_ttl_seconds = max(0, cache_ttl_seconds)
         self.timeout_seconds = max(0.1, timeout_seconds)
+        self.per_provider_timeout_seconds = max(0.1, per_provider_timeout_seconds)
+        self.failure_threshold = max(1, failure_threshold)
+        self.failure_cooldown_seconds = max(1, failure_cooldown_seconds)
         self.max_workers = max_workers
         self._cache: dict[str, tuple[float, MacroProviderResult]] = {}
+        self._failure_counts: dict[str, int] = {}
+        self._suspended_until: dict[str, float] = {}
 
     def describe_providers(self) -> list[dict]:
         return [provider.describe().to_dict() for provider in self.providers.values()]
@@ -48,6 +56,10 @@ class MacroDataManager:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_count)
         try:
             for provider in selected:
+                suspended_result = self._suspended_result(provider.provider_id)
+                if suspended_result is not None:
+                    results[provider.provider_id] = suspended_result
+                    continue
                 cached = self._get_cached(provider.provider_id, macro_query)
                 if cached is not None:
                     results[provider.provider_id] = cached
@@ -67,6 +79,7 @@ class MacroDataManager:
                 except Exception as exc:
                     result = self._failed_result(provider_id, exc)
                 results[provider_id] = result
+                self._record_provider_result(provider_id, result)
                 self._set_cached(provider_id, macro_query, result)
 
             for future in not_done:
@@ -79,6 +92,7 @@ class MacroDataManager:
                     error=f"provider timed out after {self.timeout_seconds:g}s",
                 )
                 results[provider_id] = result
+                self._record_provider_result(provider_id, result)
                 self._set_cached(provider_id, macro_query, result)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
@@ -95,10 +109,52 @@ class MacroDataManager:
 
     def _run_provider(self, provider: MacroProvider, query: MacroQuery) -> MacroProviderResult:
         started = time.perf_counter()
-        signals = provider.fetch_signals(query)
+        single = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            future = single.submit(provider.fetch_signals, query)
+            try:
+                signals = future.result(timeout=self.per_provider_timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                elapsed_ms = int((time.perf_counter() - started) * 1000)
+                return MacroProviderResult(
+                    provider_id=provider.provider_id,
+                    status="failed",
+                    signals=[],
+                    elapsed_ms=elapsed_ms,
+                    error=f"provider timed out after {self.per_provider_timeout_seconds:g}s",
+                )
+        finally:
+            single.shutdown(wait=False, cancel_futures=True)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         status = "completed" if signals else "empty"
         return MacroProviderResult(provider_id=provider.provider_id, status=status, signals=signals, elapsed_ms=elapsed_ms)
+
+    def _record_provider_result(self, provider_id: str, result: MacroProviderResult) -> None:
+        if result.status != "failed":
+            self._failure_counts.pop(provider_id, None)
+            self._suspended_until.pop(provider_id, None)
+            return
+        failures = self._failure_counts.get(provider_id, 0) + 1
+        self._failure_counts[provider_id] = failures
+        if failures >= self.failure_threshold:
+            self._suspended_until[provider_id] = time.time() + self.failure_cooldown_seconds
+            self._failure_counts[provider_id] = 0
+
+    def _suspended_result(self, provider_id: str) -> MacroProviderResult | None:
+        resume_at = self._suspended_until.get(provider_id)
+        if resume_at is None:
+            return None
+        remaining = int(max(0, resume_at - time.time()))
+        if remaining <= 0:
+            self._suspended_until.pop(provider_id, None)
+            return None
+        return MacroProviderResult(
+            provider_id=provider_id,
+            status="skipped",
+            signals=[],
+            error=f"provider suspended after repeated failures ({remaining}s remaining)",
+        )
 
     def _failed_result(self, provider_id: str, exc: BaseException) -> MacroProviderResult:
         return MacroProviderResult(

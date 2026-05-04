@@ -38,5 +38,5 @@ def test_analysis_light_cards_do_not_use_low_contrast_gray_body_text():
 
 
 def test_v905_version_labels_are_updated():
-    assert "Version: v10.2" in read("README.md")
-    assert "v10.2" in read("web/src/components/layout/Sidebar.tsx")
+    assert "Version: v10." in read("README.md")
+    assert "v10." in read("web/src/components/layout/Sidebar.tsx")

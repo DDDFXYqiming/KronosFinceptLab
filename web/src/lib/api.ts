@@ -10,6 +10,7 @@ import type {
   ForecastResponse,
   HealthResponse,
   IndicatorResponse,
+  MacroAnalyzeRequest,
   SearchResult,
 } from "@/types/api";
 
@@ -32,6 +33,10 @@ export type {
   GlobalDataResponse,
   HealthResponse,
   IndicatorResponse,
+  MacroAnalyzeRequest,
+  MacroMonitoringSignal,
+  MacroProbabilityScenario,
+  MacroSignal,
   RankedSignal,
   SearchResult,
 } from "@/types/api";
@@ -239,6 +244,12 @@ export const api = {
 
   agentAnalyze: (req: AgentAnalyzeRequest, options?: ApiClientOptions) =>
     post<AgentAnalyzeResponse>("/v1/analyze/agent", req, {
+      timeoutMs: AGENT_ANALYZE_TIMEOUT_MS,
+      ...options,
+    }),
+
+  macroAnalyze: (req: MacroAnalyzeRequest, options?: ApiClientOptions) =>
+    post<AgentAnalyzeResponse>("/v1/analyze/macro", req, {
       timeoutMs: AGENT_ANALYZE_TIMEOUT_MS,
       ...options,
     }),

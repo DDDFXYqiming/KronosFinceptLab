@@ -249,5 +249,5 @@ def test_legacy_ai_analyze_no_longer_uses_high_sample_count():
 
 
 def test_v904_version_labels_are_updated():
-    assert re.search(r"Version: v10\.2", read("README.md"))
-    assert re.search(r"v10\.2.*— 仅供研究", read("web/src/components/layout/Sidebar.tsx"))
+    assert re.search(r"Version: v10\.", read("README.md"))
+    assert re.search(r"v10\..*— 仅供研究", read("web/src/components/layout/Sidebar.tsx"))

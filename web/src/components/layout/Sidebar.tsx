@@ -8,6 +8,7 @@ export const navItems = [
   { href: "/", label: "仪表盘" },
   { href: "/forecast", label: "预测" },
   { href: "/analysis", label: "分析" },
+  { href: "/macro", label: "宏观洞察" },
   { href: "/watchlist", label: "自选股" },
   { href: "/batch", label: "批量对比" },
   { href: "/backtest", label: "回测" },
@@ -60,7 +61,7 @@ export function Sidebar() {
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
           <div className="text-xs text-muted-foreground text-center font-mono">
-            v10.2.4 — 仅供研究
+            v10.5.1 — 仅供研究
           </div>
         </div>
       )}

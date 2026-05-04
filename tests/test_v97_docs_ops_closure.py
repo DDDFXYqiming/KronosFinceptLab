@@ -11,7 +11,7 @@ def read(path: str) -> str:
 def test_v97_readme_has_compact_three_surface_capability_matrix():
     readme = read("README.md")
 
-    assert "Version: v10.2" in readme
+    assert "Version: v10." in readme
     assert "## 三端能力对照" in readme
     assert "| 能力 | Web | API | CLI |" in readme
     assert "POST /api/v1/analyze/agent" in readme

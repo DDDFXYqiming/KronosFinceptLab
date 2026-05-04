@@ -10,7 +10,15 @@ import { normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
-import type { AgentAnalyzeResponse, AgentAssetResult, ForecastRow } from "@/types/api";
+import type {
+  AgentAnalyzeResponse,
+  AgentAssetResult,
+  AgentReport,
+  ForecastRow,
+  MacroMonitoringSignal,
+  MacroProbabilityScenario,
+  MacroSignal,
+} from "@/types/api";
 
 const LOADING_STEPS = [
   "理解问题",
@@ -165,7 +173,7 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
       </div>
 
       <div className="table-scroll">
-        <div className="grid grid-flow-col auto-cols-[minmax(11rem,1fr)] gap-2 pb-1">
+        <div className="grid grid-flow-col auto-cols-[minmax(9.5rem,1fr)] gap-2 pb-1 sm:auto-cols-[minmax(11rem,1fr)]">
           {steps.map((step, index) => {
             const completed = step.status === "completed";
             const failed = ["failed", "blocked"].includes(step.status);
@@ -270,6 +278,132 @@ function ReportSection({ title, value }: { title: string; value?: string }) {
   );
 }
 
+function formatMacroValue(value: unknown): string {
+  if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(2) : String(value);
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "-";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function MacroSignalTable({ signals }: { signals: MacroSignal[] }) {
+  if (!signals.length) return null;
+  return (
+    <div className="table-scroll mt-3 rounded-lg border border-border bg-background">
+      <table className="min-w-[31rem] w-full text-xs sm:min-w-[38rem] sm:text-sm">
+        <thead className="bg-muted">
+          <tr className="border-b border-border text-muted-foreground">
+            <th className="px-2 py-2 text-left">来源</th>
+            <th className="px-2 py-2 text-left">信号</th>
+            <th className="px-2 py-2 text-right">数值</th>
+            <th className="px-2 py-2 text-left">解读</th>
+            <th className="px-2 py-2 text-right">置信度</th>
+          </tr>
+        </thead>
+        <tbody>
+          {signals.map((signal, index) => (
+            <tr key={`${signal.source}-${signal.signal_type}-${index}`} className="border-b border-border align-top last:border-b-0">
+              <td className="px-2 py-2 text-foreground">{signal.source}</td>
+              <td className="px-2 py-2 text-foreground">{signal.signal_type}</td>
+              <td className="px-2 py-2 text-right font-mono text-foreground">{formatMacroValue(signal.value)}</td>
+              <td className="px-2 py-2 text-muted-foreground">{signal.interpretation}</td>
+              <td className="px-2 py-2 text-right font-semibold text-foreground">{(signal.confidence * 100).toFixed(0)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MacroScenarioTable({ scenarios }: { scenarios: MacroProbabilityScenario[] }) {
+  if (!scenarios.length) return null;
+  return (
+    <div className="table-scroll mt-3 rounded-lg border border-border bg-background">
+      <table className="min-w-[26rem] w-full text-xs sm:min-w-[28rem] sm:text-sm">
+        <thead className="bg-muted">
+          <tr className="border-b border-border text-muted-foreground">
+            <th className="px-2 py-2 text-left">场景</th>
+            <th className="px-2 py-2 text-right">概率</th>
+            <th className="px-2 py-2 text-left">依据</th>
+          </tr>
+        </thead>
+        <tbody>
+          {scenarios.map((item, index) => (
+            <tr key={`${item.scenario}-${index}`} className="border-b border-border align-top last:border-b-0">
+              <td className="px-2 py-2 font-semibold text-foreground">{item.scenario}</td>
+              <td className="px-2 py-2 text-right font-mono text-foreground">{(item.probability * 100).toFixed(0)}%</td>
+              <td className="px-2 py-2 text-muted-foreground">{item.basis}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MacroMonitoringTable({ monitoring }: { monitoring: MacroMonitoringSignal[] }) {
+  if (!monitoring.length) return null;
+  return (
+    <div className="table-scroll mt-3 rounded-lg border border-border bg-background">
+      <table className="min-w-[29rem] w-full text-xs sm:min-w-[32rem] sm:text-sm">
+        <thead className="bg-muted">
+          <tr className="border-b border-border text-muted-foreground">
+            <th className="px-2 py-2 text-left">监控信号</th>
+            <th className="px-2 py-2 text-right">当前值</th>
+            <th className="px-2 py-2 text-left">阈值</th>
+            <th className="px-2 py-2 text-left">意义</th>
+          </tr>
+        </thead>
+        <tbody>
+          {monitoring.map((item, index) => (
+            <tr key={`${item.signal}-${index}`} className="border-b border-border align-top last:border-b-0">
+              <td className="px-2 py-2 text-foreground">{item.signal}</td>
+              <td className="px-2 py-2 text-right font-mono text-foreground">{formatMacroValue(item.current_value)}</td>
+              <td className="px-2 py-2 text-muted-foreground">{item.threshold}</td>
+              <td className="px-2 py-2 text-muted-foreground">{item.meaning}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MacroBackgroundDetails({ report }: { report?: AgentReport }) {
+  const macroAnalysis = report?.macro_analysis?.trim() || "";
+  const crossValidation = report?.cross_validation?.trim() || "";
+  const contradictions = report?.contradictions?.trim() || "";
+  const signals = report?.macro_signals || [];
+  const probabilityScenarios = report?.probability_scenarios || [];
+  const monitoringSignals = report?.monitoring_signals || [];
+  if (!macroAnalysis && !crossValidation && !contradictions && !signals.length && !probabilityScenarios.length && !monitoringSignals.length) {
+    return null;
+  }
+
+  return (
+    <details className="mb-5 rounded-lg border border-border bg-muted/60 px-3 py-3" open>
+      <summary className="cursor-pointer text-sm font-semibold text-foreground">
+        宏观背景（辅助参考）
+      </summary>
+      <p className="mt-2 text-xs text-muted-foreground">
+        当问题涉及买入时机、估值或风险评估时，系统会按需融合宏观信号；以下内容仅作为个股结论的辅助参考。
+      </p>
+      <div className="mt-3 space-y-2">
+        <ReportSection title="宏观结论" value={macroAnalysis} />
+        <ReportSection title="信号一致性评估（交叉验证）" value={crossValidation} />
+        <ReportSection title="矛盾信号" value={contradictions} />
+      </div>
+      <MacroSignalTable signals={signals} />
+      <MacroScenarioTable scenarios={probabilityScenarios} />
+      <MacroMonitoringTable monitoring={monitoringSignals} />
+    </details>
+  );
+}
+
 function getAssetResults(result: AgentAnalyzeResponse): AgentAssetResult[] {
   if (result.asset_results?.length) return result.asset_results;
   if (!result.symbol) return [];
@@ -303,7 +437,7 @@ function ForecastTable({ asset }: { asset: AgentAssetResult }) {
 
   return (
     <div className="table-scroll max-h-48 overflow-y-auto rounded-lg border border-border bg-background">
-      <table className="min-w-[30rem] w-full text-sm">
+      <table className="min-w-[26rem] w-full text-xs sm:min-w-[30rem] sm:text-sm">
         <thead className="sticky top-0 bg-muted">
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 text-left">日期</th>
@@ -472,6 +606,7 @@ function AssetAnalysisCard({ asset }: { asset: AgentAssetResult }) {
         <ReportSection title="风险指标" value={report?.risk} />
         <ReportSection title="关键不确定性" value={report?.uncertainties} />
       </div>
+      <MacroBackgroundDetails report={report} />
 
       {asset.risk_metrics && (
         <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -749,6 +884,7 @@ function AnalysisContent() {
             <ReportSection title="基本面" value={report?.fundamentals} />
             <ReportSection title="风险指标" value={report?.risk} />
             <ReportSection title="关键不确定性" value={report?.uncertainties} />
+            <MacroBackgroundDetails report={report} />
             <ReportSection title="非投资建议声明" value={report?.disclaimer} />
           </Card>
 

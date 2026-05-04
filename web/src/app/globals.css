@@ -102,6 +102,24 @@ code, pre, .font-mono {
     font-size: 1.75rem;
     line-height: 2.15rem;
   }
+
+  .card {
+    border-radius: 10px;
+    padding: 1rem;
+  }
+
+  .card:hover {
+    border-color: var(--color-border);
+    box-shadow: none;
+  }
+
+  .table-scroll {
+    border-radius: 8px;
+  }
+
+  .chart-frame {
+    min-height: 240px;
+  }
 }
 
 .app-input {

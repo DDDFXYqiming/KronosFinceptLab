@@ -161,6 +161,37 @@ export interface AgentReport {
   confidence: number;
   risk_level: string;
   disclaimer: string;
+  macro_analysis?: string;
+  macro_signals?: MacroSignal[];
+  cross_validation?: string;
+  contradictions?: string;
+  probability_scenarios?: MacroProbabilityScenario[];
+  monitoring_signals?: MacroMonitoringSignal[];
+}
+
+export interface MacroSignal {
+  source: string;
+  signal_type: string;
+  value: unknown;
+  interpretation: string;
+  time_horizon: string;
+  confidence: number;
+  observed_at?: string | null;
+  source_url?: string | null;
+  metadata?: Record<string, any>;
+}
+
+export interface MacroProbabilityScenario {
+  scenario: string;
+  probability: number;
+  basis: string;
+}
+
+export interface MacroMonitoringSignal {
+  signal: string;
+  current_value: unknown;
+  threshold: string;
+  meaning: string;
 }
 
 export interface AgentAssetResult {
@@ -192,6 +223,14 @@ export interface AgentAnalyzeRequest {
   market?: string;
   context?: Record<string, any>;
   dry_run?: boolean;
+}
+
+export interface MacroAnalyzeRequest {
+  question: string;
+  symbols?: string[];
+  market?: string;
+  provider_ids?: string[];
+  context?: Record<string, any>;
 }
 
 export interface AgentAnalyzeResponse {

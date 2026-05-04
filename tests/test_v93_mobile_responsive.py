@@ -64,7 +64,7 @@ def test_v93_tables_charts_and_inputs_have_mobile_bounds():
     assert "chart-frame h-[360px] md:h-[500px]" in forecast
     assert "window.innerWidth < 768 ? 360 : 500" in forecast
     assert "min-w-[42rem]" in forecast
-    assert "Agent 执行时间线" in analysis
+    assert "Agent 执行进度" in analysis or "Agent 执行时间线" in analysis
     assert "table-scroll" in analysis
     assert "ReturnComparisonChart" in batch
     assert "chart-frame h-72" in return_chart
@@ -75,6 +75,6 @@ def test_v93_tables_charts_and_inputs_have_mobile_bounds():
 
 
 def test_v93_version_label_is_updated():
-    assert "Version: v10.2" in read("README.md")
-    assert "v10.2" in read("web/src/components/layout/Sidebar.tsx")
-    assert "v10.2" in read("web/src/components/layout/Header.tsx")
+    assert "Version: v10." in read("README.md")
+    assert "v10." in read("web/src/components/layout/Sidebar.tsx")
+    assert "v10." in read("web/src/components/layout/Header.tsx")

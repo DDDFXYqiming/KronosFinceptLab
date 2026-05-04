@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { navItems } from "@/components/layout/Sidebar";
 
-const VERSION = "v10.2.4";
+const VERSION = "v10.5.1";
 
 function compactModelName(modelId?: string): string {
   return modelId?.split("/").pop() || "Kronos";
@@ -100,7 +100,7 @@ export function Header() {
             onClick={() => setMobileMenuOpen(false)}
             aria-label="关闭导航遮罩"
           />
-          <aside className="mobile-safe-bottom absolute right-0 top-0 flex h-full w-[min(86vw,22rem)] flex-col border-l border-border bg-card shadow-2xl">
+          <aside className="mobile-safe-bottom absolute left-0 top-0 flex h-full w-[min(88vw,22rem)] flex-col border-r border-border bg-card shadow-2xl">
             <div className="mobile-safe-top border-b border-border px-4">
               <div className="flex h-16 items-center justify-between gap-3">
                 <div className="min-w-0">
