@@ -33,11 +33,11 @@
 
 ## Current status
 
-Version: v10.5.4
+Version: v10.6
 
-V10 已推进到 v10.5.4：在 v10.5.3 黄金宏观数据源修复基础上，修复 Zeabur 分析页普通 A 股问题偶发 500/502 的稳定性风险。Web 分析页对普通个股“能不能买”类问题不再误触发嵌入式宏观 provider，DeepSeek 汇总在 Web 上下文使用短超时快速降级，巨潮资讯中文检索 Referer 已做 URL 编码，慢外部服务或中文公告查询失败不会中断主分析链路。
+V10 已推进到 v10.6：在 v10.5.4 分析页 Zeabur 稳定性修复基础上，新增部署版本指纹与健康诊断能力。`/api/health` 和 `/api/health/deep` 现在会返回安全的 `app_version`、`build_commit`、`build_ref`、`build_source`，仪表盘同步展示部署版本和短 commit，方便核对 GitHub main 与 Zeabur 线上镜像是否一致。
 
-宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与错误留痕；只有显式宏观、利率、通胀、美元、黄金、商品、全球周期等问题会在分析页自动融合宏观信号。
+宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与黄金/商品资产映射。Agent 分析页在显式宏观问题中仍会融合宏观信号，普通 A 股交易问法优先保障响应稳定性；部署排障时可直接用健康接口确认运行版本。
 
 ## 三端能力对照
 

@@ -21,6 +21,8 @@ export default function Dashboard() {
     { href: "/analysis", label: "分析", desc: "AI 智能分析" },
     { href: "/batch", label: "批量对比", desc: "多标的对比" },
   ];
+  const shortCommit = health?.build_commit && health.build_commit !== "unknown" ? health.build_commit.slice(0, 7) : "unknown";
+  const deployedVersion = health?.app_version || health?.version || "-";
 
   return (
     <div className="page-shell space-y-6">
@@ -39,13 +41,22 @@ export default function Dashboard() {
       </div>
 
       {/* System Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6 lg:gap-4">
         <Card>
-            <CardStat
-              label="API 状态"
-              value={health?.status === "ok" ? "在线" : "离线"}
+          <CardStat
+            label="API 状态"
+            value={health?.status === "ok" ? "在线" : "离线"}
             color={health?.status === "ok" ? "text-success" : "text-error"}
           />
+        </Card>
+        <Card>
+          <CardStat label="部署版本" value={deployedVersion} />
+          <p className="mt-1 break-all text-xs text-muted-foreground">
+            {health?.build_ref || "-"} · {health?.build_source || "-"}
+          </p>
+        </Card>
+        <Card>
+          <CardStat label="提交" value={shortCommit} />
         </Card>
         <Card>
           <CardStat label="模型" value={health?.model_id?.split("/").pop() || "-"} />

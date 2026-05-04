@@ -89,6 +89,10 @@ export interface BacktestResponse {
 export interface HealthResponse {
   status: string;
   version: string;
+  app_version: string;
+  build_commit: string;
+  build_ref: string;
+  build_source: string;
   model_loaded: boolean;
   model_id: string;
   tokenizer_id?: string | null;

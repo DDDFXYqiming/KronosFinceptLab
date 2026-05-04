@@ -172,6 +172,10 @@ class BacktestResponseOut(BaseModel):
 class HealthResponseOut(BaseModel):
     status: str
     version: str
+    app_version: str
+    build_commit: str
+    build_ref: str
+    build_source: str
     model_loaded: bool
     model_id: str
     tokenizer_id: str | None = None
