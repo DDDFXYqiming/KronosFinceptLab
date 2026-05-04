@@ -8,7 +8,7 @@ import math
 import re
 import time
 from contextlib import redirect_stdout
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import date, datetime, timedelta
 from io import StringIO
 from typing import Any
@@ -253,6 +253,9 @@ def analyze_investment_question(
             reason=route.reason or "请求超出 KronosFinceptLab 当前能力范围。",
             timestamp=now,
         )
+
+    if _is_web_analysis_context(context):
+        route = replace(route, needs_macro=_web_analysis_requires_embedded_macro(clean_question))
 
     resolved = route.symbols or resolve_symbols(clean_question, explicit_symbol=symbol, explicit_market=market)
     if route.needs_clarification or not resolved:
@@ -876,6 +879,30 @@ def resolve_symbols(
             seen.add(key)
 
     return resolved
+
+
+def _is_web_analysis_context(context: dict[str, Any] | None) -> bool:
+    if not isinstance(context, dict):
+        return False
+    if context.get("entry") == "web-analysis":
+        return True
+    page_context = context.get("page_context")
+    return isinstance(page_context, dict) and page_context.get("entry") == "web-analysis"
+
+
+def _web_analysis_requires_embedded_macro(text: str) -> bool:
+    clean_text = (text or "").strip()
+    if not clean_text:
+        return False
+    if re.search(r"技术面|均线|macd|kdj|rsi|布林|形态|k线|K线|回测参数", clean_text, flags=re.IGNORECASE):
+        return False
+    return bool(
+        re.search(
+            r"宏观|利率|通胀|美元|美债|收益率|央行|货币政策|财政政策|降息|加息|FOMC|Fed|联储|全球|海外|经济周期|行业周期|衰退|复苏|流动性|汇率|人民币|黄金|原油|商品|大宗|铜|CPI|PPI|PMI|GDP|就业|非农|避险",
+            clean_text,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _question_requires_macro(text: str) -> bool:
@@ -2076,6 +2103,10 @@ def _deepseek_finish_reason(payload: dict[str, Any]) -> str | None:
     return str(reason) if reason is not None else None
 
 
+def _deepseek_report_timeout_seconds(context: dict[str, Any]) -> int:
+    return 12 if _is_web_analysis_context(context) else 45
+
+
 def _call_deepseek_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
     if not settings.llm.deepseek.is_configured:
         log_event(
@@ -2149,7 +2180,7 @@ asset_reports: [
                 ],
                 **_deepseek_structured_json_options(temperature=0.2, max_tokens=1800),
             },
-            timeout=45,
+            timeout=_deepseek_report_timeout_seconds(context),
         )
         if response.status_code != 200:
             log_event(

@@ -78,7 +78,7 @@ class CninfoDisclosureClient:
             },
             headers={
                 "Accept": "application/json, text/plain, */*",
-                "Referer": f"{_CNINFO_BASE_URL}/fulltextSearch?keyWord={query}",
+                "Referer": f"{_CNINFO_BASE_URL}/fulltextSearch?{urlencode({'keyWord': query})}",
                 "User-Agent": _DEFAULT_USER_AGENT,
             },
             timeout=self._timeout_seconds,
