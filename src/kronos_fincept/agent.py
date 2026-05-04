@@ -1705,8 +1705,8 @@ def _build_batch_predictions(
     log_event(
         logger,
         logging.INFO,
-        "agent.kronos.batch_start",
-        "Starting shared Kronos batch prediction for agent assets",
+        "agent.kronos.predictions_start",
+        "Starting shared Kronos predictions for agent assets",
         model=_active_kronos_model_id(),
         asset_count=len(asset_contexts),
         dry_run=dry_run,
@@ -1779,19 +1779,17 @@ def _build_batch_predictions(
                 )
             ]
 
-    from kronos_fincept.service import batch_forecast_from_requests
-
-    try:
-        signals = batch_forecast_from_requests([request for _, _, request in eligible])
-    except Exception as exc:
-        error_summary = _short_error(exc)
-        for item, asset, _ in eligible:
+    for item, asset, _ in eligible:
+        try:
+            prediction = _build_prediction(item.symbol, asset.get("market_data", {}).get("rows") or [], dry_run=dry_run)
+        except Exception as exc:
+            error_summary = _short_error(exc)
             asset["kronos_prediction_error"] = error_summary
             calls.append(
                 AgentToolCall(
                     name="kronos_prediction",
                     status="failed",
-                    summary=f"{item.symbol} Kronos 批量预测失败：{error_summary}",
+                    summary=f"{item.symbol} Kronos 真实预测失败：{error_summary}",
                     elapsed_ms=_elapsed_ms(started),
                     metadata=_tool_metadata(
                         symbol=item.symbol,
@@ -1801,40 +1799,13 @@ def _build_batch_predictions(
                     ),
                 )
             )
-        return calls
-
-    signal_by_symbol = {signal.symbol: signal for signal in signals}
-    for item, asset, _ in eligible:
-        signal = signal_by_symbol.get(item.symbol)
-        if signal is None:
-            error_summary = "Kronos batch forecast returned no result for this symbol."
-            asset["kronos_prediction_error"] = error_summary
-            calls.append(
-                AgentToolCall(
-                    name="kronos_prediction",
-                    status="failed",
-                    summary=f"{item.symbol} Kronos 真实预测失败：{error_summary}",
-                    elapsed_ms=_elapsed_ms(started),
-                    metadata=_tool_metadata(symbol=item.symbol, market=item.market, model=_active_kronos_model_id()),
-                )
-            )
             continue
-        prediction = {
-            "model": _active_kronos_model_id(),
-            "prediction_days": 5,
-            "forecast": signal.forecast,
-            "probabilistic": None,
-            "metadata": {
-                "backend": "kronos_batch",
-                "elapsed_ms": signal.elapsed_ms,
-            },
-        }
         asset["kronos_prediction"] = prediction
         calls.append(
             AgentToolCall(
                 name="kronos_prediction",
                 status="completed",
-                summary=f"{item.symbol} 已通过批量模式调用 {_active_kronos_model_id()} 生成真实短期预测。",
+                summary=f"{item.symbol} 已调用 {_active_kronos_model_id()} 生成真实短期预测。",
                 elapsed_ms=_elapsed_ms(started),
                 metadata=_tool_metadata(
                     symbol=item.symbol,
@@ -2104,7 +2075,7 @@ def _deepseek_finish_reason(payload: dict[str, Any]) -> str | None:
 
 
 def _deepseek_report_timeout_seconds(context: dict[str, Any]) -> int:
-    return 12 if _is_web_analysis_context(context) else 45
+    return 25 if _is_web_analysis_context(context) else 45
 
 
 def _call_deepseek_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:

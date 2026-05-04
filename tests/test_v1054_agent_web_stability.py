@@ -147,7 +147,7 @@ def test_v1054_web_analysis_explicit_macro_question_still_runs_macro(monkeypatch
     assert any(call.name == "macro_signal" for call in result.tool_calls)
 
 
-def test_v1054_web_analysis_deepseek_report_uses_short_timeout(monkeypatch):
+def test_v1054_web_analysis_deepseek_report_uses_bounded_timeout(monkeypatch):
     from kronos_fincept import agent
     import requests
 
@@ -197,7 +197,7 @@ def test_v1054_web_analysis_deepseek_report_uses_short_timeout(monkeypatch):
 
     assert report is not None
     assert report["conclusion"] == "快速汇总完成。"
-    assert captured["timeout"] <= 15
+    assert 20 <= captured["timeout"] <= 30
 
 
 def test_v1054_cninfo_referer_encodes_chinese_query_as_ascii_safe_header():

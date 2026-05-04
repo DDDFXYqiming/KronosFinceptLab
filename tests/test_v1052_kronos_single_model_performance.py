@@ -116,3 +116,36 @@ def test_v1052_multi_asset_agent_defers_to_shared_batch_prediction(monkeypatch):
         "NeoQuasar/Kronos-base",
         "NeoQuasar/Kronos-base",
     ]
+
+
+def test_v1052_agent_multi_asset_predictions_reuse_single_forecast_path(monkeypatch):
+    from kronos_fincept import agent
+
+    calls = []
+    items = [
+        agent.ResolvedSymbol("600036", "cn", "招商银行"),
+        agent.ResolvedSymbol("600519", "cn", "贵州茅台"),
+    ]
+    asset_contexts = [
+        {"symbol": item.symbol, "market": item.market, "market_data": {"rows": _rows(), "current_price": 34.0}}
+        for item in items
+    ]
+
+    def fake_prediction(symbol, rows, *, dry_run):
+        calls.append({"symbol": symbol, "rows": len(rows), "dry_run": dry_run})
+        return {
+            "model": "NeoQuasar/Kronos-base",
+            "prediction_days": 5,
+            "forecast": [{"timestamp": "D1", "open": 34, "high": 35, "low": 33, "close": 34.8}],
+            "probabilistic": None,
+            "metadata": {"backend": "kronos"},
+        }
+
+    monkeypatch.setattr(agent, "_build_prediction", fake_prediction)
+
+    tool_calls = agent._build_batch_predictions(items, asset_contexts, dry_run=False)
+
+    assert [item["symbol"] for item in calls] == ["600036", "600519"]
+    assert all(item["rows"] == 40 for item in calls)
+    assert all(call.status == "completed" for call in tool_calls)
+    assert all(asset["kronos_prediction"]["metadata"]["backend"] == "kronos" for asset in asset_contexts)
