@@ -10,7 +10,7 @@ import { normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
-import type { AgentAnalyzeResponse, AgentAssetResult } from "@/types/api";
+import type { AgentAnalyzeResponse, AgentAssetResult, ForecastRow } from "@/types/api";
 
 const LOADING_STEPS = [
   "理解问题",
@@ -109,53 +109,107 @@ function RiskBadge({ level }: { level: string }) {
 }
 
 function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; loading: boolean }) {
-  const steps = result?.steps || LOADING_STEPS.map((name, index) => ({
-    name,
-    status: loading && index === 0 ? "running" : loading ? "pending" : "pending",
-    summary: "",
-    elapsed_ms: 0,
-  }));
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [pulseTick, setPulseTick] = useState(0);
+
+  useEffect(() => {
+    if (!loading || result) {
+      setActiveIndex(0);
+      setPulseTick(0);
+      return;
+    }
+    setActiveIndex(0);
+    setPulseTick(0);
+    const stepTimer = window.setInterval(() => {
+      setActiveIndex((current) => Math.min(current + 1, LOADING_STEPS.length - 1));
+    }, 900);
+    const pulseTimer = window.setInterval(() => {
+      setPulseTick((current) => current + 1);
+    }, 220);
+    return () => {
+      window.clearInterval(stepTimer);
+      window.clearInterval(pulseTimer);
+    };
+  }, [loading, result]);
+
+  const steps = result?.steps?.length
+    ? result.steps
+    : LOADING_STEPS.map((name, index) => ({
+      name,
+      status: !loading ? "pending" : index < activeIndex ? "completed" : index === activeIndex ? "running" : "pending",
+      summary: "",
+      elapsed_ms: index < activeIndex ? (index + 1) * 900 : index === activeIndex ? ((pulseTick % 4) + 1) * 220 : 0,
+    }));
+
+  const completedCount = steps.filter((step) => step.status === "completed").length;
+  const baseProgress = result
+    ? completedCount / Math.max(steps.length, 1)
+    : loading
+      ? (activeIndex + 0.4 + (pulseTick % 4) * 0.08) / LOADING_STEPS.length
+      : 0;
+  const progressPercent = Math.max(0, Math.min(100, baseProgress * 100));
 
   return (
     <div className="space-y-3">
-      {steps.map((step, index) => {
-        const active = step.status === "completed";
-        const failed = ["failed", "blocked"].includes(step.status);
-        const running = step.status === "running";
-        return (
-          <div
-            key={step.name}
-            className={`grid grid-cols-[2rem_1fr] gap-3 rounded-lg border px-3 py-3 ${
-              failed
-                ? "border-red-200 bg-red-50"
-                : active || running
-                  ? "border-green-200 bg-green-50"
-                  : "border-border bg-muted"
-            }`}
-          >
-            <div
-              className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                failed
-                  ? "bg-red-100 text-red-700"
-                  : active || running
-                    ? "bg-green-100 text-green-700"
-                    : "bg-background text-muted-foreground"
-              }`}
-            >
-              {index + 1}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-foreground">{step.name}</span>
-                <span className="font-mono text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          进度 {Math.min(completedCount, steps.length)}/{steps.length}
+        </p>
+        {loading && !result && <p className="text-xs text-muted-foreground">正在实时推进…</p>}
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${loading && !result ? "timeline-progress-live" : "bg-accent"}`}
+          style={{ width: `${progressPercent}%` }}
+        />
+      </div>
+
+      <div className="table-scroll">
+        <div className="grid grid-flow-col auto-cols-[minmax(11rem,1fr)] gap-2 pb-1">
+          {steps.map((step, index) => {
+            const completed = step.status === "completed";
+            const failed = ["failed", "blocked"].includes(step.status);
+            const running = step.status === "running";
+            return (
+              <div
+                key={`${step.name}-${index}`}
+                className={`rounded-lg border px-3 py-2 ${
+                  failed
+                    ? "border-red-200 bg-red-50"
+                    : completed
+                      ? "border-green-200 bg-green-50"
+                      : running
+                        ? "border-blue-200 bg-blue-50"
+                        : "border-border bg-muted"
+                }`}
+                title={step.summary || step.name}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                        failed
+                          ? "bg-red-100 text-red-700"
+                          : completed
+                            ? "bg-green-100 text-green-700"
+                            : running
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-background text-muted-foreground"
+                      }`}
+                    >
+                      {index + 1}
+                    </span>
+                    <span className="line-clamp-1 text-sm font-semibold text-foreground">{step.name}</span>
+                  </div>
+                </div>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
                   {statusLabel(step.status)} · {formatElapsedMs(step.elapsed_ms)}
-                </span>
+                </p>
               </div>
-              {step.summary && <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">{step.summary}</p>}
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -248,8 +302,8 @@ function ForecastTable({ asset }: { asset: AgentAssetResult }) {
   }
 
   return (
-    <div className="table-scroll max-h-80 overflow-y-auto">
-      <table className="min-w-[36rem] w-full text-sm">
+    <div className="table-scroll max-h-48 overflow-y-auto rounded-lg border border-border bg-background">
+      <table className="min-w-[30rem] w-full text-sm">
         <thead className="sticky top-0 bg-muted">
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 text-left">日期</th>
@@ -271,6 +325,86 @@ function ForecastTable({ asset }: { asset: AgentAssetResult }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function KronosMiniKline({ forecast }: { forecast: ForecastRow[] }) {
+  if (!forecast.length) return null;
+  const height = 120;
+  const candleWidth = 10;
+  const slot = 20;
+  const width = Math.max(140, forecast.length * slot);
+  const maxHigh = Math.max(...forecast.map((row) => row.high));
+  const minLow = Math.min(...forecast.map((row) => row.low));
+  const range = Math.max(maxHigh - minLow, 0.0001);
+  const toY = (price: number) => 10 + ((maxHigh - price) / range) * (height - 20);
+
+  return (
+    <div className="rounded-lg border border-border bg-[#0A0E1A] p-2">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-28 w-full">
+        {forecast.map((row, index) => {
+          const x = index * slot + slot / 2;
+          const highY = toY(row.high);
+          const lowY = toY(row.low);
+          const openY = toY(row.open);
+          const closeY = toY(row.close);
+          const rising = row.close >= row.open;
+          const color = rising ? "#10B981" : "#EF4444";
+          const bodyTop = Math.min(openY, closeY);
+          const bodyHeight = Math.max(Math.abs(openY - closeY), 1.6);
+          return (
+            <g key={`${row.timestamp}-${index}`}>
+              <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth={1.2} />
+              <rect
+                x={x - candleWidth / 2}
+                y={bodyTop}
+                width={candleWidth}
+                height={bodyHeight}
+                rx={1.5}
+                fill={color}
+              />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function KronosForecastPanel({ asset }: { asset: AgentAssetResult }) {
+  const forecast = asset.kronos_prediction?.forecast || [];
+  if (!forecast.length) {
+    return asset.kronos_prediction_error ? (
+      <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+        {asset.kronos_prediction_error}
+      </div>
+    ) : null;
+  }
+
+  const firstOpen = forecast[0]?.open ?? 0;
+  const lastClose = forecast[forecast.length - 1]?.close ?? 0;
+  const model = asset.kronos_prediction?.model || "Kronos";
+
+  return (
+    <div className="mb-5 rounded-lg border border-border bg-muted/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">
+          Kronos 预测（未来 {forecast.length} 日 OHLC）
+        </h3>
+        <span className="rounded bg-background px-2 py-0.5 text-xs font-mono text-muted-foreground">
+          {model}
+        </span>
+      </div>
+      <div className="mb-2 grid grid-cols-1 gap-2 text-xs text-muted-foreground md:grid-cols-3">
+        <p>预测开盘起点：<span className="font-semibold text-foreground">{firstOpen.toFixed(2)}</span></p>
+        <p>预测收盘终点：<span className="font-semibold text-foreground">{lastClose.toFixed(2)}</span></p>
+        <p>来源：<span className="font-semibold text-foreground">Kronos 模型输出</span></p>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.1fr)]">
+        <KronosMiniKline forecast={forecast} />
+        <ForecastTable asset={asset} />
+      </div>
     </div>
   );
 }
@@ -300,6 +434,8 @@ function AssetAnalysisCard({ asset }: { asset: AgentAssetResult }) {
         </div>
         <RecommendationBadge rec={asset.recommendation} />
       </div>
+
+      <KronosForecastPanel asset={asset} />
 
       <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
@@ -350,7 +486,6 @@ function AssetAnalysisCard({ asset }: { asset: AgentAssetResult }) {
         </div>
       )}
 
-      <ForecastTable asset={asset} />
     </Card>
   );
 }
@@ -512,7 +647,7 @@ function AnalysisContent() {
 
       {(loading || result) && (
         <Card>
-          <CardTitle>Agent 执行时间线</CardTitle>
+          <CardTitle>Agent 执行进度</CardTitle>
           <StepList result={result} loading={loading} />
         </Card>
       )}

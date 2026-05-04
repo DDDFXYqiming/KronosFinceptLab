@@ -303,6 +303,21 @@ code, pre, .font-mono {
   animation: rotate-slow 60s linear infinite;
 }
 
+@keyframes timeline-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.timeline-progress-live {
+  background: linear-gradient(90deg, #0052ff 0%, #4d7cff 45%, #7aa2ff 55%, #0052ff 100%);
+  background-size: 220% 100%;
+  animation: timeline-flow 1.3s linear infinite;
+}
+
 /* ── Entrance Animations ── */
 @keyframes fade-in-up {
   from {

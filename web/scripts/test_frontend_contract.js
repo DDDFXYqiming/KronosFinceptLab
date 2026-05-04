@@ -57,7 +57,9 @@ const analysis = read("src/app/analysis/page.tsx");
 for (const needle of [
   "新建对话/清空本轮",
   "queryKeys.agent",
-  "Agent 执行时间线",
+  "Agent 执行进度",
+  "Kronos 预测（未来",
+  "KronosMiniKline",
   "ToolCallList",
   "request_id",
 ]) {
