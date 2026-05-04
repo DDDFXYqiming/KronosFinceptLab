@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from kronos_fincept.api.models import ForecastMetadataOut
+from kronos_fincept.logging_config import log_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
@@ -109,7 +110,16 @@ async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
         )
         return AgentAnalyzeResponse(**result.to_dict())
     except Exception as exc:
-        logger.exception("Agent analysis failed")
+        log_event(
+            logger,
+            logging.ERROR,
+            "agent.analysis.failure",
+            "Agent analysis failed",
+            symbol=req.symbol,
+            market=req.market,
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
         from datetime import datetime
 
         return AgentAnalyzeResponse(
@@ -147,7 +157,16 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
         )
         return AgentAnalyzeResponse(**result.to_dict())
     except Exception as exc:
-        logger.exception("Macro analysis failed")
+        log_event(
+            logger,
+            logging.ERROR,
+            "macro.analysis.failure",
+            "Macro analysis failed",
+            market=req.market,
+            symbols=req.symbols,
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
         from datetime import datetime
 
         return AgentAnalyzeResponse(
@@ -197,7 +216,16 @@ async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
                 if raw_data and len(raw_data) > 0:
                     price_data = raw_data
             except Exception as e:
-                logger.warning("Global market fetch failed: %s", e)
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "ai_analysis.global_market_fetch.failure",
+                    "Global market fetch failed",
+                    symbol=req.symbol,
+                    market=req.market,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
 
         if not price_data or len(price_data) == 0:
             return AIAnalyzeResponse(
@@ -240,7 +268,16 @@ async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
                 "sortino_ratio": getattr(risk_metrics, "sortino_ratio", 0),
             }
         except Exception as e:
-            logger.warning("Risk calc failed: %s", e)
+            log_event(
+                logger,
+                logging.WARNING,
+                "ai_analysis.risk_calc.failure",
+                "Risk calc failed",
+                symbol=req.symbol,
+                market=req.market,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
 
         # ── 3. Kronos prediction ──
         prediction_data = None
@@ -275,7 +312,16 @@ async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
                     probabilistic=result.get("probabilistic"),
                 )
         except Exception as e:
-            logger.warning("Kronos prediction failed: %s", e)
+            log_event(
+                logger,
+                logging.WARNING,
+                "ai_analysis.kronos_prediction.failure",
+                "Kronos prediction failed",
+                symbol=req.symbol,
+                market=req.market,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
 
         # ── 4. AI Analysis ──
         advisor = AIInvestmentAdvisor()
@@ -297,7 +343,16 @@ async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
         )
 
     except Exception as e:
-        logger.exception("AI analysis failed for %s", req.symbol)
+        log_event(
+            logger,
+            logging.ERROR,
+            "ai_analysis.failure",
+            "AI analysis failed",
+            symbol=req.symbol,
+            market=req.market,
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
         return AIAnalyzeResponse(
             ok=False,
             symbol=req.symbol,

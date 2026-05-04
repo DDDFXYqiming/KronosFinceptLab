@@ -140,6 +140,7 @@ class LoggingConfig:
     """Application logging config."""
     level: str = field(default_factory=lambda: _get("KRONOS_LOG_LEVEL", _get("LOG_LEVEL", "INFO")))
     format: str = field(default_factory=lambda: _get("KRONOS_LOG_FORMAT", "text"))
+    enable_file: bool = field(default_factory=lambda: _get_bool("KRONOS_LOG_ENABLE_FILE", True))
     directory: str = field(default_factory=lambda: _get("KRONOS_LOG_DIR", "logs"))
     retention_days: int = field(default_factory=lambda: _get_int("KRONOS_LOG_RETENTION_DAYS", 14))
     max_bytes: int = field(default_factory=lambda: _get_int("KRONOS_LOG_MAX_BYTES", 10 * 1024 * 1024))

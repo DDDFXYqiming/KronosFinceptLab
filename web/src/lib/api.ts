@@ -91,6 +91,24 @@ function logApiFailure(path: string, status: number, requestId: string | null, m
   });
 }
 
+function createClientRequestId(): string {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getConfiguredTestRunId(): string | null {
+  const envValue = process.env.NEXT_PUBLIC_TEST_RUN_ID?.trim();
+  if (envValue) return envValue;
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem("kronos-test-run-id");
+  } catch {
+    return null;
+  }
+}
+
 function enrichGatewayError(status: number, message: string, path: string): string {
   const isAgentAnalyze = path.includes("/v1/analyze/agent");
   if (![502, 503, 504].includes(status) && !(isAgentAnalyze && status === 500)) return message;
@@ -154,6 +172,12 @@ async function fetchApi<T>(
   if (requestOptions.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const clientRequestId = headers.get("X-Request-ID") || createClientRequestId();
+  headers.set("X-Request-ID", clientRequestId);
+  const testRunId = getConfiguredTestRunId();
+  if (testRunId && !headers.has("X-Test-Run-ID")) {
+    headers.set("X-Test-Run-ID", testRunId);
+  }
 
   const { signal, cleanup } = createRequestSignal({ timeoutMs, signal: callerSignal });
   try {
@@ -166,7 +190,7 @@ async function fetchApi<T>(
     if (!res.ok) {
       const err = await parseErrorResponse(res);
       const message = enrichGatewayError(res.status, err.error || err.detail || `HTTP ${res.status}`, path);
-      const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || null;
+      const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || clientRequestId;
       const type = err.type || err.code || "api_error";
       logApiFailure(path, res.status, requestId, message);
       throw new ApiError(message, { status: res.status, requestId, path, type });
@@ -176,8 +200,8 @@ async function fetchApi<T>(
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       const message = "请求超时或已取消";
-      logApiFailure(path, 0, null, message);
-      throw new ApiError(message, { status: 0, requestId: null, path, type: "request_aborted" });
+      logApiFailure(path, 0, clientRequestId, message);
+      throw new ApiError(message, { status: 0, requestId: clientRequestId, path, type: "request_aborted" });
     }
     throw error;
   } finally {

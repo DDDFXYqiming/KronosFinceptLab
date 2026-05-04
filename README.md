@@ -33,9 +33,9 @@
 
 ## Current status
 
-Version: v10.6.2
+Version: v10.6.3
 
-V10 已推进到 v10.6.2：在 v10.6.1 Zeabur npm 构建加固基础上，修复移动端导航抽屉交互。移动端打开导航按钮已移到 Header 左上角，抽屉关闭按钮已移到抽屉左上角，抽屉宽度由 88vw/22rem 收窄为 82vw/18rem，并移除抽屉内 `API/模型/设备` 三张状态卡片，保留顶部轻量模型状态。
+V10 已推进到 v10.6.3：在 v10.6.2 移动端导航抽屉适配基础上，完成轻量日志升级。Zeabur Docker 默认输出 JSON stdout 并关闭容器内文件日志，前端请求会生成并透传 `X-Request-ID`，全功能测试可通过 `X-Test-Run-ID` 串联同一轮验证日志，关键 Agent/AI/Macro 失败事件改为结构化日志。
 
 宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与黄金/商品资产映射。Agent 分析页在显式宏观问题中仍会融合宏观信号，普通 A 股交易问法优先保障响应稳定性；部署排障时可直接用健康接口确认运行版本。
 
@@ -193,11 +193,12 @@ cd web && npm run build:zeabur && npm run check:bundle
 
 ## 日志与运维
 
-默认日志写入 `logs/kronos-YYYYMMDD.log`，同时输出到 stderr。常用配置：
+本地默认日志写入 `logs/kronos-YYYYMMDD.log`，同时输出到 stderr；Zeabur Docker 默认使用 JSON stdout 并禁用容器内文件日志。常用配置：
 
 ```bash
 KRONOS_LOG_LEVEL=DEBUG
 KRONOS_LOG_FORMAT=json
+KRONOS_LOG_ENABLE_FILE=1
 KRONOS_LOG_DIR=logs
 KRONOS_LOG_RETENTION_DAYS=14
 KRONOS_LOG_MAX_BYTES=10485760
@@ -213,7 +214,7 @@ Get-Content logs\kronos-*.log -Tail 100
 Get-Content logs\kronos-*.log -Tail 10
 ```
 
-清理历史日志可直接删除 `logs/` 下旧文件；目录已被 git 忽略。API 错误响应会返回 `request_id`，可用该 ID 在日志里定位完整异常栈。
+清理历史日志可直接删除 `logs/` 下旧文件；目录已被 git 忽略。API 错误响应会返回 `request_id`，可用该 ID 在日志里定位完整异常栈。前端会自动发送 `X-Request-ID`；需要串联一次全功能测试时，可在浏览器 sessionStorage 写入 `kronos-test-run-id`，或构建时配置 `NEXT_PUBLIC_TEST_RUN_ID`，后端日志会输出对应 `test_run_id`。
 
 ### Rust native 加速（可选）
 

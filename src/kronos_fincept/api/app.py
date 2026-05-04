@@ -15,7 +15,14 @@ from fastapi.responses import JSONResponse
 
 from kronos_fincept.api.routes import backtest, batch, data, forecast, health, analyze, ai_analyze, alert
 from kronos_fincept.config import settings
-from kronos_fincept.logging_config import configure_logging, log_event, reset_request_id, set_request_id
+from kronos_fincept.logging_config import (
+    configure_logging,
+    log_event,
+    reset_request_id,
+    reset_test_run_id,
+    set_request_id,
+    set_test_run_id,
+)
 
 logger = logging.getLogger("kronos_fincept.api")
 
@@ -94,19 +101,25 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        test_run_id = request.headers.get("X-Test-Run-ID")
         request.state.request_id = request_id
+        request.state.test_run_id = test_run_id
         token = set_request_id(request_id)
+        test_token = set_test_run_id(test_run_id)
         start = time.perf_counter()
         try:
             response = await call_next(request)
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             response.headers["X-Request-ID"] = request_id
+            if test_run_id:
+                response.headers["X-Test-Run-ID"] = test_run_id
             log_event(
                 logger,
                 logging.INFO,
                 "api.request",
                 f"{request.method} {request.url.path} -> {response.status_code}",
                 request_id=request_id,
+                test_run_id=test_run_id,
                 method=request.method,
                 path=request.url.path,
                 status=response.status_code,
@@ -122,27 +135,30 @@ def create_app() -> FastAPI:
                 "api.request.error",
                 f"{request.method} {request.url.path} failed",
                 request_id=request_id,
+                test_run_id=test_run_id,
                 method=request.method,
                 path=request.url.path,
                 client=request.client.host if request.client else None,
                 duration_ms=elapsed_ms,
                 error_type=type(exc).__name__,
-                exc_info=True,
             )
             raise
         finally:
             reset_request_id(token)
+            reset_test_run_id(test_token)
 
     # Global exception handler
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         request_id = request.headers.get("X-Request-ID") or getattr(request.state, "request_id", None)
+        test_run_id = request.headers.get("X-Test-Run-ID") or getattr(request.state, "test_run_id", None)
         log_event(
             logger,
             logging.ERROR,
             "api.unhandled_exception",
             f"Unhandled exception on {request.method} {request.url.path}",
             request_id=request_id,
+            test_run_id=test_run_id,
             method=request.method,
             path=request.url.path,
             error_type=type(exc).__name__,
@@ -155,7 +171,10 @@ def create_app() -> FastAPI:
                 "error": "Internal server error",
                 "request_id": request_id,
             },
-            headers={"X-Request-ID": request_id or ""},
+            headers={
+                "X-Request-ID": request_id or "",
+                **({"X-Test-Run-ID": test_run_id} if test_run_id else {}),
+            },
         )
 
     # Register routes

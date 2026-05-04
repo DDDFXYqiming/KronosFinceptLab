@@ -14,7 +14,9 @@ from kronos_fincept.logging_config import (
     log_event,
     redact,
     reset_request_id,
+    reset_test_run_id,
     set_request_id,
+    set_test_run_id,
 )
 
 
@@ -32,6 +34,7 @@ def test_json_logging_has_stable_fields_and_redacts_secrets(tmp_path):
         force=True,
     )
     token = set_request_id("rid-test-1")
+    test_token = set_test_run_id("full-smoke-20260505")
     try:
         log_event(
             get_logger("kronos_fincept.tests"),
@@ -46,10 +49,12 @@ def test_json_logging_has_stable_fields_and_redacts_secrets(tmp_path):
         )
     finally:
         reset_request_id(token)
+        reset_test_run_id(test_token)
 
     payload = json.loads(stream.getvalue().strip().splitlines()[-1])
     assert payload["event"] == "test.secret"
     assert payload["request_id"] == "rid-test-1"
+    assert payload["test_run_id"] == "full-smoke-20260505"
     assert payload["symbol"] == "600036"
     assert payload["market"] == "cn"
     assert payload["duration_ms"] == 12
@@ -80,6 +85,7 @@ def test_logging_config_reads_kronos_env_vars(monkeypatch):
     monkeypatch.setenv("KRONOS_LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("KRONOS_LOG_FORMAT", "json")
     monkeypatch.setenv("KRONOS_LOG_DIR", "custom-logs")
+    monkeypatch.setenv("KRONOS_LOG_ENABLE_FILE", "0")
     monkeypatch.setenv("KRONOS_LOG_RETENTION_DAYS", "3")
     monkeypatch.setenv("KRONOS_LOG_MAX_BYTES", "4096")
 
@@ -88,6 +94,7 @@ def test_logging_config_reads_kronos_env_vars(monkeypatch):
     assert cfg.level == "DEBUG"
     assert cfg.format == "json"
     assert cfg.directory == "custom-logs"
+    assert cfg.enable_file is False
     assert cfg.retention_days == 3
     assert cfg.max_bytes == 4096
 
@@ -104,14 +111,19 @@ def test_api_request_logging_propagates_request_id(tmp_path):
     )
     client = TestClient(create_app())
 
-    response = client.get("/api/health", headers={"X-Request-ID": "rid-api-1"})
+    response = client.get(
+        "/api/health",
+        headers={"X-Request-ID": "rid-api-1", "X-Test-Run-ID": "full-smoke-1"},
+    )
 
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == "rid-api-1"
+    assert response.headers["X-Test-Run-ID"] == "full-smoke-1"
     records = [json.loads(line) for line in stream.getvalue().splitlines() if line.strip()]
     request_records = [item for item in records if item.get("event") == "api.request"]
     assert request_records
     assert request_records[-1]["request_id"] == "rid-api-1"
+    assert request_records[-1]["test_run_id"] == "full-smoke-1"
     assert request_records[-1]["path"] == "/api/health"
     assert request_records[-1]["status"] == 200
 
@@ -134,9 +146,13 @@ def test_api_error_logging_keeps_response_safe_and_logs_stack(tmp_path):
 
     client = TestClient(app, raise_server_exceptions=False)
 
-    response = client.get("/boom", headers={"X-Request-ID": "rid-error-1"})
+    response = client.get(
+        "/boom",
+        headers={"X-Request-ID": "rid-error-1", "X-Test-Run-ID": "full-smoke-error"},
+    )
 
     assert response.status_code == 500
+    assert response.headers["X-Test-Run-ID"] == "full-smoke-error"
     payload = response.json()
     assert payload["error"] == "Internal server error"
     assert payload["request_id"] == "rid-error-1"
@@ -145,6 +161,7 @@ def test_api_error_logging_keeps_response_safe_and_logs_stack(tmp_path):
     error_records = [item for item in records if item.get("event") == "api.unhandled_exception"]
     assert error_records
     assert error_records[-1]["request_id"] == "rid-error-1"
+    assert error_records[-1]["test_run_id"] == "full-smoke-error"
     assert error_records[-1]["error_type"] in {"RuntimeError", "ExceptionGroup"}
     assert "exception" in error_records[-1]
 
@@ -193,6 +210,9 @@ def test_logs_directory_is_git_ignored_and_frontend_logs_safely():
 
     assert "logs/" in gitignore
     assert "logApiFailure" in api_client
+    assert 'headers.set("X-Request-ID"' in api_client
+    assert 'headers.set("X-Test-Run-ID"' in api_client
+    assert "kronos-test-run-id" in api_client
     assert "body:" not in api_client.split("function logApiFailure", 1)[1].split("async function fetchApi", 1)[0]
 
 

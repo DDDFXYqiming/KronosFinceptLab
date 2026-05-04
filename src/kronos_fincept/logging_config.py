@@ -17,6 +17,7 @@ from kronos_fincept.config import settings
 
 
 _request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
+_test_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("test_run_id", default=None)
 _CONFIGURED = False
 _STANDARD_FIELDS = {
     "name", "msg", "args", "levelname", "levelno", "pathname", "filename", "module",
@@ -25,7 +26,7 @@ _STANDARD_FIELDS = {
     "asctime", "taskName",
 }
 _RESERVED_OUTPUT_FIELDS = {
-    "timestamp", "level", "logger", "event", "request_id", "symbol", "market",
+    "timestamp", "level", "logger", "event", "request_id", "test_run_id", "symbol", "market",
     "duration_ms", "error_type", "message", "exception",
 }
 _SENSITIVE_PATTERNS = [
@@ -57,6 +58,21 @@ def get_request_id() -> str | None:
     return _request_id.get()
 
 
+def set_test_run_id(test_run_id: str | None) -> contextvars.Token:
+    """Set the current full-test-run id for downstream log records."""
+    return _test_run_id.set(test_run_id)
+
+
+def reset_test_run_id(token: contextvars.Token) -> None:
+    """Reset the current full-test-run id context variable."""
+    _test_run_id.reset(token)
+
+
+def get_test_run_id() -> str | None:
+    """Return the current full-test-run id, if any."""
+    return _test_run_id.get()
+
+
 def redact(value: Any) -> Any:
     """Redact secrets while preserving the original shape where possible."""
     if isinstance(value, str):
@@ -80,7 +96,7 @@ def configure_logging(
     log_format: str | None = None,
     log_dir: str | os.PathLike[str] | None = None,
     stream: TextIO | None = None,
-    enable_file: bool = True,
+    enable_file: bool | None = None,
     force: bool = False,
 ) -> None:
     """Configure root logging once for API, CLI, jobs, and tests."""
@@ -107,7 +123,8 @@ def configure_logging(
     stream_handler.setFormatter(formatter)
     root.addHandler(stream_handler)
 
-    if enable_file:
+    file_logging_enabled = settings.logging.enable_file if enable_file is None else enable_file
+    if file_logging_enabled:
         directory = Path(log_dir or settings.logging.directory)
         directory.mkdir(parents=True, exist_ok=True)
         cleanup_old_logs(directory, settings.logging.retention_days)
@@ -123,6 +140,8 @@ def configure_logging(
         root.addHandler(file_handler)
 
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
     _CONFIGURED = True
 
 
@@ -143,6 +162,8 @@ def log_event(
     extra = {"event": event}
     if get_request_id() and "request_id" not in fields:
         extra["request_id"] = get_request_id()
+    if get_test_run_id() and "test_run_id" not in fields:
+        extra["test_run_id"] = get_test_run_id()
     for key, value in fields.items():
         if key in _STANDARD_FIELDS:
             key = f"field_{key}"
@@ -174,6 +195,7 @@ class JsonLogFormatter(logging.Formatter):
             "logger": record.name,
             "event": getattr(record, "event", None) or record.getMessage(),
             "request_id": getattr(record, "request_id", None) or get_request_id(),
+            "test_run_id": getattr(record, "test_run_id", None) or get_test_run_id(),
             "symbol": getattr(record, "symbol", None),
             "market": getattr(record, "market", None),
             "duration_ms": getattr(record, "duration_ms", None),
@@ -198,6 +220,7 @@ class TextLogFormatter(logging.Formatter):
         timestamp = _iso_timestamp(record.created)
         event = getattr(record, "event", None) or record.getMessage()
         request_id = getattr(record, "request_id", None) or get_request_id() or "-"
+        test_run_id = getattr(record, "test_run_id", None) or get_test_run_id()
         symbol = getattr(record, "symbol", None)
         market = getattr(record, "market", None)
         duration_ms = getattr(record, "duration_ms", None)
@@ -214,6 +237,8 @@ class TextLogFormatter(logging.Formatter):
             parts.append(f"market={redact(market)}")
         if duration_ms is not None:
             parts.append(f"duration_ms={duration_ms}")
+        if test_run_id:
+            parts.append(f"test_run_id={redact(test_run_id)}")
         message = redact(record.getMessage())
         if message and message != event:
             parts.append(f"message={message}")
