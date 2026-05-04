@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { navItems } from "@/components/layout/Sidebar";
 
-const VERSION = "v10.5.2";
+const VERSION = "v10.6.2";
 
 function compactModelName(modelId?: string): string {
   return modelId?.split("/").pop() || "Kronos";
@@ -45,6 +45,17 @@ export function Header() {
     <>
       <header className="mobile-safe-top sticky top-0 z-30 border-b border-border bg-card/90 backdrop-blur-md">
         <div className="flex h-16 min-w-0 items-center gap-3 px-4 md:px-6">
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:hidden"
+            aria-label="打开导航菜单"
+            aria-expanded={mobileMenuOpen}
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
+
           <Link href="/" className="flex min-w-0 items-center gap-2 md:hidden">
             <span className="text-xl font-bold gradient-text">K</span>
             <span className="truncate font-display text-lg gradient-text">KronosFinceptLab</span>
@@ -79,16 +90,6 @@ export function Header() {
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isHealthy ? "bg-success" : "bg-error"}`} />
               <span className="truncate">{modelName}</span>
             </span>
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:hidden"
-              aria-label="打开导航菜单"
-              aria-expanded={mobileMenuOpen}
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-              </svg>
-            </button>
           </div>
         </div>
       </header>
@@ -100,39 +101,22 @@ export function Header() {
             onClick={() => setMobileMenuOpen(false)}
             aria-label="关闭导航遮罩"
           />
-          <aside className="mobile-safe-bottom absolute left-0 top-0 flex h-full w-[min(88vw,22rem)] flex-col border-r border-border bg-card shadow-2xl">
+          <aside className="mobile-safe-bottom absolute left-0 top-0 flex h-full w-[min(82vw,18rem)] flex-col border-r border-border bg-card shadow-2xl">
             <div className="mobile-safe-top border-b border-border px-4">
-              <div className="flex h-16 items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-display text-lg gradient-text">KronosFinceptLab</div>
-                  <div className="mt-0.5 text-xs font-mono text-muted-foreground">{VERSION} — 仅供研究</div>
-                </div>
+              <div className="flex h-16 items-center gap-3">
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
+                  className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
                   aria-label="关闭导航菜单"
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
                   </svg>
                 </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 border-b border-border p-4 text-xs">
-              <div className="rounded-lg border border-border bg-muted p-3">
-                <p className="text-muted-foreground">API</p>
-                <p className={isHealthy ? "font-semibold text-success" : "font-semibold text-error"}>
-                  {isHealthy ? "在线" : "离线"}
-                </p>
-              </div>
-              <div className="rounded-lg border border-border bg-muted p-3">
-                <p className="text-muted-foreground">模型</p>
-                <p className="truncate font-semibold text-foreground">{modelName}</p>
-              </div>
-              <div className="rounded-lg border border-border bg-muted p-3">
-                <p className="text-muted-foreground">设备</p>
-                <p className="truncate font-mono font-semibold text-foreground">{health?.device || "cpu"}</p>
+                <div className="min-w-0">
+                  <div className="font-display text-lg gradient-text">KronosFinceptLab</div>
+                  <div className="mt-0.5 text-xs font-mono text-muted-foreground">{VERSION} — 仅供研究</div>
+                </div>
               </div>
             </div>
 

@@ -13,6 +13,20 @@ function assertIncludes(source, needle, label) {
   }
 }
 
+function assertNotIncludes(source, needle, label) {
+  if (source.includes(needle)) {
+    throw new Error(`${label} must not include: ${needle}`);
+  }
+}
+
+function assertBefore(source, first, second, label) {
+  const firstIndex = source.indexOf(first);
+  const secondIndex = source.indexOf(second);
+  if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) {
+    throw new Error(`${label} order is wrong: expected ${first} before ${second}`);
+  }
+}
+
 const api = read("src/lib/api.ts");
 for (const needle of [
   "DEFAULT_TIMEOUT_MS",
@@ -56,9 +70,12 @@ for (const needle of ["window.sessionStorage.getItem", "window.sessionStorage.se
 }
 
 const header = read("src/components/layout/Header.tsx");
-for (const needle of ["absolute left-0 top-0", "border-r border-border", "w-[min(88vw,22rem)]"]) {
+for (const needle of ["absolute left-0 top-0", "border-r border-border", "w-[min(82vw,18rem)]"]) {
   assertIncludes(header, needle, "mobile drawer contract");
 }
+assertBefore(header, "aria-label=\"打开导航菜单\"", "href=\"/\" className=\"flex min-w-0 items-center gap-2 md:hidden\"", "mobile header open button");
+assertBefore(header, "aria-label=\"关闭导航菜单\"", "mt-0.5 text-xs font-mono text-muted-foreground", "mobile drawer close button");
+assertNotIncludes(header, "grid grid-cols-3 gap-2 border-b border-border p-4 text-xs", "mobile drawer status card contract");
 
 const card = read("src/components/ui/Card.tsx");
 for (const needle of ["flex-col", "sm:flex-row", "break-words text-base"]) {

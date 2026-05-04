@@ -29,7 +29,7 @@ def _fake_model_info(deep: bool = False) -> dict:
 
 
 def test_v106_build_info_reads_only_safe_whitelisted_env(monkeypatch):
-    monkeypatch.setenv("KRONOS_APP_VERSION", "v10.6.1")
+    monkeypatch.setenv("KRONOS_APP_VERSION", "v10.6.2")
     monkeypatch.setenv("KRONOS_BUILD_COMMIT", "c14ad60e1c0b414782442291fb3c2042ade716c8")
     monkeypatch.setenv("KRONOS_BUILD_REF", "main")
     monkeypatch.setenv("KRONOS_BUILD_SOURCE", "zeabur")
@@ -40,7 +40,7 @@ def test_v106_build_info_reads_only_safe_whitelisted_env(monkeypatch):
     info = get_build_info().as_dict()
 
     assert info == {
-        "app_version": "v10.6.1",
+        "app_version": "v10.6.2",
         "build_commit": "c14ad60e1c0b414782442291fb3c2042ade716c8",
         "build_ref": "main",
         "build_source": "zeabur",
@@ -64,14 +64,14 @@ def test_v106_build_info_uses_safe_defaults_when_env_missing(monkeypatch):
 
     info = get_build_info().as_dict()
 
-    assert info["app_version"] == "v10.6.1"
+    assert info["app_version"] == "v10.6.2"
     assert info["build_commit"] == "unknown"
     assert info["build_ref"] == "unknown"
     assert info["build_source"] == "unknown"
 
 
 def test_v106_health_endpoint_returns_build_metadata_without_deep_model_check(monkeypatch):
-    monkeypatch.setenv("KRONOS_APP_VERSION", "v10.6.1")
+    monkeypatch.setenv("KRONOS_APP_VERSION", "v10.6.2")
     monkeypatch.setenv("KRONOS_BUILD_COMMIT", "abcdef1234567890")
     monkeypatch.setenv("KRONOS_BUILD_REF", "main")
     monkeypatch.setenv("KRONOS_BUILD_SOURCE", "local-test")
@@ -93,7 +93,7 @@ def test_v106_health_endpoint_returns_build_metadata_without_deep_model_check(mo
 
     assert response.status_code == 200
     assert calls == [False]
-    assert payload["app_version"] == "v10.6.1"
+    assert payload["app_version"] == "v10.6.2"
     assert payload["build_commit"] == "abcdef1234567890"
     assert payload["build_ref"] == "main"
     assert payload["build_source"] == "local-test"
@@ -101,9 +101,9 @@ def test_v106_health_endpoint_returns_build_metadata_without_deep_model_check(mo
 
 
 def test_v106_deep_health_endpoint_keeps_same_build_metadata(monkeypatch):
-    monkeypatch.setenv("KRONOS_APP_VERSION", "v10.6.1")
+    monkeypatch.setenv("KRONOS_APP_VERSION", "v10.6.2")
     monkeypatch.setenv("KRONOS_BUILD_COMMIT", "fedcba0987654321")
-    monkeypatch.setenv("KRONOS_BUILD_REF", "release/v10.6.1")
+    monkeypatch.setenv("KRONOS_BUILD_REF", "release/v10.6.2")
     monkeypatch.setenv("KRONOS_BUILD_SOURCE", "zeabur")
 
     from kronos_fincept.api.routes import health as health_route
@@ -122,9 +122,9 @@ def test_v106_deep_health_endpoint_keeps_same_build_metadata(monkeypatch):
 
     assert calls == [True]
     assert payload["deep_check"] is True
-    assert payload["app_version"] == "v10.6.1"
+    assert payload["app_version"] == "v10.6.2"
     assert payload["build_commit"] == "fedcba0987654321"
-    assert payload["build_ref"] == "release/v10.6.1"
+    assert payload["build_ref"] == "release/v10.6.2"
     assert payload["build_source"] == "zeabur"
 
 
@@ -134,7 +134,7 @@ def test_v106_dockerfile_and_dashboard_expose_build_metadata_contract():
     dashboard = read("web/src/app/page.tsx")
 
     for marker in [
-        "ARG KRONOS_APP_VERSION=v10.6.1",
+        "ARG KRONOS_APP_VERSION=v10.6.2",
         "ARG KRONOS_BUILD_COMMIT=unknown",
         "ARG KRONOS_BUILD_REF=unknown",
         "ARG KRONOS_BUILD_SOURCE=docker",
