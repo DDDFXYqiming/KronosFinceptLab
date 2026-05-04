@@ -1315,7 +1315,7 @@ def _create_cninfo_client() -> CninfoDisclosureClient:
 def _create_macro_data_manager() -> MacroDataManager:
     return MacroDataManager(
         timeout_seconds=20.0,
-        per_provider_timeout_seconds=10.0,
+        per_provider_timeout_seconds=12.0,
         failure_threshold=3,
         failure_cooldown_seconds=300,
         max_workers=5,

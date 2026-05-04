@@ -9,7 +9,9 @@ handled by ``MacroDataManager``.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -21,20 +23,73 @@ from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
 from kronos_fincept.web_search import WebSearchClient
 
 
-def _get_json(url: str, *, params: dict[str, Any] | None = None, timeout: int = 8) -> Any:
-    if params:
-        query = urllib.parse.urlencode({key: value for key, value in params.items() if value is not None})
-        separator = "&" if "?" in url else "?"
-        url = f"{url}{separator}{query}"
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "KronosFinceptLab/10.1 (+https://github.com/DDDFXYqiming/KronosFinceptLab)",
-        },
+CFTC_SODA_URL = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
+TREASURY_RATES_CSV_URL = (
+    "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv"
+)
+TREASURY_CURVE_TYPES = {
+    "nominal": "daily_treasury_yield_curve",
+    "real": "daily_treasury_real_yield_curve",
+}
+YAHOO_ASSET_SYMBOLS = (
+    (r"黄金|gold|xau|gc=/?f", "GC=F", "黄金期货"),
+    (r"白银|silver|xag|si=/?f", "SI=F", "白银期货"),
+    (r"brent|布伦特|bz=/?f", "BZ=F", "Brent 原油期货"),
+    (r"原油|石油|wti|crude|oil|cl=/?f", "CL=F", "WTI 原油期货"),
+    (r"铜|copper|hg=/?f", "HG=F", "铜期货"),
+    (r"vix|恐慌", "^VIX", "VIX 波动率指数"),
+)
+CFTC_COMMODITY_PATTERNS = (
+    (r"黄金|gold|xau|gc=/?f", "GOLD"),
+    (r"白银|silver|xag|si=/?f", "SILVER"),
+    (r"原油|石油|wti|crude|oil|cl=/?f|brent|布伦特|bz=/?f", "CRUDE"),
+    (r"铜|copper|hg=/?f", "COPPER"),
+)
+
+
+_HTTP_USER_AGENT = "Mozilla/5.0 (compatible; KronosFinceptLab/10.5; +https://github.com/DDDFXYqiming/KronosFinceptLab)"
+
+
+def _encode_params(url: str, params: dict[str, Any] | None) -> str:
+    if not params:
+        return url
+    query = urllib.parse.urlencode({key: value for key, value in params.items() if value is not None})
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{query}"
+
+
+def _request_headers(accept: str) -> dict[str, str]:
+    return {
+        "Accept": accept,
+        "User-Agent": _HTTP_USER_AGENT,
+        "Connection": "close",
+    }
+
+
+def _request(url: str, *, params: dict[str, Any] | None = None, accept: str = "application/json") -> urllib.request.Request:
+    return urllib.request.Request(
+        _encode_params(url, params),
+        headers=_request_headers(accept),
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+
+
+def _get_json(url: str, *, params: dict[str, Any] | None = None, timeout: int = 8) -> Any:
+    with urllib.request.urlopen(_request(url, params=params), timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _get_text(url: str, *, params: dict[str, Any] | None = None, timeout: int = 8) -> str:
+    full_url = _encode_params(url, params)
+    accept = "text/csv,text/plain,*/*"
+    try:
+        import requests  # type: ignore
+    except Exception:
+        with urllib.request.urlopen(_request(url, params=params, accept=accept), timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
+
+    response = requests.get(full_url, headers=_request_headers(accept), timeout=timeout)
+    response.raise_for_status()
+    return str(response.text)
 
 
 def _number(value: Any) -> float | None:
@@ -44,6 +99,76 @@ def _number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _query_text(query: MacroQuery) -> str:
+    parts = [query.question or "", query.market or "", " ".join(query.symbols or ())]
+    return " ".join(part for part in parts if part).lower()
+
+
+def _infer_yahoo_symbol(query: MacroQuery, *, default: str = "SPY") -> tuple[str, str]:
+    if query.symbols:
+        raw_symbol = str(query.symbols[0]).strip()
+        text = raw_symbol.lower()
+        for pattern, symbol, label in YAHOO_ASSET_SYMBOLS:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                return symbol, label
+        return raw_symbol.upper(), raw_symbol.upper()
+    text = _query_text(query)
+    for pattern, symbol, label in YAHOO_ASSET_SYMBOLS:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return symbol, label
+    return default, default
+
+
+def _infer_cftc_commodity(query: MacroQuery, *, default: str = "GOLD") -> str:
+    text = _query_text(query)
+    for pattern, commodity in CFTC_COMMODITY_PATTERNS:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return commodity
+    return default
+
+
+def _soql_like(value: str) -> str:
+    return value.upper().replace("'", "''")
+
+
+def _date_prefix(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text[:10] if text else None
+
+
+def _row_number(row: dict[str, Any], *keys: str) -> float | None:
+    normalized = {str(key).strip().lower(): value for key, value in row.items()}
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            value = normalized.get(key.strip().lower())
+        number = _number(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _latest_curve_row(year: int, curve_kind: str, *, timeout: int | float = 8) -> dict[str, Any] | None:
+    curve_type = TREASURY_CURVE_TYPES[curve_kind]
+    text = _get_text(f"{TREASURY_RATES_CSV_URL}/{year}/all", params={"type": curve_type}, timeout=timeout)
+    import csv
+    from io import StringIO
+
+    reader = csv.DictReader(StringIO(text))
+    for row in reader:
+        if row and row.get("Date"):
+            return dict(row)
+    return None
+
+
+def _primary_cot_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    first_date = _date_prefix(rows[0].get("report_date_as_yyyy_mm_dd"))
+    candidates = [row for row in rows if _date_prefix(row.get("report_date_as_yyyy_mm_dd")) == first_date] or rows[:1]
+    return max(candidates, key=lambda row: _row_number(row, "open_interest_all") or 0.0)
 
 
 def _signal(
@@ -141,35 +266,92 @@ class KalshiProvider(MacroProvider):
 class USTreasuryProvider(MacroProvider):
     provider_id = "us_treasury"
     display_name = "U.S. Treasury"
-    capabilities = ("yield_curve", "rates")
+    capabilities = ("yield_curve", "rates", "real_yields", "breakeven_inflation")
+
+    def _fetch_curve_rows(self, year: int, *, timeout_seconds: float) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, str]]:
+        errors: dict[str, str] = {}
+        rows: dict[str, dict[str, Any] | None] = {
+            "nominal": None,
+            "real": None,
+        }
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        futures = {
+            executor.submit(_latest_curve_row, year, curve_type, timeout=timeout_seconds): curve_type
+            for curve_type in rows
+        }
+        try:
+            done, pending = concurrent.futures.wait(
+                futures.keys(),
+                timeout=timeout_seconds,
+                return_when=concurrent.futures.ALL_COMPLETED,
+            )
+            for future in done:
+                curve_type = futures[future]
+                try:
+                    rows[curve_type] = future.result(timeout=0)
+                except Exception as exc:
+                    errors[curve_type] = str(exc)
+            for future in pending:
+                curve_type = futures[future]
+                errors[curve_type] = f"timeout while fetching {curve_type} curve after {timeout_seconds:g}s"
+                future.cancel()
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        return rows["nominal"], rows["real"], errors
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         year = date.today().year
-        url = f"https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/{year}/all"
-        text = urllib.request.urlopen(url, timeout=8).read().decode("utf-8", errors="replace")
-        import csv
-        from io import StringIO
+        nominal_row, real_row, errors = self._fetch_curve_rows(year, timeout_seconds=12.0)
 
-        reader = csv.DictReader(StringIO(text))
-        latest = next(reader, None)
-        if not latest:
-            return []
-        ten_year = _number(latest.get("10 Yr") or latest.get("10 YR"))
-        two_year = _number(latest.get("2 Yr") or latest.get("2 YR"))
-        spread = (ten_year - two_year) if ten_year is not None and two_year is not None else None
-        return [
-            _signal(
-                source=self.provider_id,
-                signal_type="yield_curve_10y_2y_spread",
-                value=spread,
-                interpretation="美国 10Y-2Y 国债收益率曲线斜率，负值通常提示衰退定价或货币政策压力。",
-                time_horizon="medium",
-                confidence=0.72 if spread is not None else 0.4,
-                observed_at=latest.get("Date"),
-                source_url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
-                metadata={"10y": ten_year, "2y": two_year},
+        signals: list[MacroSignal] = []
+        nominal_10y = _row_number(nominal_row or {}, "10 Yr", "10 YR", "10Y")
+        nominal_2y = _row_number(nominal_row or {}, "2 Yr", "2 YR", "2Y")
+        real_10y = _row_number(real_row or {}, "10 Yr", "10 YR", "10Y")
+        spread = round(nominal_10y - nominal_2y, 4) if nominal_10y is not None and nominal_2y is not None else None
+        if nominal_row:
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="yield_curve_10y_2y_spread",
+                    value=spread,
+                    interpretation="美国 10Y-2Y 名义国债收益率曲线斜率，负值通常提示衰退定价或货币政策压力。",
+                    time_horizon="medium",
+                    confidence=0.72 if spread is not None else 0.4,
+                    observed_at=str(nominal_row.get("Date") or ""),
+                    source_url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+                    metadata={"10y": nominal_10y, "2y": nominal_2y, "curve_kind": "nominal", "degraded_errors": errors},
+                )
             )
-        ]
+        if real_row:
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="real_yield_10y",
+                    value=real_10y,
+                    interpretation="美国 10Y TIPS 实际收益率，黄金通常对实际利率上行承压、对实际利率下行受益。",
+                    time_horizon="medium",
+                    confidence=0.74 if real_10y is not None else 0.42,
+                    observed_at=str(real_row.get("Date") or ""),
+                    source_url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+                    metadata={"10y_real": real_10y, "curve_kind": "real", "degraded_errors": errors},
+                )
+            )
+        if nominal_10y is not None and real_10y is not None:
+            breakeven = round(nominal_10y - real_10y, 4)
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="breakeven_10y",
+                    value=breakeven,
+                    interpretation="美国 10Y 盈亏平衡通胀率，由名义 10Y 收益率减实际 10Y 收益率得到，反映长期通胀预期。",
+                    time_horizon="medium",
+                    confidence=0.7,
+                    observed_at=str((real_row or nominal_row or {}).get("Date") or ""),
+                    source_url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+                    metadata={"10y_nominal": nominal_10y, "10y_real": real_10y, "degraded_errors": errors},
+                )
+            )
+        return signals
 
 
 class CftcCotProvider(MacroProvider):
@@ -178,27 +360,46 @@ class CftcCotProvider(MacroProvider):
     capabilities = ("futures_positioning", "institutional_flow")
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        commodity = _infer_cftc_commodity(query)
         payload = _get_json(
-            "https://publicreporting.cftc.gov/resource/6dca-aqww.json",
-            params={"$limit": 1, "$order": "report_date_as_yyyy_mm_dd DESC", "commodity_name": "GOLD"},
+            CFTC_SODA_URL,
+            params={
+                "$limit": max(1, min(max(query.limit, 5), 20)),
+                "$order": "report_date_as_yyyy_mm_dd DESC",
+                "$where": f"commodity_name like '%{_soql_like(commodity)}%'",
+            },
         )
-        row = payload[0] if isinstance(payload, list) and payload else None
+        rows = [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
+        row = _primary_cot_row(rows)
         if not isinstance(row, dict):
             return []
-        long_value = _number(row.get("m_money_positions_long_all"))
-        short_value = _number(row.get("m_money_positions_short_all"))
-        net = (long_value - short_value) if long_value is not None and short_value is not None else None
+        long_value = _row_number(row, "m_money_positions_long_all")
+        short_value = _row_number(row, "m_money_positions_short_all")
+        prod_long = _row_number(row, "prod_merc_positions_long_all")
+        prod_short = _row_number(row, "prod_merc_positions_short_all")
+        open_interest = _row_number(row, "open_interest_all")
+        net = round(long_value - short_value, 4) if long_value is not None and short_value is not None else None
+        commercial_net = round(prod_long - prod_short, 4) if prod_long is not None and prod_short is not None else None
+        observed_at = _date_prefix(row.get("report_date_as_yyyy_mm_dd"))
         return [
             _signal(
                 source=self.provider_id,
                 signal_type="managed_money_net_position",
                 value=net,
-                interpretation="CFTC 管理基金黄金净仓位，代表期货市场趋势资金方向。",
+                interpretation="CFTC 管理基金黄金/商品净仓位，代表期货市场趋势资金方向。",
                 time_horizon="medium",
-                confidence=0.64 if net is not None else 0.4,
-                observed_at=row.get("report_date_as_yyyy_mm_dd"),
+                confidence=0.66 if net is not None else 0.4,
+                observed_at=observed_at,
                 source_url="https://publicreporting.cftc.gov/",
-                metadata={"commodity": row.get("commodity_name"), "long": long_value, "short": short_value},
+                metadata={
+                    "commodity_query": commodity,
+                    "commodity": row.get("commodity_name"),
+                    "market_name": row.get("market_and_exchange_names"),
+                    "long": long_value,
+                    "short": short_value,
+                    "open_interest": open_interest,
+                    "commercial_net": commercial_net,
+                },
             )
         ]
 
@@ -405,8 +606,8 @@ class YahooPriceProvider(MacroProvider):
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         yf = self._load_yfinance()
-        symbol = query.symbols[0] if query.symbols else "SPY"
-        if yf is None:
+        symbol, label = _infer_yahoo_symbol(query)
+        if yf is None or not symbol:
             return []
         history = yf.Ticker(symbol).history(period="1mo")
         if history is None or getattr(history, "empty", True):
@@ -414,17 +615,17 @@ class YahooPriceProvider(MacroProvider):
         close = history["Close"]
         latest = float(close.iloc[-1])
         first = float(close.iloc[0])
-        change = (latest / first - 1.0) if first else None
+        change = round(latest / first - 1.0, 6) if first else None
         return [
             _signal(
                 source=self.provider_id,
                 signal_type="price_trend_1m",
                 value=change,
-                interpretation=f"{symbol} 最近 1 个月价格趋势。",
+                interpretation=f"{label}（{symbol}）最近 1 个月价格趋势。",
                 time_horizon="short",
-                confidence=0.62 if change is not None else 0.4,
+                confidence=0.64 if change is not None else 0.4,
                 source_url="https://finance.yahoo.com/",
-                metadata={"symbol": symbol, "latest": latest, "first": first},
+                metadata={"symbol": symbol, "label": label, "latest": latest, "first": first},
             )
         ]
 

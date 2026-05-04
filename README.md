@@ -33,11 +33,11 @@
 
 ## Current status
 
-Version: v10.5.2
+Version: v10.5.3
 
-V10 已推进到 v10.5.2：在 v10.5 的 Digital Oracle 概率报告基础上，修复移动端导航与卡片适配，并优化 Zeabur 单容器内的 Kronos-base 模型复用、预热和多标的批量预测。
+V10 已推进到 v10.5.3：在 v10.5.2 的 Kronos-base 单模型性能优化基础上，修复黄金宏观数据源链路，黄金问题会直接使用 GC=F、CFTC 黄金持仓和美国 10Y 实际利率/盈亏平衡通胀信号，不再用 SPY 单一代理信号冒充黄金分析。
 
-宏观数据入口由 `MacroDataManager` 统一调度。
+宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与错误留痕。
 
 ## 三端能力对照
 

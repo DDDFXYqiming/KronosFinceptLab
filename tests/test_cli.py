@@ -74,7 +74,8 @@ class TestForecastCommand:
     def test_forecast_missing_symbol(self, runner):
         result = runner.invoke(cli, ["forecast"])
         assert result.exit_code != 0
-        assert "Error" in result.stderr or "Error" in result.output or "required" in result.stderr.lower()
+        combined_output = result.output
+        assert "Error" in combined_output or "Missing option" in combined_output or "required" in combined_output.lower()
 
     def test_forecast_dry_run_json(self, runner):
         """Test forecast with --input (pre-built JSON) and --dry-run."""
