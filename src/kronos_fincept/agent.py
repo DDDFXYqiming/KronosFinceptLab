@@ -157,6 +157,63 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "deribit",
     }
 )
+MACRO_REQUIRED_DIMENSION_COUNT = 3
+MACRO_DIMENSION_LABELS: dict[str, str] = {
+    "prediction_market": "预测市场",
+    "rates": "利率/收益率",
+    "positioning": "持仓",
+    "crypto_derivatives": "加密衍生品",
+    "equity_options": "权益期权",
+    "official_macro": "官方宏观",
+    "market_price": "市场价格",
+    "sentiment_news": "情绪/新闻",
+    "filings": "公司披露",
+}
+MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
+    "polymarket": "prediction_market",
+    "kalshi": "prediction_market",
+    "us_treasury": "rates",
+    "cftc_cot": "positioning",
+    "coingecko": "market_price",
+    "edgar": "filings",
+    "bis": "official_macro",
+    "worldbank": "official_macro",
+    "yfinance_options": "equity_options",
+    "fear_greed": "sentiment_news",
+    "cme_fedwatch": "rates",
+    "web_search": "sentiment_news",
+    "yahoo_price": "market_price",
+    "deribit": "crypto_derivatives",
+}
+MACRO_SIGNAL_DIMENSION_HINTS: tuple[tuple[str, str], ...] = (
+    ("filing", "filings"),
+    ("sec_", "filings"),
+    ("fedwatch", "rates"),
+    ("fomc", "rates"),
+    ("treasury", "rates"),
+    ("yield", "rates"),
+    ("rate", "rates"),
+    ("cot_", "positioning"),
+    ("position", "positioning"),
+    ("deribit", "crypto_derivatives"),
+    ("futures_basis", "crypto_derivatives"),
+    ("crypto", "crypto_derivatives"),
+    ("options_", "equity_options"),
+    ("iv_", "equity_options"),
+    ("skew", "equity_options"),
+    ("max_pain", "equity_options"),
+    ("bis_", "official_macro"),
+    ("worldbank", "official_macro"),
+    ("macro", "official_macro"),
+    ("price", "market_price"),
+    ("trend", "market_price"),
+    ("sentiment", "sentiment_news"),
+    ("fear_greed", "sentiment_news"),
+    ("web_", "sentiment_news"),
+    ("news", "sentiment_news"),
+    ("prediction_market", "prediction_market"),
+    ("probability", "prediction_market"),
+)
 
 
 def _active_kronos_model_id() -> str:
@@ -2095,6 +2152,7 @@ def _build_macro_context(
             "signals": [],
             "provider_results": {},
             "errors": {"macro_signal": error_summary},
+            "dimension_coverage": _macro_dimension_coverage([], {}),
             "policy": "provider_outputs_are_untrusted_research_data",
         }
         return context, AgentToolCall(
@@ -2112,6 +2170,7 @@ def _macro_context_from_gather(
     result: MacroGatherResult,
 ) -> dict[str, Any]:
     payload = result.to_dict()
+    dimension_coverage = _macro_dimension_coverage(payload["signals"], payload["provider_results"])
     return {
         "question": question,
         "selected_provider_ids": provider_ids,
@@ -2119,6 +2178,7 @@ def _macro_context_from_gather(
         "provider_results": payload["provider_results"],
         "errors": payload["errors"],
         "ok": payload["ok"],
+        "dimension_coverage": dimension_coverage,
         "policy": "provider_outputs_are_untrusted_research_data",
         "required_report_shape": [
             "信号来源表格",
@@ -2128,6 +2188,74 @@ def _macro_context_from_gather(
             "场景分析",
         ],
     }
+
+
+def _macro_signal_dimension(signal: dict[str, Any]) -> str:
+    source = str(signal.get("source") or "").strip().lower()
+    signal_type = str(signal.get("signal_type") or "").strip().lower()
+    metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+    explicit_dimension = str(metadata.get("dimension") or metadata.get("signal_dimension") or "").strip().lower()
+    if explicit_dimension in MACRO_DIMENSION_LABELS:
+        return explicit_dimension
+    combined = f"{source} {signal_type}"
+    for needle, dimension in MACRO_SIGNAL_DIMENSION_HINTS:
+        if needle in combined:
+            return dimension
+    return MACRO_PROVIDER_DIMENSIONS.get(source, "official_macro")
+
+
+def _macro_dimension_coverage(
+    signals: list[dict[str, Any]],
+    provider_results: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    sources: dict[str, list[str]] = {}
+    for signal in signals:
+        if not isinstance(signal, dict):
+            continue
+        dimension = _macro_signal_dimension(signal)
+        counts[dimension] = counts.get(dimension, 0) + 1
+        source = str(signal.get("source") or "").strip()
+        if source and source not in sources.setdefault(dimension, []):
+            sources[dimension].append(source)
+
+    dimensions = sorted(counts)
+    missing_dimensions = [dimension for dimension in MACRO_DIMENSION_LABELS if dimension not in counts]
+    provider_status_counts: dict[str, int] = {}
+    for result in (provider_results or {}).values():
+        if not isinstance(result, dict):
+            continue
+        status = str(result.get("status") or "unknown")
+        provider_status_counts[status] = provider_status_counts.get(status, 0) + 1
+
+    dimension_count = len(dimensions)
+    sufficient = dimension_count >= MACRO_REQUIRED_DIMENSION_COUNT
+    return {
+        "required_dimension_count": MACRO_REQUIRED_DIMENSION_COUNT,
+        "dimension_count": dimension_count,
+        "sufficient_evidence": sufficient,
+        "dimensions": dimensions,
+        "dimension_labels": [MACRO_DIMENSION_LABELS.get(item, item) for item in dimensions],
+        "dimension_counts": counts,
+        "dimension_sources": sources,
+        "missing_dimensions": missing_dimensions,
+        "missing_dimension_labels": [MACRO_DIMENSION_LABELS.get(item, item) for item in missing_dimensions],
+        "provider_status_counts": provider_status_counts,
+        "confidence_cap": 0.45 if not sufficient else 0.78,
+    }
+
+
+def _macro_dimension_coverage_from_context(
+    macro_context: dict[str, Any],
+    signals: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    existing = macro_context.get("dimension_coverage")
+    if isinstance(existing, dict) and "sufficient_evidence" in existing:
+        return existing
+    provider_results = macro_context.get("provider_results")
+    if not isinstance(provider_results, dict):
+        provider_results = {}
+    return _macro_dimension_coverage(signals or _normalize_macro_signals(macro_context.get("signals")), provider_results)
 
 
 def _build_research_queries(item: ResolvedSymbol, question: str, *, max_queries: int = 3) -> list[str]:
@@ -2790,7 +2918,7 @@ conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties,
 macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals。
 macro_signals 为数组，每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
 cross_validation 和 contradictions 合起来视为“信号一致性评估”区块：前者写共振信号，后者写矛盾信号及原因。
-probability_scenarios 为数组，每项包含 scenario, probability, basis。请基于至少 3 个独立宏观维度做交叉验证；不足 3 个时明确说明缺口，不要编造。概率总和应接近 1。
+probability_scenarios 为数组，每项包含 scenario, probability, basis。必须读取 trusted_project_context.macro.dimension_coverage；只有 sufficient_evidence=true 才能输出高置信度方向判断。少于 3 个独立宏观维度时必须明确说明缺口，不要编造，confidence 不得超过 0.45，recommendation 使用“观察”或“需更多证据”。概率总和应接近 1。
 monitoring_signals 为数组，每项包含 signal, current_value, threshold, meaning；至少给出 3 条可操作监控项（不足时说明原因）。
 asset_reports: [
   {{
@@ -2937,19 +3065,39 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
     provider_ids = macro_context.get("selected_provider_ids") or []
     signal_count = len(signals)
     errors = macro_context.get("errors") or {}
+    coverage = _macro_dimension_coverage_from_context(macro_context, signals)
+    dimension_labels = coverage.get("dimension_labels") or []
+    dimension_count = int(coverage.get("dimension_count") or 0)
+    required_dimensions = int(coverage.get("required_dimension_count") or MACRO_REQUIRED_DIMENSION_COUNT)
+    sufficient_evidence = bool(coverage.get("sufficient_evidence"))
     top_sources = ", ".join(str(item.get("source")) for item in signals[:5]) if signals else "无可用信号"
-    if signal_count:
+    if signal_count and sufficient_evidence:
         conclusion = f"已从 {len(provider_ids)} 个宏观 provider 获取 {signal_count} 条信号，主要来源：{top_sources}。"
-        cross_validation = "已按预测市场、利率/收益率、持仓、情绪或衍生品等维度进行交叉校验；请优先关注多个来源同向的信号。"
+        cross_validation = (
+            f"已覆盖 {dimension_count}/{required_dimensions} 类独立宏观维度"
+            f"（{', '.join(dimension_labels)}），可进行交叉校验；请优先关注多个来源同向的信号。"
+        )
         contradictions = "如不同 provider 方向不一致，应以交易型数据优先，并降低结论置信度。"
         confidence = min(0.72, 0.45 + signal_count * 0.04)
+    elif signal_count:
+        conclusion = (
+            f"已从 {len(provider_ids)} 个宏观 provider 获取 {signal_count} 条信号，但仅覆盖 "
+            f"{dimension_count}/{required_dimensions} 类独立宏观维度，证据不足，不能给出高置信度强结论。"
+        )
+        cross_validation = (
+            f"交叉验证不足：当前维度为 {', '.join(dimension_labels) if dimension_labels else '无'}；"
+            f"需要至少 {required_dimensions} 类独立信号维度。"
+        )
+        contradictions = "证据维度不足时，任何单一 provider 的方向都只能视为研究线索，不能视为已验证结论。"
+        confidence = min(float(coverage.get("confidence_cap") or 0.45), 0.3 + signal_count * 0.03)
     else:
         conclusion = "宏观 provider 暂未返回可用信号，不能给出高置信度宏观判断。"
         cross_validation = "缺少至少 3 个独立宏观维度，交叉验证不足。"
         contradictions = "无可比较信号；请检查 provider 可用性、网络和可选 API 配置。"
         confidence = 0.25
 
-    return _normalize_report(
+    return _apply_macro_evidence_guard(
+        _normalize_report(
         {
             "conclusion": conclusion,
             "short_term_prediction": "宏观问题不直接调用 Kronos K 线预测；本结论来自宏观 provider 与 DeepSeek/本地模板汇总。",
@@ -2967,7 +3115,10 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
             "contradictions": contradictions,
             "probability_scenarios": _default_probability_scenarios(signals),
             "monitoring_signals": _default_monitoring_signals(signals, errors),
+            "macro_evidence": coverage,
         }
+        ),
+        macro_context,
     )
 
 
@@ -2984,7 +3135,31 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
     ]:
         if not merged.get(key):
             merged[key] = fallback.get(key)
-    return _normalize_report(merged)
+    merged.setdefault("macro_evidence", fallback.get("macro_evidence"))
+    return _apply_macro_evidence_guard(_normalize_report(merged), macro_context)
+
+
+def _apply_macro_evidence_guard(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
+    coverage = _macro_dimension_coverage_from_context(macro_context, _normalize_macro_signals(report.get("macro_signals")))
+    report["macro_evidence"] = coverage
+    if coverage.get("sufficient_evidence"):
+        return report
+
+    dimension_count = int(coverage.get("dimension_count") or 0)
+    required_dimensions = int(coverage.get("required_dimension_count") or MACRO_REQUIRED_DIMENSION_COUNT)
+    dimension_labels = coverage.get("dimension_labels") or []
+    cap = float(coverage.get("confidence_cap") or 0.45)
+    warning = (
+        f"宏观证据不足：当前只覆盖 {dimension_count}/{required_dimensions} 类独立信号维度"
+        f"（{', '.join(dimension_labels) if dimension_labels else '无'}），不能给出高置信度强结论。"
+    )
+    report["confidence"] = min(float(report.get("confidence") or 0.0), cap)
+    if str(report.get("recommendation") or "") in {"买入", "强烈买入", "增持"}:
+        report["recommendation"] = "观察"
+    for key in ("macro_analysis", "cross_validation", "uncertainties"):
+        value = str(report.get(key) or "").strip()
+        report[key] = f"{value}\n{warning}".strip() if warning not in value else value
+    return report
 
 
 def _normalize_macro_signals(value: Any) -> list[dict[str, Any]]:
@@ -3146,6 +3321,8 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     monitoring_signals = _normalize_monitoring_signals(payload.get("monitoring_signals"))
     if monitoring_signals:
         normalized["monitoring_signals"] = monitoring_signals
+    if isinstance(payload.get("macro_evidence"), dict):
+        normalized["macro_evidence"] = payload["macro_evidence"]
     return normalized
 
 

@@ -33,9 +33,9 @@
 
 ## Current status
 
-Version: v10.8.2
+Version: v10.8.3
 
-V10 已推进到 v10.8.2：分析页与宏观洞察页进入 OpenRouter Free 优先降级模式。配置 `OPENROUTER_API_KEY` 后，最终报告汇总会先调用 `OPENROUTER_MODEL=openrouter/free`，失败后自动回退到 DeepSeek，再失败才使用本地结构化模板；线上 Web 入口对 OpenRouter/DeepSeek 调用增加墙钟超时预算，并对 OpenRouter Free 使用无 system/developer role 的兼容请求格式，避免免费路由模型拒绝开发者指令。v10.8.1 补齐 Digital Oracle 空 provider 的真实接入路径；v10.8.2 扩展 YFinance Options 与 Deribit，输出 ATM IV、skew、期限结构、put/call、max pain 和 BTC/ETH futures basis 等真实结构化衍生品信号。
+V10 已推进到 v10.8.3：分析页与宏观洞察页进入 OpenRouter Free 优先降级模式。配置 `OPENROUTER_API_KEY` 后，最终报告汇总会先调用 `OPENROUTER_MODEL=openrouter/free`，失败后自动回退到 DeepSeek，再失败才使用本地结构化模板；线上 Web 入口对 OpenRouter/DeepSeek 调用增加墙钟超时预算，并对 OpenRouter Free 使用无 system/developer role 的兼容请求格式，避免免费路由模型拒绝开发者指令。v10.8 已补齐 Digital Oracle 空 provider、扩展期权/衍生品信号，并新增宏观证据维度校验：少于 3 类独立信号维度时自动降低置信度和结论强度。
 
 宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与黄金/商品资产映射。Agent 分析页在显式宏观问题中仍会融合宏观信号，普通 A 股交易问法优先保障响应稳定性；部署排障时可直接用健康接口确认运行版本。
 
