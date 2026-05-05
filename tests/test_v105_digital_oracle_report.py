@@ -167,6 +167,7 @@ def test_v105_macro_report_contains_probability_consistency_and_monitoring(monke
             return MacroGatherResult(signals=signals, provider_results=provider_results, errors={})
 
     monkeypatch.setattr(agent, "_create_macro_data_manager", lambda: FakeMacroManager())
+    monkeypatch.setattr(agent, "_call_deepseek_macro_router", lambda *args, **kwargs: None)
     monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
 
     result = agent.analyze_macro_question("WW3 概率和黄金该不该买")

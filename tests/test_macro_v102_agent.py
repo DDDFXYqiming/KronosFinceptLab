@@ -59,6 +59,7 @@ def _patch_macro_tools(monkeypatch):
 
     manager = FakeMacroManager()
     monkeypatch.setattr(agent, "_create_macro_data_manager", lambda: manager)
+    monkeypatch.setattr(agent, "_call_deepseek_macro_router", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         agent,
         "_call_deepseek_report",

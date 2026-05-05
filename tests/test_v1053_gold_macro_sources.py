@@ -230,6 +230,7 @@ def test_v1053_agent_gold_macro_report_keeps_direct_gold_sources(monkeypatch) ->
         )
 
     monkeypatch.setattr(agent_module, "_create_macro_data_manager", lambda: FakeMacroManager())
+    monkeypatch.setattr(agent_module, "_call_deepseek_macro_router", lambda *args, **kwargs: None)
     monkeypatch.setattr(agent_module, "_generate_report", fake_generate_report)
 
     result = agent_module.analyze_macro_question(
