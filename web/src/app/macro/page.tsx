@@ -10,12 +10,14 @@ import { useSessionState } from "@/lib/useSessionState";
 import type {
   AgentAnalyzeResponse,
   AgentToolCall,
+  MacroEvidenceCoverage,
   MacroMonitoringSignal,
   MacroProbabilityScenario,
+  MacroProviderResultView,
   MacroSignal,
 } from "@/types/api";
 
-const VERSION = "v10.8.3";
+const VERSION = "v10.8.4";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 const EXAMPLES = [
@@ -125,6 +127,178 @@ function normalizeScenarios(value: MacroProbabilityScenario[] | undefined): Macr
 
 function normalizeMonitoring(value: MacroMonitoringSignal[] | undefined): MacroMonitoringSignal[] {
   return Array.isArray(value) ? value : [];
+}
+
+function getMacroToolCall(result: AgentAnalyzeResponse | null): AgentToolCall | undefined {
+  return result?.tool_calls?.find((call) => call.name === "macro_signal");
+}
+
+function getMacroProviderRows(result: AgentAnalyzeResponse | null): MacroProviderResultView[] {
+  const raw = getMacroToolCall(result)?.metadata?.provider_results;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  return Object.entries(raw as Record<string, MacroProviderResultView>).map(([providerId, row]) => ({
+    provider_id: row?.provider_id || providerId,
+    status: row?.status || "unknown",
+    signals: normalizeSignals(row?.signals),
+    elapsed_ms: row?.elapsed_ms,
+    error: row?.error,
+    metadata: row?.metadata || {},
+  }));
+}
+
+function signalDataQuality(signal: MacroSignal): string {
+  const metadata = signal.metadata || {};
+  return String(metadata.data_quality || metadata.source_quality || metadata.provider_quality || "-");
+}
+
+function signalFreshness(signal: MacroSignal): string {
+  const metadata = signal.metadata || {};
+  return String(
+    signal.observed_at ||
+      metadata.source_time ||
+      metadata.updated_at ||
+      metadata.update_time ||
+      metadata.expiration ||
+      "-"
+  );
+}
+
+function providerReason(row: MacroProviderResultView): string {
+  if (row.error) return row.error;
+  const metadata = row.metadata || {};
+  return String(metadata.reason || metadata.message || (row.signals?.length ? "returned signals" : "-"));
+}
+
+function MacroDataQuality({
+  result,
+  signals,
+}: {
+  result: AgentAnalyzeResponse;
+  signals: MacroSignal[];
+}) {
+  const evidence: MacroEvidenceCoverage | undefined = result.report?.macro_evidence;
+  const macroCall = getMacroToolCall(result);
+  const providerRows = getMacroProviderRows(result);
+  const statusCounts = evidence?.provider_status_counts || {};
+  const providerTotal =
+    providerRows.length ||
+    Object.values(statusCounts).reduce((sum, count) => sum + Number(count || 0), 0) ||
+    Number(macroCall?.metadata?.provider_ids?.length || 0);
+  const successCount = Number(statusCounts.completed || 0);
+  const emptyCount = Number(statusCounts.empty || 0);
+  const degradedCount =
+    Number(statusCounts.failed || 0) + Number(statusCounts.skipped || 0) + Number(statusCounts.unavailable || 0);
+  const dimensionLabel = evidence
+    ? `${evidence.dimension_count}/${evidence.required_dimension_count}`
+    : "-";
+  const evidenceText = evidence?.sufficient_evidence ? "满足交叉验证" : "证据不足";
+
+  return (
+    <Card>
+      <CardTitle>数据质量与覆盖率</CardTitle>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border border-border bg-background p-3">
+          <p className="text-xs text-muted-foreground">Provider 覆盖</p>
+          <p className="mt-1 font-mono text-2xl text-foreground">{providerTotal}</p>
+          <p className="mt-1 text-xs text-muted-foreground">成功 {successCount} · 空结果 {emptyCount} · 降级 {degradedCount}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-background p-3">
+          <p className="text-xs text-muted-foreground">有效信号</p>
+          <p className="mt-1 font-mono text-2xl text-foreground">{signals.length}</p>
+          <p className="mt-1 text-xs text-muted-foreground">按来源输出真实结构化信号</p>
+        </div>
+        <div className="rounded-lg border border-border bg-background p-3">
+          <p className="text-xs text-muted-foreground">证据维度</p>
+          <p className={`mt-1 font-mono text-2xl ${evidence?.sufficient_evidence ? "text-green-700" : "text-amber-700"}`}>
+            {dimensionLabel}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{evidenceText}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-background p-3">
+          <p className="text-xs text-muted-foreground">更新时间</p>
+          <p className="mt-1 font-mono text-sm text-foreground">{result.timestamp.slice(0, 19)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">本轮请求完成时间</p>
+        </div>
+      </div>
+      {evidence?.dimension_labels?.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {evidence.dimension_labels.map((label) => (
+            <span key={label} className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground">
+              {label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function ProviderCoverageMatrix({ rows }: { rows: MacroProviderResultView[] }) {
+  if (!rows.length) {
+    return (
+      <Card>
+        <CardTitle>Provider 覆盖矩阵</CardTitle>
+        <p className="text-sm text-muted-foreground">本轮结果未返回 provider 明细。</p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardTitle>Provider 覆盖矩阵</CardTitle>
+      <div className="space-y-2 md:hidden">
+        {rows.map((row) => (
+          <details key={row.provider_id} className="rounded-lg border border-border bg-background p-3">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span className="font-mono text-sm font-semibold text-foreground">{row.provider_id}</span>
+              <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{statusLabel(row.status)}</span>
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              <span>信号数</span>
+              <span className="text-right font-mono text-foreground">{row.signals?.length || 0}</span>
+              <span>耗时</span>
+              <span className="text-right font-mono text-foreground">{formatElapsedMs(Number(row.elapsed_ms || 0))}</span>
+              <span>原因</span>
+              <span className="text-right text-foreground">{providerReason(row)}</span>
+            </div>
+          </details>
+        ))}
+      </div>
+      <div className="hidden md:block">
+        <div className="table-scroll">
+          <table className="min-w-[56rem] w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-muted-foreground">
+                <th className="py-2 text-left">Provider</th>
+                <th className="py-2 text-left">状态</th>
+                <th className="py-2 text-right">耗时</th>
+                <th className="py-2 text-right">信号数</th>
+                <th className="py-2 text-left">数据质量</th>
+                <th className="py-2 text-left">更新时间</th>
+                <th className="py-2 text-left">失败/降级原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const firstSignal = row.signals?.[0];
+                return (
+                  <tr key={row.provider_id} className="border-b border-border last:border-b-0">
+                    <td className="py-2 font-mono font-semibold text-foreground">{row.provider_id}</td>
+                    <td className="py-2 text-muted-foreground">{statusLabel(row.status)}</td>
+                    <td className="py-2 text-right font-mono text-foreground">{formatElapsedMs(Number(row.elapsed_ms || 0))}</td>
+                    <td className="py-2 text-right font-mono text-foreground">{row.signals?.length || 0}</td>
+                    <td className="py-2 text-muted-foreground">{firstSignal ? signalDataQuality(firstSignal) : "-"}</td>
+                    <td className="py-2 text-muted-foreground">{firstSignal ? signalFreshness(firstSignal) : "-"}</td>
+                    <td className="py-2 text-muted-foreground">{providerReason(row)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 function StepStrip({ result, loading }: { result: AgentAnalyzeResponse | null; loading: boolean }) {
@@ -255,7 +429,36 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
       {Object.entries(grouped).map(([group, groupSignals]) => (
         <div key={group} className="rounded-lg border border-border bg-background p-3">
           <p className="mb-2 text-sm font-semibold text-foreground">{group}</p>
-          <div className="table-scroll">
+          <div className="space-y-2 sm:hidden">
+            {groupSignals.map((signal, index) => (
+              <details key={`${group}-mobile-${signal.source}-${index}`} className="rounded-lg border border-border bg-surface p-3">
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-foreground">{signal.source}</span>
+                    <span className="block text-xs text-muted-foreground">{signal.signal_type}</span>
+                  </span>
+                  <span className="shrink-0 font-mono text-sm font-semibold text-foreground">
+                    {(Math.max(0, Math.min(1, Number(signal.confidence) || 0)) * 100).toFixed(0)}%
+                  </span>
+                </summary>
+                <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                  <p><span className="font-semibold text-foreground">当前值：</span>{formatUnknownValue(signal.value)}</p>
+                  <p><span className="font-semibold text-foreground">解释：</span>{signal.interpretation}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <p><span className="font-semibold text-foreground">期限：</span>{signal.time_horizon || "-"}</p>
+                    <p><span className="font-semibold text-foreground">质量：</span>{signalDataQuality(signal)}</p>
+                    <p className="col-span-2"><span className="font-semibold text-foreground">更新时间：</span>{signalFreshness(signal)}</p>
+                  </div>
+                  {signal.source_url ? (
+                    <a href={signal.source_url} target="_blank" rel="noreferrer" className="inline-flex text-accent hover:underline">
+                      查看来源
+                    </a>
+                  ) : null}
+                </div>
+              </details>
+            ))}
+          </div>
+          <div className="hidden sm:block table-scroll">
             <table className="min-w-[42rem] w-full text-xs sm:min-w-[56rem] sm:text-sm">
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
@@ -265,6 +468,8 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
                   <th className="py-2 text-left">解释</th>
                   <th className="py-2 text-left">期限</th>
                   <th className="py-2 text-right">置信度</th>
+                  <th className="py-2 text-left">数据质量</th>
+                  <th className="py-2 text-left">更新时间</th>
                   <th className="py-2 text-left">链接</th>
                 </tr>
               </thead>
@@ -279,6 +484,8 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
                     <td className="py-1.5 text-right font-mono text-foreground">
                       {(Math.max(0, Math.min(1, Number(signal.confidence) || 0)) * 100).toFixed(0)}%
                     </td>
+                    <td className="py-1.5 text-muted-foreground">{signalDataQuality(signal)}</td>
+                    <td className="py-1.5 text-muted-foreground">{signalFreshness(signal)}</td>
                     <td className="py-1.5 text-muted-foreground">
                       {signal.source_url ? (
                         <a href={signal.source_url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
@@ -434,6 +641,8 @@ export default function MacroPage() {
   const macroSignals = normalizeSignals(report?.macro_signals);
   const scenarios = normalizeScenarios(report?.probability_scenarios);
   const monitoring = normalizeMonitoring(report?.monitoring_signals);
+  const providerRows = getMacroProviderRows(result);
+  const evidence = report?.macro_evidence;
 
   return (
     <div className="page-shell space-y-6">
@@ -536,6 +745,25 @@ export default function MacroPage() {
         <>
           <Card>
             <CardTitle>宏观结论</CardTitle>
+            {evidence && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                  evidence.sufficient_evidence
+                    ? "border-green-200 bg-green-50 text-green-700"
+                    : "border-amber-200 bg-amber-50 text-amber-700"
+                }`}>
+                  {evidence.sufficient_evidence ? "证据满足" : "证据不足"}
+                </span>
+                <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground">
+                  独立维度 {evidence.dimension_count}/{evidence.required_dimension_count}
+                </span>
+                {(evidence.dimension_labels || []).slice(0, 5).map((label) => (
+                  <span key={label} className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">
@@ -569,6 +797,10 @@ export default function MacroPage() {
               </div>
             </div>
           </Card>
+
+          <MacroDataQuality result={result} signals={macroSignals} />
+
+          <ProviderCoverageMatrix rows={providerRows} />
 
           <Card>
             <CardTitle>信号来源（分层）</CardTitle>

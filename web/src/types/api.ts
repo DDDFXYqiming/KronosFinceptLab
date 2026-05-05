@@ -171,6 +171,21 @@ export interface AgentReport {
   contradictions?: string;
   probability_scenarios?: MacroProbabilityScenario[];
   monitoring_signals?: MacroMonitoringSignal[];
+  macro_evidence?: MacroEvidenceCoverage;
+}
+
+export interface MacroEvidenceCoverage {
+  required_dimension_count: number;
+  dimension_count: number;
+  sufficient_evidence: boolean;
+  dimensions: string[];
+  dimension_labels?: string[];
+  dimension_counts?: Record<string, number>;
+  dimension_sources?: Record<string, string[]>;
+  missing_dimensions?: string[];
+  missing_dimension_labels?: string[];
+  provider_status_counts?: Record<string, number>;
+  confidence_cap?: number;
 }
 
 export interface MacroSignal {
@@ -196,6 +211,15 @@ export interface MacroMonitoringSignal {
   current_value: unknown;
   threshold: string;
   meaning: string;
+}
+
+export interface MacroProviderResultView {
+  provider_id: string;
+  status: string;
+  signals?: MacroSignal[];
+  elapsed_ms?: number;
+  error?: string | null;
+  metadata?: Record<string, any>;
 }
 
 export interface AgentAssetResult {

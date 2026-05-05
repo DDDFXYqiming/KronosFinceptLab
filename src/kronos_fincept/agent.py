@@ -2142,6 +2142,8 @@ def _build_macro_context(
                 failed_count=failed_count,
                 skipped_count=skipped_count,
                 errors=context["errors"],
+                provider_results=context.get("provider_results") or {},
+                dimension_coverage=context.get("dimension_coverage") or {},
             ),
         )
     except Exception as exc:
