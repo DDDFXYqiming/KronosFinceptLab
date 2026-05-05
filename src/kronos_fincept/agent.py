@@ -28,7 +28,7 @@ _LAST_REPORT_LLM_METADATA: dict[str, Any] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
 ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 5, "deepseek": 8}
-WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 14}
+WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 10}
 WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 25
 WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 4, "deepseek": 6}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 10
@@ -313,21 +313,18 @@ def _call_structured_llm_json(
     for provider in providers:
         endpoint = _build_chat_completions_url(provider.base_url)
         provider_timeout = _llm_provider_timeout(provider, timeout, provider_timeouts)
-        payload = {
-            "model": provider.model,
-            "messages": messages,
-            **_deepseek_structured_json_options(
-                temperature=temperature,
-                max_tokens=max_tokens,
-                model=provider.model,
-            ),
-        }
+        request_payload = _llm_request_payload(
+            provider,
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
         try:
             response = _post_llm_json_with_wall_timeout(
                 requests,
                 endpoint,
                 headers=_llm_headers(provider),
-                payload=payload,
+                payload=request_payload,
                 timeout=provider_timeout,
             )
             if response.status_code != 200:
@@ -345,7 +342,7 @@ def _call_structured_llm_json(
                 )
                 continue
             try:
-                payload = response.json()
+                response_payload = response.json()
             except ValueError as exc:
                 log_event(
                     logger,
@@ -359,7 +356,7 @@ def _call_structured_llm_json(
                     response_body=str(getattr(response, "text", ""))[:500],
                 )
                 continue
-            content = _deepseek_message_content(payload)
+            content = _deepseek_message_content(response_payload)
             parsed = _extract_json_object(content)
             if not isinstance(parsed, dict) or not parsed:
                 log_event(
@@ -371,7 +368,7 @@ def _call_structured_llm_json(
                     model=provider.model,
                     timeout_seconds=provider_timeout,
                     content_preview=str(content)[:500],
-                    finish_reason=_deepseek_finish_reason(payload),
+                    finish_reason=_deepseek_finish_reason(response_payload),
                 )
                 continue
             return parsed, provider
@@ -389,6 +386,49 @@ def _call_structured_llm_json(
             )
             continue
     return None
+
+
+def _llm_request_payload(
+    provider: LLMChatProvider,
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+) -> dict[str, Any]:
+    if provider.name == "openrouter":
+        return {
+            "model": provider.model,
+            "messages": _openrouter_compatible_messages(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+    return {
+        "model": provider.model,
+        "messages": messages,
+        **_deepseek_structured_json_options(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model=provider.model,
+        ),
+    }
+
+
+def _openrouter_compatible_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Avoid system/developer roles; some OpenRouter Free backends reject them."""
+
+    sections: list[str] = [
+        "You are running inside KronosFinceptLab. Follow all instructions below.",
+        "Return only one valid JSON object. Do not wrap it in Markdown or commentary.",
+    ]
+    for message in messages:
+        role = str(message.get("role") or "user").strip() or "user"
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        label = "Instruction" if role in {"system", "developer"} else "Input"
+        sections.append(f"{label} ({role}):\n{content}")
+    return [{"role": "user", "content": "\n\n".join(sections)}]
 
 
 def _llm_provider_timeout(
@@ -540,7 +580,11 @@ def analyze_investment_question(
             timestamp=now,
         )
 
-    route = classify_agent_request(clean_question, explicit_symbol=symbol, explicit_market=market)
+    web_analysis = _is_web_analysis_context(context)
+    if web_analysis:
+        route = _local_route_decision(clean_question, explicit_symbol=symbol, explicit_market=market)
+    else:
+        route = classify_agent_request(clean_question, explicit_symbol=symbol, explicit_market=market)
     if not route.allowed:
         log_event(
             logger,

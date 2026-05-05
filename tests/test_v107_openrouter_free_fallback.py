@@ -48,6 +48,61 @@ def test_v107_llm_provider_chain_prefers_openrouter_free(monkeypatch):
     assert providers[0].model == "openrouter/free"
 
 
+def test_v107_openrouter_payload_avoids_system_role_and_json_mode():
+    from kronos_fincept import agent
+
+    provider = agent.LLMChatProvider(
+        name="openrouter",
+        display_name="OpenRouter Free",
+        api_key="sk-or-test",
+        base_url="https://openrouter.ai/api/v1",
+        model="openrouter/free",
+    )
+
+    payload = agent._llm_request_payload(
+        provider,
+        [
+            {"role": "system", "content": "系统规则：只输出 JSON。"},
+            {"role": "user", "content": "{\"question\":\"招商银行还能买吗\"}"},
+        ],
+        temperature=0,
+        max_tokens=400,
+    )
+
+    assert payload["messages"] == [
+        {
+            "role": "user",
+            "content": payload["messages"][0]["content"],
+        }
+    ]
+    assert "Instruction (system)" in payload["messages"][0]["content"]
+    assert "Return only one valid JSON object" in payload["messages"][0]["content"]
+    assert "response_format" not in payload
+
+
+def test_v107_deepseek_payload_keeps_structured_json_options():
+    from kronos_fincept import agent
+
+    provider = agent.LLMChatProvider(
+        name="deepseek",
+        display_name="DeepSeek",
+        api_key="sk-deepseek-test",
+        base_url="https://api.deepseek.com/v1",
+        model="deepseek-v4-flash",
+    )
+
+    payload = agent._llm_request_payload(
+        provider,
+        [{"role": "system", "content": "只输出 JSON。"}],
+        temperature=0,
+        max_tokens=400,
+    )
+
+    assert payload["messages"][0]["role"] == "system"
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["thinking"] == {"type": "disabled"}
+
+
 def test_v107_stock_router_falls_back_from_openrouter_to_deepseek(monkeypatch):
     import requests
 
@@ -240,7 +295,7 @@ def test_v107_web_report_uses_short_provider_budgets(monkeypatch):
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [8, 14]
+    assert [call["timeout"] for call in calls] == [8, 10]
 
 
 def test_v107_web_macro_report_uses_tighter_provider_budgets(monkeypatch):
@@ -331,3 +386,59 @@ def test_v107_web_macro_uses_local_route_and_fast_provider_manager(monkeypatch):
     assert result.steps[0].summary.startswith("已通过 local_macro_fallback")
     assert captured["fast_mode"] is True
     assert captured["provider_ids"]
+
+
+def test_v107_web_analysis_uses_local_route_to_avoid_router_latency(monkeypatch):
+    from kronos_fincept import agent
+
+    def fail_router(*args, **kwargs):
+        raise AssertionError("web-analysis should not block on the LLM router")
+
+    def fake_asset_context(item, *, question, dry_run, search_query_limit=3, include_prediction=True):
+        return (
+            {
+                "symbol": item.symbol,
+                "market": item.market,
+                "name": item.name,
+                "market_data": {"current_price": 38.0, "data_points": 40},
+                "risk_metrics": {"volatility": 0.2},
+                "kronos_prediction": {"forecast": [{"close": 38.5}], "model": "NeoQuasar/Kronos-base"},
+            },
+            [],
+        )
+
+    def fake_generate_report(question, context):
+        return (
+            {
+                "conclusion": "Web 分析快速路径完成。",
+                "short_term_prediction": "短期中性。",
+                "technical": "技术面中性。",
+                "fundamentals": "基本面需继续跟踪。",
+                "risk": "风险中等。",
+                "uncertainties": "存在数据时效不确定性。",
+                "recommendation": "持有",
+                "confidence": 0.6,
+                "risk_level": "中",
+                "disclaimer": "仅供研究。",
+            },
+            agent.AgentToolCall(
+                name="deepseek_synthesis",
+                status="fallback",
+                summary="test synthesis skipped",
+                elapsed_ms=1,
+            ),
+        )
+
+    monkeypatch.setattr(agent, "_call_deepseek_router", fail_router)
+    monkeypatch.setattr(agent, "_build_asset_context", fake_asset_context)
+    monkeypatch.setattr(agent, "_generate_report", fake_generate_report)
+
+    result = agent.analyze_investment_question(
+        "帮我看看招商银行现在能不能买",
+        context={"entry": "web-analysis"},
+        dry_run=True,
+    )
+
+    assert result.ok is True
+    assert result.symbol == "600036"
+    assert result.steps[1].summary.startswith("通过 local_fallback")

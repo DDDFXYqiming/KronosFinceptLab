@@ -33,9 +33,9 @@
 
 ## Current status
 
-Version: v10.7.2
+Version: v10.7.3
 
-V10 已推进到 v10.7.2：分析页与宏观洞察页进入 OpenRouter Free 优先降级模式。配置 `OPENROUTER_API_KEY` 后，语义路由和最终报告汇总会先调用 `OPENROUTER_MODEL=openrouter/free`，失败后自动回退到 DeepSeek，再失败才使用本地结构化模板；线上 Web 入口对 OpenRouter/DeepSeek 调用增加墙钟超时预算，宏观页额外使用快速本地路由和短 provider 超时，避免长请求被 Zeabur/Next 代理层断链。
+V10 已推进到 v10.7.3：分析页与宏观洞察页进入 OpenRouter Free 优先降级模式。配置 `OPENROUTER_API_KEY` 后，最终报告汇总会先调用 `OPENROUTER_MODEL=openrouter/free`，失败后自动回退到 DeepSeek，再失败才使用本地结构化模板；线上 Web 入口对 OpenRouter/DeepSeek 调用增加墙钟超时预算，并对 OpenRouter Free 使用无 system/developer role 的兼容请求格式，避免免费路由模型拒绝开发者指令。分析页和宏观页均使用快速本地路由，降低 Zeabur/Next 代理断链概率。
 
 宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与黄金/商品资产映射。Agent 分析页在显式宏观问题中仍会融合宏观信号，普通 A 股交易问法优先保障响应稳定性；部署排障时可直接用健康接口确认运行版本。
 
