@@ -106,12 +106,19 @@ for (const needle of [
   "宏观洞察",
   "queryKeys.macro",
   "macroAnalyze",
+  "macro_provider_coverage",
+  "macro_data_quality",
+  "macro_dimension_coverage",
   "WW3 的概率是多少",
+  "数据质量与覆盖率",
+  "Provider 覆盖矩阵",
   "信号来源（分层）",
   "信号一致性评估",
   "概率估计",
   "待监控信号",
   "auto-cols-[minmax(9.5rem,1fr)]",
+  "sm:hidden",
+  "独立维度",
 ]) {
   assertIncludes(macro, needle, "macro workspace contract");
 }
