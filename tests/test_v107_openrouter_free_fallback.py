@@ -241,3 +241,93 @@ def test_v107_web_report_uses_short_provider_budgets(monkeypatch):
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在 Web 短预算内完成兜底。"
     assert [call["timeout"] for call in calls] == [8, 14]
+
+
+def test_v107_web_macro_report_uses_tighter_provider_budgets(monkeypatch):
+    import requests
+
+    from kronos_fincept import agent
+
+    calls: list[dict] = []
+    monkeypatch.setattr(agent, "settings", _settings())
+
+    def fake_post(url, *, headers, json, timeout):
+        calls.append({"url": url, "json": json, "timeout": timeout})
+        if "openrouter.ai" in url:
+            return FakeResponse(200, {"choices": [{"message": {"content": "not json"}, "finish_reason": "stop"}]})
+        return FakeResponse(
+            200,
+            _chat_payload(
+                {
+                    "conclusion": "DeepSeek 在宏观 Web 短预算内完成兜底。",
+                    "short_term_prediction": "不直接调用 Kronos。",
+                    "technical": "不适用。",
+                    "fundamentals": "不适用。",
+                    "risk": "宏观风险中等。",
+                    "uncertainties": "存在数据源时效不确定性。",
+                    "recommendation": "观察",
+                    "confidence": 0.56,
+                    "risk_level": "中",
+                    "disclaimer": "仅供研究。",
+                }
+            ),
+        )
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    report = agent._call_deepseek_report(
+        "A股现在位置怎么样",
+        {"macro": {"signals": []}, "page_context": {"entry": "web-macro"}},
+    )
+
+    assert report is not None
+    assert report["conclusion"] == "DeepSeek 在宏观 Web 短预算内完成兜底。"
+    assert [call["timeout"] for call in calls] == [4, 6]
+
+
+def test_v107_web_macro_uses_local_route_and_fast_provider_manager(monkeypatch):
+    from kronos_fincept import agent
+    from kronos_fincept.macro import MacroGatherResult, MacroProviderResult, MacroSignal
+
+    captured: dict[str, object] = {}
+
+    def fail_llm_router(*args, **kwargs):
+        raise AssertionError("web-macro should not block on the LLM router")
+
+    class FakeMacroManager:
+        def gather(self, query, *, provider_ids=None):
+            captured["provider_ids"] = list(provider_ids or [])
+            return MacroGatherResult(
+                signals=[
+                    MacroSignal(
+                        source="fear_greed",
+                        signal_type="market_sentiment",
+                        value=48,
+                        interpretation="Web 宏观快速路径返回情绪信号。",
+                        time_horizon="short",
+                        confidence=0.6,
+                    )
+                ],
+                provider_results={
+                    "fear_greed": MacroProviderResult(
+                        provider_id="fear_greed",
+                        status="completed",
+                        signals=[],
+                    )
+                },
+            )
+
+    def fake_create_manager(*, fast_mode=False):
+        captured["fast_mode"] = fast_mode
+        return FakeMacroManager()
+
+    monkeypatch.setattr(agent, "_call_deepseek_macro_router", fail_llm_router)
+    monkeypatch.setattr(agent, "_create_macro_data_manager", fake_create_manager)
+    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
+
+    result = agent.analyze_macro_question("A股现在位置怎么样", context={"entry": "web-macro"})
+
+    assert result.ok is True
+    assert result.steps[0].summary.startswith("已通过 local_macro_fallback")
+    assert captured["fast_mode"] is True
+    assert captured["provider_ids"]

@@ -15,7 +15,7 @@ import type {
   MacroSignal,
 } from "@/types/api";
 
-const VERSION = "v10.7.1";
+const VERSION = "v10.7.2";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 const EXAMPLES = [
@@ -51,6 +51,10 @@ function statusLabel(status: string): string {
     needs_clarification: "需澄清",
   };
   return labels[status] || status;
+}
+
+function isFinishedStepStatus(status: string): boolean {
+  return ["completed", "fallback", "skipped"].includes(status);
 }
 
 function getConfidenceColor(value: number): string {
@@ -133,7 +137,7 @@ function StepStrip({ result, loading }: { result: AgentAnalyzeResponse | null; l
       elapsed_ms: 0,
     }));
 
-  const completed = steps.filter((step) => step.status === "completed").length;
+  const completed = steps.filter((step) => isFinishedStepStatus(step.status)).length;
   const progress = result
     ? completed / Math.max(steps.length, 1)
     : loading
@@ -158,7 +162,7 @@ function StepStrip({ result, loading }: { result: AgentAnalyzeResponse | null; l
         <div className="grid grid-flow-col auto-cols-[minmax(9.5rem,1fr)] gap-2 pb-1 sm:auto-cols-[minmax(12rem,1fr)]">
           {steps.map((step, index) => {
             const failed = ["failed", "blocked"].includes(step.status);
-            const completedStep = step.status === "completed";
+            const completedStep = isFinishedStepStatus(step.status);
             const running = step.status === "running";
             return (
               <div

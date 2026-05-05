@@ -59,6 +59,10 @@ function statusLabel(status: string): string {
   return labels[status] || status;
 }
 
+function isFinishedStepStatus(status: string): boolean {
+  return ["completed", "fallback", "skipped"].includes(status);
+}
+
 function buildEvidenceSummary(result: AgentAnalyzeResponse): string {
   const completed = result.tool_calls
     .filter((call) => ["completed", "fallback", "skipped"].includes(call.status))
@@ -149,7 +153,7 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
       elapsed_ms: index < activeIndex ? (index + 1) * 900 : index === activeIndex ? ((pulseTick % 4) + 1) * 220 : 0,
     }));
 
-  const completedCount = steps.filter((step) => step.status === "completed").length;
+  const completedCount = steps.filter((step) => isFinishedStepStatus(step.status)).length;
   const baseProgress = result
     ? completedCount / Math.max(steps.length, 1)
     : loading
@@ -175,7 +179,7 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
       <div className="table-scroll">
         <div className="grid grid-flow-col auto-cols-[minmax(9.5rem,1fr)] gap-2 pb-1 sm:auto-cols-[minmax(11rem,1fr)]">
           {steps.map((step, index) => {
-            const completed = step.status === "completed";
+            const completed = isFinishedStepStatus(step.status);
             const failed = ["failed", "blocked"].includes(step.status);
             const running = step.status === "running";
             return (

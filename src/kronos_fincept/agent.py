@@ -30,6 +30,10 @@ WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
 ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 5, "deepseek": 8}
 WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 14}
 WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 25
+WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 4, "deepseek": 6}
+WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 10
+WEB_MACRO_TIMEOUT_SECONDS = 8.0
+WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 4.0
 
 
 AGENT_SCOPE_DESCRIPTION = (
@@ -797,12 +801,21 @@ def analyze_macro_question(
     if hard_reason:
         return _rejection_result(question=clean_question, reason=hard_reason, timestamp=now)
 
-    route = classify_macro_request(
-        clean_question,
-        symbols=symbols,
-        market=market,
-        provider_ids=provider_ids,
-    )
+    web_macro = _is_web_macro_context(context)
+    if web_macro:
+        route = _local_macro_route_decision(
+            clean_question,
+            symbols=symbols,
+            market=market,
+            provider_ids=provider_ids,
+        )
+    else:
+        route = classify_macro_request(
+            clean_question,
+            symbols=symbols,
+            market=market,
+            provider_ids=provider_ids,
+        )
     if not route.allowed or route.needs_clarification:
         return _clarification_result(
             question=clean_question,
@@ -849,6 +862,7 @@ def analyze_macro_question(
         symbols=effective_symbols,
         market=effective_market,
         provider_ids=selected_provider_ids,
+        fast_mode=web_macro,
     )
     tool_calls = [macro_call]
     log_event(
@@ -1409,6 +1423,10 @@ def _is_web_llm_context(context: dict[str, Any] | None) -> bool:
     return _web_context_entry(context) in WEB_LLM_CONTEXT_ENTRIES
 
 
+def _is_web_macro_context(context: dict[str, Any] | None) -> bool:
+    return _web_context_entry(context) == "web-macro"
+
+
 def _web_analysis_requires_embedded_macro(text: str) -> bool:
     clean_text = (text or "").strip()
     if not clean_text:
@@ -1858,10 +1876,12 @@ def _create_cninfo_client() -> CninfoDisclosureClient:
     return CninfoDisclosureClient()
 
 
-def _create_macro_data_manager() -> MacroDataManager:
+def _create_macro_data_manager(*, fast_mode: bool = False) -> MacroDataManager:
+    timeout_seconds = WEB_MACRO_TIMEOUT_SECONDS if fast_mode else 20.0
+    per_provider_timeout_seconds = WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS if fast_mode else 12.0
     return MacroDataManager(
-        timeout_seconds=20.0,
-        per_provider_timeout_seconds=12.0,
+        timeout_seconds=timeout_seconds,
+        per_provider_timeout_seconds=per_provider_timeout_seconds,
         failure_threshold=3,
         failure_cooldown_seconds=300,
         max_workers=5,
@@ -1980,6 +2000,7 @@ def _build_macro_context(
     symbols: list[str],
     market: str | None,
     provider_ids: list[str],
+    fast_mode: bool = False,
 ) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
     query = MacroQuery(
@@ -1991,7 +2012,8 @@ def _build_macro_context(
         metadata={"route": "macro_signal"},
     )
     try:
-        result = _create_macro_data_manager().gather(query, provider_ids=provider_ids)
+        manager = _create_macro_data_manager(fast_mode=True) if fast_mode else _create_macro_data_manager()
+        result = manager.gather(query, provider_ids=provider_ids)
         context = _macro_context_from_gather(question, provider_ids, result)
         signal_count = len(context["signals"])
         failed_count = len(context["errors"])
@@ -2670,6 +2692,8 @@ def _deepseek_finish_reason(payload: dict[str, Any]) -> str | None:
 
 
 def _deepseek_report_timeout_seconds(context: dict[str, Any]) -> int:
+    if _is_web_macro_context(context):
+        return WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS
     return WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS if _is_web_llm_context(context) else 45
 
 
@@ -2678,6 +2702,13 @@ def _report_provider_timeouts(context: dict[str, Any]) -> dict[str, int]:
         return {"openrouter": 25, "deepseek": _deepseek_report_timeout_seconds(context)}
 
     provider_names = {provider.name for provider in _llm_provider_chain()}
+    if _is_web_macro_context(context):
+        if "openrouter" in provider_names and "deepseek" in provider_names:
+            return dict(WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS)
+        return {
+            "openrouter": WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS,
+            "deepseek": WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS,
+        }
     if "openrouter" in provider_names and "deepseek" in provider_names:
         return dict(WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS)
     return {

@@ -111,12 +111,19 @@ function getConfiguredTestRunId(): string | null {
 
 function enrichGatewayError(status: number, message: string, path: string): string {
   const isAgentAnalyze = path.includes("/v1/analyze/agent");
-  if (![502, 503, 504].includes(status) && !(isAgentAnalyze && status === 500)) return message;
+  const isMacroAnalyze = path.includes("/v1/analyze/macro");
+  if (![502, 503, 504].includes(status) && !((isAgentAnalyze || isMacroAnalyze) && status === 500)) return message;
   const prefix = message || `HTTP ${status}`;
   if (isAgentAnalyze) {
     return (
       `${prefix}。` +
       "Agent 分析包含行情、Kronos、网页检索和 OpenRouter/DeepSeek 汇总，线上偶发 500/502 通常表示后端进程、Zeabur 代理或上游模型调用被中断；请重试并用 Runtime Logs 对照 request_id。"
+    );
+  }
+  if (isMacroAnalyze) {
+    return (
+      `${prefix}。` +
+      "宏观洞察包含宏观 provider、公开数据和 OpenRouter/DeepSeek 汇总，线上偶发 500/502 通常表示代理等待超时、后端进程或上游数据源被中断；请重试并用 Runtime Logs 对照 request_id。"
     );
   }
   return (
