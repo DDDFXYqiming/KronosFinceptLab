@@ -110,6 +110,18 @@ class DeepSeekConfig:
 
 
 @dataclass(frozen=True)
+class OpenRouterConfig:
+    """OpenRouter compatible API config used as a low-cost first LLM hop."""
+    api_key: str = field(default_factory=lambda: _get("OPENROUTER_API_KEY"))
+    base_url: str = field(default_factory=lambda: _get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"))
+    model: str = field(default_factory=lambda: _get("OPENROUTER_MODEL", "openrouter/free"))
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.api_key and not self.api_key.startswith(("sk-xxxx", "sk-or-xxxx", "xxxx")))
+
+
+@dataclass(frozen=True)
 class WebSearchConfig:
     """Generic web search provider config for the stateless agent."""
     provider: str = field(default_factory=lambda: _get("WEB_SEARCH_PROVIDER").strip().lower())
@@ -152,6 +164,7 @@ class LLMConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
     deepseek: DeepSeekConfig = field(default_factory=DeepSeekConfig)
+    openrouter: OpenRouterConfig = field(default_factory=OpenRouterConfig)
 
     def get_active_provider(self) -> str | None:
         """Return the first configured provider name, or None."""
@@ -159,6 +172,8 @@ class LLMConfig:
             return "openai"
         if self.anthropic.is_configured:
             return "anthropic"
+        if self.openrouter.is_configured:
+            return "openrouter"
         if self.deepseek.is_configured:
             return "deepseek"
         return None

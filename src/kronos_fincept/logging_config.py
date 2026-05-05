@@ -33,6 +33,7 @@ _SENSITIVE_PATTERNS = [
     re.compile(r"(?i)(authorization\s*[:=]\s*)(bearer\s+)?[^\s,;]+"),
     re.compile(r"(?i)((?:api[_-]?key|secret[_-]?key|access[_-]?token|token|cookie|password)\s*[:=]\s*)[^\s,;]+"),
     re.compile(r"(?i)(DEEPSEEK_API_KEY\s*=\s*)[^\s,;]+"),
+    re.compile(r"(?i)(OPENROUTER_API_KEY\s*=\s*)[^\s,;]+"),
     re.compile(r"(?i)(OPENAI_API_KEY\s*=\s*)[^\s,;]+"),
     re.compile(r"(?i)(ANTHROPIC_API_KEY\s*=\s*)[^\s,;]+"),
     re.compile(r"(?i)(sk-[A-Za-z0-9_\-]{8,})"),

@@ -33,9 +33,9 @@
 
 ## Current status
 
-Version: v10.6.5
+Version: v10.7
 
-V10 已推进到 v10.6.5：宏观洞察入口改为本地硬安全检查 + DeepSeek 语义路由 + 本地降级。`/macro` 不再只依赖正则关键词白名单，能放行 “A股现在位置怎么样”“现在适合A股吗” 等合理宏观/跨市场问法，同时继续过滤未授权 provider 和 prompt 注入请求。
+V10 已推进到 v10.7：分析页与宏观洞察页进入 OpenRouter Free 优先降级模式。配置 `OPENROUTER_API_KEY` 后，语义路由和最终报告汇总会先调用 `OPENROUTER_MODEL=openrouter/free`，失败后自动回退到 DeepSeek，再失败才使用本地结构化模板。
 
 宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与黄金/商品资产映射。Agent 分析页在显式宏观问题中仍会融合宏观信号，普通 A 股交易问法优先保障响应稳定性；部署排障时可直接用健康接口确认运行版本。
 
@@ -55,7 +55,7 @@ V10 已推进到 v10.6.5：宏观洞察入口改为本地硬安全检查 + DeepS
 
 必要变量：`PORT`、`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`JWT_SECRET`。`DEEPSEEK_BASE_URL` 推荐填写根地址 `https://api.deepseek.com`；若误填完整 `https://api.deepseek.com/chat/completions`，后端会兼容处理。
 
-可选变量：`KRONOS_MODEL_ID`、`KRONOS_PREWARM_ON_STARTUP`、`HF_TOKEN`、`WEB_SEARCH_PROVIDER`、`WEB_SEARCH_API_KEY`、`WEB_SEARCH_MAX_RESULTS`、`WEB_SEARCH_TIMEOUT_SECONDS`。
+可选变量：`OPENROUTER_API_KEY`、`OPENROUTER_BASE_URL`、`OPENROUTER_MODEL`、`KRONOS_MODEL_ID`、`KRONOS_PREWARM_ON_STARTUP`、`HF_TOKEN`、`WEB_SEARCH_PROVIDER`、`WEB_SEARCH_API_KEY`、`WEB_SEARCH_MAX_RESULTS`、`WEB_SEARCH_TIMEOUT_SECONDS`。
 
 线上默认只加载一套 Kronos 模型。若 `KRONOS_MODEL_ID=NeoQuasar/Kronos-base`，不要再额外配置 Agent 专用小模型；预测页、分析页、API 与 CLI 会复用同一个 predictor cache。
 
