@@ -11,6 +11,10 @@ class MacroProviderError(RuntimeError):
     """Raised when a macro provider cannot fetch or parse its source."""
 
 
+class MacroProviderUnavailable(MacroProviderError):
+    """Raised when a provider needs a configured external endpoint or credential."""
+
+
 class MacroProvider(ABC):
     provider_id: str
     display_name: str

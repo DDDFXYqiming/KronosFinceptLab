@@ -9,21 +9,31 @@ handled by ``MacroDataManager``.
 
 from __future__ import annotations
 
-import concurrent.futures
+import csv
+import io
 import json
+import os
 import re
 import time
 import urllib.parse
 import urllib.request
+import zipfile
 from datetime import date
 from typing import Any
 
-from kronos_fincept.macro.providers.base import MacroProvider
+from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderUnavailable
 from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
 from kronos_fincept.web_search import WebSearchClient
 
 
 CFTC_SODA_URL = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
+SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+BIS_BULK_DOWNLOADS = {
+    "policy_rates": "https://data.bis.org/api/v2/data/BIS,WS_CBPOL,1.0/all/all?format=csvfile",
+    "credit_gap": "https://data.bis.org/api/v2/data/BIS,WS_CREDIT_GAP,1.0/all/all?format=csvfile",
+    "global_liquidity": "https://data.bis.org/api/v2/data/BIS,WS_GLI,1.0/all/all?format=csvfile",
+}
 TREASURY_RATES_CSV_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv"
 )
@@ -92,6 +102,17 @@ def _get_text(url: str, *, params: dict[str, Any] | None = None, timeout: int = 
     return str(response.text)
 
 
+def _get_zip_csv_rows(url: str, *, timeout: int = 10) -> list[dict[str, Any]]:
+    with urllib.request.urlopen(_request(url, accept="application/zip,*/*"), timeout=timeout) as response:
+        raw = response.read()
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        csv_name = next((name for name in archive.namelist() if name.lower().endswith(".csv")), None)
+        if not csv_name:
+            return []
+        text = archive.read(csv_name).decode("utf-8-sig", errors="replace")
+    return [dict(row) for row in csv.DictReader(io.StringIO(text)) if row]
+
+
 def _number(value: Any) -> float | None:
     try:
         if value is None or value == "":
@@ -121,6 +142,20 @@ def _infer_yahoo_symbol(query: MacroQuery, *, default: str = "SPY") -> tuple[str
     return default, default
 
 
+def _infer_sec_ticker(query: MacroQuery) -> str | None:
+    for raw in query.symbols or ():
+        candidate = str(raw).strip().upper()
+        if re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", candidate):
+            return candidate.replace(".", "-")
+    text = query.question or ""
+    matches = re.findall(r"\b[A-Z]{1,5}\b", text)
+    ignored = {"GDP", "CPI", "PMI", "FOMC", "ETF", "USD", "BTC", "ETH", "VIX"}
+    for match in matches:
+        if match not in ignored:
+            return match
+    return None
+
+
 def _infer_cftc_commodity(query: MacroQuery, *, default: str = "GOLD") -> str:
     text = _query_text(query)
     for pattern, commodity in CFTC_COMMODITY_PATTERNS:
@@ -148,6 +183,21 @@ def _row_number(row: dict[str, Any], *keys: str) -> float | None:
         if number is not None:
             return number
     return None
+
+
+def _row_value(row: dict[str, Any], *keys: str) -> Any:
+    normalized = {str(key).strip().lower(): value for key, value in row.items()}
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            value = normalized.get(key.strip().lower())
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _row_text(row: dict[str, Any]) -> str:
+    return " ".join(str(value or "") for value in row.values()).lower()
 
 
 def _latest_curve_row(year: int, curve_kind: str, *, timeout: int | float = 8) -> dict[str, Any] | None:
@@ -436,7 +486,74 @@ class EdgarProvider(MacroProvider):
     capabilities = ("sec_filings", "insider_activity")
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
-        return []
+        ticker = _infer_sec_ticker(query)
+        if not ticker:
+            raise MacroProviderUnavailable("EDGAR requires a US ticker symbol to fetch company filings.")
+        ticker_row = self._lookup_ticker(ticker)
+        if not ticker_row:
+            return []
+        cik = f"{int(ticker_row['cik_str']):010d}"
+        submissions = _get_json(SEC_SUBMISSIONS_URL.format(cik=cik), timeout=8)
+        recent = (submissions.get("filings") or {}).get("recent") if isinstance(submissions, dict) else {}
+        if not isinstance(recent, dict):
+            return []
+
+        forms = recent.get("form") or []
+        filing_dates = recent.get("filingDate") or []
+        accessions = recent.get("accessionNumber") or []
+        documents = recent.get("primaryDocument") or []
+        accepted = recent.get("acceptanceDateTime") or []
+        company = str(submissions.get("name") or ticker_row.get("title") or ticker)
+        signals: list[MacroSignal] = []
+        for index, form in enumerate(forms):
+            form_text = str(form or "")
+            if form_text not in {"10-K", "10-Q", "8-K", "6-K", "20-F", "40-F", "S-1", "4", "13F-HR"}:
+                continue
+            accession = str(accessions[index] if index < len(accessions) else "")
+            document = str(documents[index] if index < len(documents) else "")
+            filing_date = str(filing_dates[index] if index < len(filing_dates) else "")
+            clean_accession = accession.replace("-", "")
+            source_url = (
+                f"https://www.sec.gov/Archives/edgar/data/{int(ticker_row['cik_str'])}/{clean_accession}/{document}"
+                if accession and document
+                else None
+            )
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="sec_recent_filing",
+                    value=form_text,
+                    interpretation=f"{company} 最近提交 {form_text}，用于核对公司披露、风险事件或基本面变化。",
+                    time_horizon="mixed",
+                    confidence=0.66,
+                    observed_at=filing_date or (str(accepted[index]) if index < len(accepted) else None),
+                    source_url=source_url,
+                    metadata={
+                        "ticker": ticker,
+                        "cik": cik,
+                        "company": company,
+                        "form_type": form_text,
+                        "filing_date": filing_date,
+                        "accession_number": accession,
+                        "data_quality": "official_sec_filing",
+                    },
+                )
+            )
+            if len(signals) >= max(1, query.limit):
+                break
+        return signals
+
+    def _lookup_ticker(self, ticker: str) -> dict[str, Any] | None:
+        payload = _get_json(SEC_COMPANY_TICKERS_URL, timeout=8)
+        rows = payload.values() if isinstance(payload, dict) else payload
+        if not isinstance(rows, list) and not hasattr(rows, "__iter__"):
+            return None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("ticker") or "").upper().replace(".", "-") == ticker:
+                return row
+        return None
 
 
 class BisProvider(MacroProvider):
@@ -445,7 +562,53 @@ class BisProvider(MacroProvider):
     capabilities = ("policy_rates", "credit_gap")
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
-        return []
+        signals: list[MacroSignal] = []
+        for topic, url in BIS_BULK_DOWNLOADS.items():
+            rows = _get_zip_csv_rows(url, timeout=10)
+            row = self._select_latest_us_row(rows)
+            if not row:
+                continue
+            value = _row_number(row, "OBS_VALUE", "ObsValue", "value", "Value")
+            period = str(_row_value(row, "TIME_PERIOD", "Time period", "time_period", "TIME") or "")
+            label = _row_value(row, "series_name", "Series", "TITLE", "Indicator", "indicator") or topic
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type=f"bis_{topic}",
+                    value=value,
+                    interpretation=f"BIS {label} 最新观测值，用于观察政策利率、信用周期或全球流动性。",
+                    time_horizon="long" if topic == "credit_gap" else "mixed",
+                    confidence=0.67 if value is not None else 0.45,
+                    observed_at=period or None,
+                    source_url="https://data.bis.org/",
+                    metadata={
+                        "topic": topic,
+                        "period": period,
+                        "data_quality": "official_bis_statistics",
+                        "raw_keys": list(row.keys())[:20],
+                    },
+                )
+            )
+            if len(signals) >= max(1, query.limit):
+                break
+        return signals
+
+    def _select_latest_us_row(self, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        candidates = [
+            row
+            for row in rows
+            if _row_number(row, "OBS_VALUE", "ObsValue", "value", "Value") is not None
+            and re.search(r"\b(us|united states|usa)\b", _row_text(row), flags=re.IGNORECASE)
+        ]
+        if not candidates:
+            candidates = [
+                row
+                for row in rows
+                if _row_number(row, "OBS_VALUE", "ObsValue", "value", "Value") is not None
+            ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda row: str(_row_value(row, "TIME_PERIOD", "time_period", "TIME") or ""))
 
 
 class WorldBankProvider(MacroProvider):
@@ -557,7 +720,91 @@ class CMEFedWatchProvider(MacroProvider):
     capabilities = ("fomc_probability", "rates")
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
-        return []
+        payload = self._fetch_payload()
+        rows = self._extract_probability_rows(payload)
+        if not rows:
+            return []
+        signals: list[MacroSignal] = []
+        for row in rows[: max(1, query.limit)]:
+            probability = _number(row.get("probability"))
+            label = str(row.get("target_rate") or row.get("rate_range") or row.get("scenario") or "FOMC outcome")
+            meeting_date = str(row.get("meeting_date") or row.get("meetingDate") or "")
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="fomc_rate_probability",
+                    value=probability,
+                    interpretation=f"CME FedWatch 隐含 {meeting_date or '下一次 FOMC'} {label} 概率。",
+                    time_horizon="event",
+                    confidence=0.7 if probability is not None else 0.45,
+                    observed_at=meeting_date or None,
+                    source_url="https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html",
+                    metadata={
+                        "meeting_date": meeting_date,
+                        "target_rate": label,
+                        "data_quality": "cme_fedwatch_api" if os.getenv("CME_FEDWATCH_ENDPOINT") else "compatible_fedwatch_payload",
+                    },
+                )
+            )
+        return signals
+
+    def _fetch_payload(self) -> Any:
+        endpoint = os.getenv("CME_FEDWATCH_ENDPOINT")
+        if endpoint:
+            params: dict[str, Any] = {}
+            api_key = os.getenv("CME_FEDWATCH_API_KEY")
+            if api_key:
+                params[os.getenv("CME_FEDWATCH_API_KEY_PARAM", "apiKey")] = api_key
+            return _get_json(endpoint, params=params or None, timeout=8)
+        try:
+            from cme_fedwatch import get_probabilities  # type: ignore
+        except Exception as exc:
+            raise MacroProviderUnavailable(
+                "CME FedWatch requires CME_FEDWATCH_ENDPOINT or optional cme_fedwatch package."
+            ) from exc
+        return get_probabilities(meeting="next")
+
+    def _extract_probability_rows(self, payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+        meetings = payload.get("meetings") or payload.get("data") or payload.get("probabilities") or []
+        if isinstance(meetings, dict):
+            meetings = [meetings]
+        rows: list[dict[str, Any]] = []
+        if not isinstance(meetings, list):
+            return rows
+        for meeting in meetings:
+            if not isinstance(meeting, dict):
+                continue
+            meeting_date = meeting.get("meeting_date") or meeting.get("meetingDate") or meeting.get("date")
+            probabilities = meeting.get("probabilities") or meeting.get("outcomes") or []
+            if isinstance(probabilities, dict):
+                probabilities = [
+                    {"target_rate": key, "probability": value}
+                    for key, value in probabilities.items()
+                ]
+            if not isinstance(probabilities, list):
+                continue
+            for item in probabilities:
+                if not isinstance(item, dict):
+                    continue
+                probability = _number(
+                    item.get("probability")
+                    if item.get("probability") is not None
+                    else item.get("prob")
+                    if item.get("prob") is not None
+                    else item.get("pct")
+                )
+                if probability is not None and probability > 1.0:
+                    probability = probability / 100.0
+                rows.append(
+                    {
+                        "meeting_date": meeting_date,
+                        "target_rate": item.get("target_rate") or item.get("targetRate") or item.get("range"),
+                        "probability": probability,
+                    }
+                )
+        return sorted(rows, key=lambda row: float(row.get("probability") or 0.0), reverse=True)
 
 
 class WebSearchProvider(MacroProvider):

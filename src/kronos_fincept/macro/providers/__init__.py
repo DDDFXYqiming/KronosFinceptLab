@@ -1,6 +1,6 @@
 """Macro provider registry."""
 
-from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderError
+from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderError, MacroProviderUnavailable
 from kronos_fincept.macro.providers.digital_oracle import (
     BisProvider,
     CMEFedWatchProvider,
@@ -30,6 +30,7 @@ __all__ = [
     "KalshiProvider",
     "MacroProvider",
     "MacroProviderError",
+    "MacroProviderUnavailable",
     "PolymarketProvider",
     "USTreasuryProvider",
     "WebSearchProvider",

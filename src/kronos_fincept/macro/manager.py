@@ -6,7 +6,7 @@ import concurrent.futures
 import time
 from typing import Iterable
 
-from kronos_fincept.macro.providers import MacroProvider, create_default_providers
+from kronos_fincept.macro.providers import MacroProvider, MacroProviderUnavailable, create_default_providers
 from kronos_fincept.macro.schemas import MacroGatherResult, MacroProviderResult, MacroQuery, MacroSignal
 
 
@@ -77,7 +77,7 @@ class MacroDataManager:
                 try:
                     result = future.result(timeout=0)
                 except Exception as exc:
-                    result = self._failed_result(provider_id, exc)
+                    result = self._unavailable_result(provider_id, exc) if isinstance(exc, MacroProviderUnavailable) else self._failed_result(provider_id, exc)
                 results[provider_id] = result
                 self._record_provider_result(provider_id, result)
                 self._set_cached(provider_id, macro_query, result)
@@ -162,6 +162,15 @@ class MacroDataManager:
             status="failed",
             signals=[],
             error=_short_error(exc),
+        )
+
+    def _unavailable_result(self, provider_id: str, exc: BaseException) -> MacroProviderResult:
+        return MacroProviderResult(
+            provider_id=provider_id,
+            status="unavailable",
+            signals=[],
+            error=_short_error(exc),
+            metadata={"reason": "unavailable"},
         )
 
     def _cache_key(self, provider_id: str, query: MacroQuery) -> str:

@@ -69,7 +69,7 @@ class MacroGatherResult:
 
     @property
     def ok(self) -> bool:
-        return all(item.status in {"completed", "empty", "skipped"} for item in self.provider_results.values())
+        return all(item.status in {"completed", "empty", "skipped", "unavailable"} for item in self.provider_results.values())
 
     @property
     def errors(self) -> dict[str, str]:
