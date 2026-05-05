@@ -134,7 +134,7 @@ def test_v106_dockerfile_and_dashboard_expose_build_metadata_contract():
     dashboard = read("web/src/app/page.tsx")
 
     for marker in [
-        "ARG KRONOS_APP_VERSION=v10.7.3",
+        "ARG KRONOS_APP_VERSION=v10.8.7",
         "ARG KRONOS_BUILD_COMMIT=unknown",
         "ARG KRONOS_BUILD_REF=unknown",
         "ARG KRONOS_BUILD_SOURCE=docker",

@@ -295,7 +295,7 @@ def test_v107_web_report_uses_short_provider_budgets(monkeypatch):
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [8, 10]
+    assert [call["timeout"] for call in calls] == [4, 16]
 
 
 def test_v107_web_macro_report_uses_tighter_provider_budgets(monkeypatch):
@@ -337,7 +337,7 @@ def test_v107_web_macro_report_uses_tighter_provider_budgets(monkeypatch):
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在宏观 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [4, 6]
+    assert [call["timeout"] for call in calls] == [4, 12]
 
 
 def test_v107_web_macro_uses_local_route_and_fast_provider_manager(monkeypatch):
