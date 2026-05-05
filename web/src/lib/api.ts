@@ -116,7 +116,7 @@ function enrichGatewayError(status: number, message: string, path: string): stri
   if (isAgentAnalyze) {
     return (
       `${prefix}。` +
-      "Agent 分析包含行情、Kronos、网页检索和 DeepSeek 汇总，线上偶发 500/502 通常表示后端进程、Zeabur 代理或上游模型调用被中断；请重试并用 Runtime Logs 对照 request_id。"
+      "Agent 分析包含行情、Kronos、网页检索和 OpenRouter/DeepSeek 汇总，线上偶发 500/502 通常表示后端进程、Zeabur 代理或上游模型调用被中断；请重试并用 Runtime Logs 对照 request_id。"
     );
   }
   return (

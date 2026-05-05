@@ -15,7 +15,7 @@ import type {
   MacroSignal,
 } from "@/types/api";
 
-const VERSION = "v10.7";
+const VERSION = "v10.7.1";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 const EXAMPLES = [
@@ -29,7 +29,7 @@ const LOADING_STEPS = [
   "范围/安全检查",
   "选择宏观数据源",
   "获取宏观信号",
-  "DeepSeek 汇总",
+  "OpenRouter/DeepSeek 汇总",
   "生成宏观报告",
 ];
 

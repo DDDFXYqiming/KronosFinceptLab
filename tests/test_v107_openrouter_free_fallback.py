@@ -199,3 +199,45 @@ def test_v107_report_falls_back_to_deepseek_when_openrouter_content_is_not_json(
     assert tool_call.metadata["provider"] == "deepseek"
     assert tool_call.metadata["model"] == "deepseek-v4-flash"
     assert [call["json"]["model"] for call in calls] == ["openrouter/free", "deepseek-v4-flash"]
+
+
+def test_v107_web_report_uses_short_provider_budgets(monkeypatch):
+    import requests
+
+    from kronos_fincept import agent
+
+    calls: list[dict] = []
+    monkeypatch.setattr(agent, "settings", _settings())
+
+    def fake_post(url, *, headers, json, timeout):
+        calls.append({"url": url, "json": json, "timeout": timeout})
+        if "openrouter.ai" in url:
+            return FakeResponse(200, {"choices": [{"message": {"content": "not json"}, "finish_reason": "stop"}]})
+        return FakeResponse(
+            200,
+            _chat_payload(
+                {
+                    "conclusion": "DeepSeek 在 Web 短预算内完成兜底。",
+                    "short_term_prediction": "短期中性。",
+                    "technical": "技术面中性。",
+                    "fundamentals": "基本面需继续跟踪。",
+                    "risk": "风险中等。",
+                    "uncertainties": "存在模型与数据时效不确定性。",
+                    "recommendation": "持有",
+                    "confidence": 0.6,
+                    "risk_level": "中",
+                    "disclaimer": "仅供研究。",
+                }
+            ),
+        )
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    report = agent._call_deepseek_report(
+        "帮我看看招商银行现在还能买吗",
+        {"assets": [{"symbol": "600036", "market": "cn"}], "page_context": {"entry": "web-analysis"}},
+    )
+
+    assert report is not None
+    assert report["conclusion"] == "DeepSeek 在 Web 短预算内完成兜底。"
+    assert [call["timeout"] for call in calls] == [8, 14]

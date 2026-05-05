@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 _LAST_REPORT_LLM_METADATA: dict[str, Any] = {}
 
+WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
+ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 5, "deepseek": 8}
+WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 14}
+WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 25
+
 
 AGENT_SCOPE_DESCRIPTION = (
     "KronosFinceptLab 只处理金融量化、行情数据、Kronos 预测、风险指标、"
@@ -283,6 +288,7 @@ def _call_structured_llm_json(
     max_tokens: int,
     timeout: int,
     purpose: str,
+    provider_timeouts: dict[str, int] | None = None,
 ) -> tuple[dict[str, Any], LLMChatProvider] | None:
     providers = _llm_provider_chain()
     if not providers:
@@ -302,20 +308,23 @@ def _call_structured_llm_json(
 
     for provider in providers:
         endpoint = _build_chat_completions_url(provider.base_url)
+        provider_timeout = _llm_provider_timeout(provider, timeout, provider_timeouts)
+        payload = {
+            "model": provider.model,
+            "messages": messages,
+            **_deepseek_structured_json_options(
+                temperature=temperature,
+                max_tokens=max_tokens,
+                model=provider.model,
+            ),
+        }
         try:
-            response = requests.post(
+            response = _post_llm_json_with_wall_timeout(
+                requests,
                 endpoint,
                 headers=_llm_headers(provider),
-                json={
-                    "model": provider.model,
-                    "messages": messages,
-                    **_deepseek_structured_json_options(
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        model=provider.model,
-                    ),
-                },
-                timeout=timeout,
+                payload=payload,
+                timeout=provider_timeout,
             )
             if response.status_code != 200:
                 log_event(
@@ -327,6 +336,7 @@ def _call_structured_llm_json(
                     model=provider.model,
                     status_code=response.status_code,
                     endpoint=endpoint,
+                    timeout_seconds=provider_timeout,
                     response_body=str(getattr(response, "text", ""))[:500],
                 )
                 continue
@@ -341,6 +351,7 @@ def _call_structured_llm_json(
                     provider=provider.name,
                     model=provider.model,
                     error_type=type(exc).__name__,
+                    timeout_seconds=provider_timeout,
                     response_body=str(getattr(response, "text", ""))[:500],
                 )
                 continue
@@ -354,6 +365,7 @@ def _call_structured_llm_json(
                     f"{provider.display_name} did not return a parseable JSON object.",
                     provider=provider.name,
                     model=provider.model,
+                    timeout_seconds=provider_timeout,
                     content_preview=str(content)[:500],
                     finish_reason=_deepseek_finish_reason(payload),
                 )
@@ -368,10 +380,50 @@ def _call_structured_llm_json(
                 provider=provider.name,
                 model=provider.model,
                 endpoint=endpoint,
+                timeout_seconds=provider_timeout,
                 error_type=type(exc).__name__,
             )
             continue
     return None
+
+
+def _llm_provider_timeout(
+    provider: LLMChatProvider,
+    default_timeout: int,
+    provider_timeouts: dict[str, int] | None,
+) -> int:
+    if provider_timeouts and provider.name in provider_timeouts:
+        return max(1, int(provider_timeouts[provider.name]))
+    return max(1, int(default_timeout))
+
+
+def _post_llm_json_with_wall_timeout(
+    requests_module: Any,
+    endpoint: str,
+    *,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout: int,
+) -> Any:
+    """Enforce a wall-clock budget; requests' timeout is not a total deadline."""
+
+    import concurrent.futures
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="kronos-llm")
+    future = executor.submit(
+        requests_module.post,
+        endpoint,
+        headers=headers,
+        json=payload,
+        timeout=timeout,
+    )
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError as exc:
+        future.cancel()
+        raise TimeoutError(f"LLM call exceeded {timeout}s wall-clock budget") from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 @dataclass(frozen=True)
@@ -672,7 +724,7 @@ def analyze_investment_question(
     asset_results = _build_asset_results(asset_contexts, report)
     steps.append(
         AgentStep(
-            name="DeepSeek 汇总",
+            name="OpenRouter/DeepSeek 汇总",
             status=llm_call.status,
             summary=llm_call.summary,
             elapsed_ms=_elapsed_ms(started_at),
@@ -841,7 +893,7 @@ def analyze_macro_question(
     )
     steps.append(
         AgentStep(
-            name="DeepSeek 汇总",
+            name="OpenRouter/DeepSeek 汇总",
             status=llm_call.status,
             summary=llm_call.summary,
             elapsed_ms=_elapsed_ms(started_at),
@@ -1065,6 +1117,7 @@ market 只能是 cn, hk, us, commodity。港股小米通常是 1810.hk；诺基�
             max_tokens=900,
             timeout=20,
             purpose="router",
+            provider_timeouts=dict(ROUTER_PROVIDER_TIMEOUTS_SECONDS),
         )
         if result is None:
             return None
@@ -1143,6 +1196,7 @@ JSON schema:
             max_tokens=900,
             timeout=20,
             purpose="macro_router",
+            provider_timeouts=dict(ROUTER_PROVIDER_TIMEOUTS_SECONDS),
         )
         if result is None:
             return None
@@ -1335,6 +1389,24 @@ def _is_web_analysis_context(context: dict[str, Any] | None) -> bool:
         return True
     page_context = context.get("page_context")
     return isinstance(page_context, dict) and page_context.get("entry") == "web-analysis"
+
+
+def _web_context_entry(context: dict[str, Any] | None) -> str | None:
+    if not isinstance(context, dict):
+        return None
+    entry = context.get("entry")
+    if isinstance(entry, str):
+        return entry
+    page_context = context.get("page_context")
+    if isinstance(page_context, dict):
+        nested_entry = page_context.get("entry")
+        if isinstance(nested_entry, str):
+            return nested_entry
+    return None
+
+
+def _is_web_llm_context(context: dict[str, Any] | None) -> bool:
+    return _web_context_entry(context) in WEB_LLM_CONTEXT_ENTRIES
 
 
 def _web_analysis_requires_embedded_macro(text: str) -> bool:
@@ -2598,7 +2670,20 @@ def _deepseek_finish_reason(payload: dict[str, Any]) -> str | None:
 
 
 def _deepseek_report_timeout_seconds(context: dict[str, Any]) -> int:
-    return 25 if _is_web_analysis_context(context) else 45
+    return WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS if _is_web_llm_context(context) else 45
+
+
+def _report_provider_timeouts(context: dict[str, Any]) -> dict[str, int]:
+    if not _is_web_llm_context(context):
+        return {"openrouter": 25, "deepseek": _deepseek_report_timeout_seconds(context)}
+
+    provider_names = {provider.name for provider in _llm_provider_chain()}
+    if "openrouter" in provider_names and "deepseek" in provider_names:
+        return dict(WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS)
+    return {
+        "openrouter": WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS,
+        "deepseek": WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS,
+    }
 
 
 def _call_deepseek_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
@@ -2667,6 +2752,7 @@ asset_reports: [
             max_tokens=1800,
             timeout=_deepseek_report_timeout_seconds(context),
             purpose="report",
+            provider_timeouts=_report_provider_timeouts(context),
         )
         if result is None:
             return None

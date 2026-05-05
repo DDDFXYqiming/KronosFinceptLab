@@ -114,7 +114,7 @@ def test_agent_resolves_natural_language_symbol_and_returns_trace(monkeypatch):
         "获取行情",
         "调用 Kronos",
         "网页检索",
-        "DeepSeek 汇总",
+        "OpenRouter/DeepSeek 汇总",
         "生成报告",
     ] == step_names
 

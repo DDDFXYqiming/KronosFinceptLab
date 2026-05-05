@@ -88,7 +88,7 @@ def test_v95_agent_steps_are_traceable_for_web_api_cli(monkeypatch):
         "获取行情",
         "调用 Kronos",
         "网页检索",
-        "DeepSeek 汇总",
+        "OpenRouter/DeepSeek 汇总",
         "生成报告",
     ]
     assert all("request_id" in call.metadata for call in result.tool_calls)
