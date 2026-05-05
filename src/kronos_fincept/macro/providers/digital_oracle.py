@@ -643,39 +643,165 @@ class WorldBankProvider(MacroProvider):
 class YFinanceProvider(MacroProvider):
     provider_id = "yfinance_options"
     display_name = "YFinance Options"
-    capabilities = ("options_chain", "implied_volatility")
+    capabilities = ("options_chain", "implied_volatility", "skew", "max_pain")
 
     def __init__(self, yfinance_loader: Any | None = None) -> None:
         self._yfinance_loader = yfinance_loader
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         yf = self._load_yfinance()
-        symbol = (query.symbols[0] if query.symbols else "").strip().upper()
+        symbol, label = _infer_yahoo_symbol(query)
         if yf is None or not symbol:
             return []
         ticker = yf.Ticker(symbol)
         expirations = getattr(ticker, "options", ()) or ()
         if not expirations:
             return []
-        chain = ticker.option_chain(expirations[0])
-        calls = getattr(chain, "calls", None)
-        puts = getattr(chain, "puts", None)
-        call_iv = _mean_column(calls, "impliedVolatility")
-        put_iv = _mean_column(puts, "impliedVolatility")
-        if call_iv is None and put_iv is None:
+
+        chains: list[tuple[str, Any, Any]] = []
+        for expiration in list(expirations)[:2]:
+            try:
+                chain = ticker.option_chain(expiration)
+            except Exception:
+                continue
+            chains.append((str(expiration), getattr(chain, "calls", None), getattr(chain, "puts", None)))
+        if not chains:
             return []
-        return [
-            _signal(
-                source=self.provider_id,
-                signal_type="options_implied_volatility",
-                value=round(((call_iv or 0.0) + (put_iv or 0.0)) / (2 if call_iv is not None and put_iv is not None else 1), 4),
-                interpretation=f"{symbol} 最近到期期权链平均隐含波动率。",
-                time_horizon="short",
-                confidence=0.58,
-                source_url="https://finance.yahoo.com/",
-                metadata={"expiration": expirations[0], "call_iv": call_iv, "put_iv": put_iv},
+
+        front_expiry, front_calls, front_puts = chains[0]
+        spot = _latest_ticker_close(ticker)
+        if spot is None:
+            spot = _median(_option_strikes(front_calls) + _option_strikes(front_puts))
+
+        front_call_iv = _mean_column(front_calls, "impliedVolatility")
+        front_put_iv = _mean_column(front_puts, "impliedVolatility")
+        front_iv = _mean_values([front_call_iv, front_put_iv])
+        atm_iv = _mean_values(
+            [
+                _nearest_option_iv(front_calls, spot),
+                _nearest_option_iv(front_puts, spot),
+            ]
+        )
+        put_skew_iv = _nearest_option_iv(front_puts, spot * 0.95 if spot is not None else None)
+        call_skew_iv = _nearest_option_iv(front_calls, spot * 1.05 if spot is not None else None)
+        skew = round(put_skew_iv - call_skew_iv, 6) if put_skew_iv is not None and call_skew_iv is not None else None
+        oi_ratio = _safe_ratio(_sum_column(front_puts, "openInterest"), _sum_column(front_calls, "openInterest"))
+        volume_ratio = _safe_ratio(_sum_column(front_puts, "volume"), _sum_column(front_calls, "volume"))
+        max_pain = _max_pain_strike(front_calls, front_puts)
+
+        signals: list[MacroSignal] = []
+        if atm_iv is not None:
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="options_atm_iv",
+                    value=round(atm_iv, 6),
+                    interpretation=f"{label}（{symbol}）近月平值期权隐含波动率。",
+                    time_horizon="short",
+                    confidence=0.68,
+                    source_url="https://finance.yahoo.com/",
+                    metadata={
+                        "symbol": symbol,
+                        "label": label,
+                        "expiration": front_expiry,
+                        "spot": spot,
+                        "atm_iv": atm_iv,
+                        "data_quality": "yfinance_options_chain",
+                    },
+                )
             )
-        ]
+        if skew is not None:
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="options_skew_proxy",
+                    value=skew,
+                    interpretation=f"{label}（{symbol}）近月 95% put 与 105% call 的 IV skew 代理。",
+                    time_horizon="short",
+                    confidence=0.62,
+                    source_url="https://finance.yahoo.com/",
+                    metadata={
+                        "symbol": symbol,
+                        "expiration": front_expiry,
+                        "put_95_iv": put_skew_iv,
+                        "call_105_iv": call_skew_iv,
+                        "data_quality": "yfinance_options_chain",
+                    },
+                )
+            )
+        if len(chains) > 1:
+            next_expiry, next_calls, next_puts = chains[1]
+            next_iv = _mean_values(
+                [
+                    _mean_column(next_calls, "impliedVolatility"),
+                    _mean_column(next_puts, "impliedVolatility"),
+                ]
+            )
+            if front_iv is not None and next_iv is not None:
+                signals.append(
+                    _signal(
+                        source=self.provider_id,
+                        signal_type="options_iv_term_structure",
+                        value=round(next_iv - front_iv, 6),
+                        interpretation=f"{label}（{symbol}）近月与次近月期权 IV 期限结构。",
+                        time_horizon="short",
+                        confidence=0.61,
+                        source_url="https://finance.yahoo.com/",
+                        metadata={
+                            "symbol": symbol,
+                            "front_expiration": front_expiry,
+                            "next_expiration": next_expiry,
+                            "front_iv": front_iv,
+                            "next_iv": next_iv,
+                            "data_quality": "yfinance_options_chain",
+                        },
+                    )
+                )
+        if oi_ratio is not None:
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="options_put_call_open_interest",
+                    value=round(oi_ratio, 6),
+                    interpretation=f"{label}（{symbol}）近月期权 put/call open interest 比率。",
+                    time_horizon="short",
+                    confidence=0.6,
+                    source_url="https://finance.yahoo.com/",
+                    metadata={"symbol": symbol, "expiration": front_expiry, "data_quality": "yfinance_options_chain"},
+                )
+            )
+        if volume_ratio is not None:
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="options_put_call_volume",
+                    value=round(volume_ratio, 6),
+                    interpretation=f"{label}（{symbol}）近月期权 put/call volume 比率。",
+                    time_horizon="short",
+                    confidence=0.58,
+                    source_url="https://finance.yahoo.com/",
+                    metadata={"symbol": symbol, "expiration": front_expiry, "data_quality": "yfinance_options_chain"},
+                )
+            )
+        if max_pain is not None:
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="options_max_pain",
+                    value=max_pain,
+                    interpretation=f"{label}（{symbol}）近月期权 max pain 行权价估计。",
+                    time_horizon="event",
+                    confidence=0.55,
+                    source_url="https://finance.yahoo.com/",
+                    metadata={
+                        "symbol": symbol,
+                        "expiration": front_expiry,
+                        "max_pain": max_pain,
+                        "data_quality": "yfinance_options_chain",
+                    },
+                )
+            )
+        return signals
 
     def _load_yfinance(self) -> Any | None:
         if self._yfinance_loader is not None:
@@ -890,30 +1016,115 @@ class YahooPriceProvider(MacroProvider):
 class DeribitProvider(MacroProvider):
     provider_id = "deribit"
     display_name = "Deribit"
-    capabilities = ("crypto_derivatives", "futures_curve")
+    capabilities = ("crypto_derivatives", "options_iv", "futures_curve")
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
-        payload = _get_json(
+        currency = _infer_deribit_currency(query)
+        options_payload = _get_json(
             "https://www.deribit.com/api/v2/public/get_book_summary_by_currency",
-            params={"currency": "BTC", "kind": "future"},
+            params={"currency": currency, "kind": "option"},
         )
-        rows = payload.get("result") if isinstance(payload, dict) else []
-        if not isinstance(rows, list) or not rows:
-            return []
-        perpetual = next((row for row in rows if "PERPETUAL" in str(row.get("instrument_name", ""))), rows[0])
-        mark = _number(perpetual.get("mark_price"))
-        return [
-            _signal(
-                source=self.provider_id,
-                signal_type="btc_derivatives_mark_price",
-                value=mark,
-                interpretation="Deribit BTC 衍生品市场价格信号，辅助判断加密风险偏好。",
-                time_horizon="short",
-                confidence=0.58 if mark is not None else 0.4,
-                source_url="https://www.deribit.com/",
-                metadata={"instrument": perpetual.get("instrument_name")},
+        futures_payload = _get_json(
+            "https://www.deribit.com/api/v2/public/get_book_summary_by_currency",
+            params={"currency": currency, "kind": "future"},
+        )
+        option_rows = options_payload.get("result") if isinstance(options_payload, dict) else []
+        future_rows = futures_payload.get("result") if isinstance(futures_payload, dict) else []
+        option_rows = option_rows if isinstance(option_rows, list) else []
+        future_rows = future_rows if isinstance(future_rows, list) else []
+        signals: list[MacroSignal] = []
+
+        option_points = _deribit_option_points(option_rows)
+        underlying = _deribit_underlying_price(option_rows) or _deribit_underlying_price(future_rows)
+        if option_points and underlying is not None:
+            atm_iv = _mean_values(
+                [
+                    _nearest_deribit_iv(option_points, underlying, option_type="C"),
+                    _nearest_deribit_iv(option_points, underlying, option_type="P"),
+                ]
             )
-        ]
+            if atm_iv is not None:
+                signals.append(
+                    _signal(
+                        source=self.provider_id,
+                        signal_type="deribit_atm_iv",
+                        value=round(atm_iv, 6),
+                        interpretation=f"Deribit {currency} 平值期权隐含波动率。",
+                        time_horizon="short",
+                        confidence=0.66,
+                        source_url="https://www.deribit.com/",
+                        metadata={
+                            "currency": currency,
+                            "underlying_price": underlying,
+                            "data_quality": "deribit_public_api",
+                        },
+                    )
+                )
+            put_iv = _nearest_deribit_iv(option_points, underlying * 0.95, option_type="P")
+            call_iv = _nearest_deribit_iv(option_points, underlying * 1.05, option_type="C")
+            if put_iv is not None and call_iv is not None:
+                signals.append(
+                    _signal(
+                        source=self.provider_id,
+                        signal_type="deribit_skew_proxy",
+                        value=round(put_iv - call_iv, 6),
+                        interpretation=f"Deribit {currency} 95% put 与 105% call 的 IV skew 代理。",
+                        time_horizon="short",
+                        confidence=0.6,
+                        source_url="https://www.deribit.com/",
+                        metadata={
+                            "currency": currency,
+                            "underlying_price": underlying,
+                            "put_95_iv": put_iv,
+                            "call_105_iv": call_iv,
+                            "data_quality": "deribit_public_api",
+                        },
+                    )
+                )
+            term = _deribit_term_structure(option_points)
+            if term is not None:
+                front_expiry, next_expiry, front_iv, next_iv = term
+                signals.append(
+                    _signal(
+                        source=self.provider_id,
+                        signal_type="deribit_iv_term_structure",
+                        value=round(next_iv - front_iv, 6),
+                        interpretation=f"Deribit {currency} 期权 IV 期限结构。",
+                        time_horizon="short",
+                        confidence=0.6,
+                        source_url="https://www.deribit.com/",
+                        metadata={
+                            "currency": currency,
+                            "front_expiry": front_expiry,
+                            "next_expiry": next_expiry,
+                            "front_iv": front_iv,
+                            "next_iv": next_iv,
+                            "data_quality": "deribit_public_api",
+                        },
+                    )
+                )
+
+        basis = _deribit_futures_basis(future_rows)
+        if basis is not None:
+            instrument, perpetual, basis_value = basis
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type="crypto_futures_basis",
+                    value=round(basis_value, 6),
+                    interpretation=f"Deribit {currency} 远期期货相对永续/现货的 basis。",
+                    time_horizon="short",
+                    confidence=0.58,
+                    source_url="https://www.deribit.com/",
+                    metadata={
+                        "currency": currency,
+                        "instrument": instrument,
+                        "reference": perpetual,
+                        "data_quality": "deribit_public_api",
+                    },
+                )
+            )
+        return signals
 
 
 def create_default_providers() -> list[MacroProvider]:
@@ -956,6 +1167,210 @@ def _mean_column(frame: Any, column: str) -> float | None:
         series = frame[column].dropna()
         if len(series) == 0:
             return None
-        return float(series.mean())
+        return _normalise_iv(float(series.mean())) if column == "impliedVolatility" else float(series.mean())
     except Exception:
         return None
+
+
+def _mean_values(values: list[float | None]) -> float | None:
+    numbers = [value for value in values if value is not None]
+    if not numbers:
+        return None
+    return sum(numbers) / len(numbers)
+
+
+def _normalise_iv(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return value / 100.0 if value > 3.0 else value
+
+
+def _safe_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator in (None, 0):
+        return None
+    return numerator / denominator
+
+
+def _sum_column(frame: Any, column: str) -> float | None:
+    try:
+        series = frame[column].dropna()
+        if len(series) == 0:
+            return None
+        return float(series.sum())
+    except Exception:
+        return None
+
+
+def _latest_ticker_close(ticker: Any) -> float | None:
+    try:
+        history = ticker.history(period="5d")
+        if history is None or getattr(history, "empty", True):
+            return None
+        return _number(history["Close"].dropna().iloc[-1])
+    except Exception:
+        return None
+
+
+def _option_rows(frame: Any) -> list[dict[str, Any]]:
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    try:
+        return [row.to_dict() for _, row in frame.iterrows()]
+    except Exception:
+        return []
+
+
+def _option_row_number(row: dict[str, Any], key: str) -> float | None:
+    return _number(row.get(key))
+
+
+def _option_strikes(frame: Any) -> list[float]:
+    return [strike for row in _option_rows(frame) if (strike := _option_row_number(row, "strike")) is not None]
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[midpoint]
+    return (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
+
+
+def _nearest_option_iv(frame: Any, target_strike: float | None) -> float | None:
+    if target_strike is None:
+        return None
+    best_row: dict[str, Any] | None = None
+    best_distance: float | None = None
+    for row in _option_rows(frame):
+        strike = _option_row_number(row, "strike")
+        iv = _normalise_iv(_option_row_number(row, "impliedVolatility"))
+        if strike is None or iv is None:
+            continue
+        distance = abs(strike - target_strike)
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best_row = row
+    if best_row is None:
+        return None
+    return _normalise_iv(_option_row_number(best_row, "impliedVolatility"))
+
+
+def _max_pain_strike(calls: Any, puts: Any) -> float | None:
+    call_rows = _option_rows(calls)
+    put_rows = _option_rows(puts)
+    strikes = sorted({strike for strike in _option_strikes(calls) + _option_strikes(puts)})
+    if not strikes:
+        return None
+    best_strike: float | None = None
+    best_payout: float | None = None
+    for settlement in strikes:
+        call_payout = sum(
+            max(0.0, settlement - strike) * (oi or 0.0)
+            for row in call_rows
+            if (strike := _option_row_number(row, "strike")) is not None
+            for oi in [_option_row_number(row, "openInterest")]
+        )
+        put_payout = sum(
+            max(0.0, strike - settlement) * (oi or 0.0)
+            for row in put_rows
+            if (strike := _option_row_number(row, "strike")) is not None
+            for oi in [_option_row_number(row, "openInterest")]
+        )
+        payout = call_payout + put_payout
+        if best_payout is None or payout < best_payout:
+            best_payout = payout
+            best_strike = settlement
+    return best_strike
+
+
+def _infer_deribit_currency(query: MacroQuery) -> str:
+    text = _query_text(query)
+    if re.search(r"\beth\b|ethereum|以太坊", text, flags=re.IGNORECASE):
+        return "ETH"
+    return "BTC"
+
+
+def _deribit_underlying_price(rows: list[dict[str, Any]]) -> float | None:
+    for row in rows:
+        for key in ("underlying_price", "estimated_delivery_price", "index_price", "mark_price"):
+            value = _number(row.get(key))
+            if value is not None and value > 0:
+                return value
+    return None
+
+
+def _parse_deribit_option(row: dict[str, Any]) -> dict[str, Any] | None:
+    instrument = str(row.get("instrument_name") or "")
+    parts = instrument.split("-")
+    if len(parts) < 4:
+        return None
+    strike = _number(parts[2])
+    option_type = parts[3].upper()[:1]
+    iv = _normalise_iv(
+        _number(row.get("mark_iv"))
+        or _mean_values([_number(row.get("bid_iv")), _number(row.get("ask_iv"))])
+    )
+    if strike is None or option_type not in {"C", "P"} or iv is None:
+        return None
+    return {
+        "instrument": instrument,
+        "expiry": parts[1],
+        "strike": strike,
+        "type": option_type,
+        "iv": iv,
+        "underlying_price": _number(row.get("underlying_price")),
+    }
+
+
+def _deribit_option_points(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    points: list[dict[str, Any]] = []
+    for row in rows:
+        parsed = _parse_deribit_option(row)
+        if parsed is not None:
+            points.append(parsed)
+    return points
+
+
+def _nearest_deribit_iv(points: list[dict[str, Any]], target_strike: float, *, option_type: str) -> float | None:
+    candidates = [point for point in points if point.get("type") == option_type]
+    if not candidates:
+        return None
+    best = min(candidates, key=lambda point: abs(float(point["strike"]) - target_strike))
+    return _number(best.get("iv"))
+
+
+def _deribit_term_structure(points: list[dict[str, Any]]) -> tuple[str, str, float, float] | None:
+    by_expiry: dict[str, list[float]] = {}
+    for point in points:
+        expiry = str(point.get("expiry") or "")
+        iv = _number(point.get("iv"))
+        if not expiry or iv is None:
+            continue
+        by_expiry.setdefault(expiry, []).append(iv)
+    expiries = sorted(by_expiry)
+    if len(expiries) < 2:
+        return None
+    front, next_expiry = expiries[0], expiries[1]
+    front_iv = _mean_values(by_expiry[front])
+    next_iv = _mean_values(by_expiry[next_expiry])
+    if front_iv is None or next_iv is None:
+        return None
+    return front, next_expiry, front_iv, next_iv
+
+
+def _deribit_futures_basis(rows: list[dict[str, Any]]) -> tuple[str, str, float] | None:
+    perpetual = next((row for row in rows if "PERPETUAL" in str(row.get("instrument_name", ""))), None)
+    dated = next((row for row in rows if "PERPETUAL" not in str(row.get("instrument_name", ""))), None)
+    if perpetual is None or dated is None:
+        return None
+    perpetual_mark = _number(perpetual.get("mark_price"))
+    dated_mark = _number(dated.get("mark_price"))
+    if perpetual_mark in (None, 0) or dated_mark is None:
+        return None
+    return (
+        str(dated.get("instrument_name") or ""),
+        str(perpetual.get("instrument_name") or ""),
+        dated_mark / perpetual_mark - 1.0,
+    )

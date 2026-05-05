@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { navItems } from "@/components/layout/Sidebar";
 
-const VERSION = "v10.8.1";
+const VERSION = "v10.8.2";
 
 function compactModelName(modelId?: string): string {
   return modelId?.split("/").pop() || "Kronos";
