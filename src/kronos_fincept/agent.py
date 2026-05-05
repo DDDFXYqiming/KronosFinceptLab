@@ -600,6 +600,10 @@ class AgentAnalysisResult:
     clarifying_question: str | None = None
     error: str | None = None
     asset_results: list[dict[str, Any]] = field(default_factory=list)
+    macro_provider_coverage: dict[str, Any] | None = None
+    macro_data_quality: dict[str, Any] | None = None
+    macro_dimension_coverage: dict[str, Any] | None = None
+    macro_evidence_insufficiency: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -827,6 +831,7 @@ def analyze_investment_question(
     )
     tool_calls.append(llm_call)
     asset_results = _build_asset_results(asset_contexts, report)
+    macro_response_fields = _macro_response_fields(macro_context, report)
     steps.append(
         AgentStep(
             name="OpenRouter/DeepSeek 汇总",
@@ -867,6 +872,7 @@ def analyze_investment_question(
         steps=steps,
         timestamp=now,
         asset_results=asset_results,
+        **macro_response_fields,
     )
 
 
@@ -996,6 +1002,7 @@ def analyze_macro_question(
     }
     report, llm_call = _generate_report(clean_question, llm_context)
     report = _ensure_macro_report(report, macro_context)
+    macro_response_fields = _macro_response_fields(macro_context, report)
     tool_calls.append(llm_call)
     log_event(
         logger,
@@ -1040,6 +1047,7 @@ def analyze_macro_question(
         tool_calls=tool_calls,
         steps=steps,
         timestamp=now,
+        **macro_response_fields,
     )
 
 
@@ -2258,6 +2266,128 @@ def _macro_dimension_coverage_from_context(
     if not isinstance(provider_results, dict):
         provider_results = {}
     return _macro_dimension_coverage(signals or _normalize_macro_signals(macro_context.get("signals")), provider_results)
+
+
+def _macro_response_fields(
+    macro_context: dict[str, Any] | None,
+    report: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(macro_context, dict):
+        return {}
+
+    signals = _normalize_macro_signals(macro_context.get("signals"))
+    provider_results = macro_context.get("provider_results")
+    if not isinstance(provider_results, dict):
+        provider_results = {}
+
+    report_coverage = (report or {}).get("macro_evidence")
+    dimension_coverage = (
+        report_coverage
+        if isinstance(report_coverage, dict) and "sufficient_evidence" in report_coverage
+        else _macro_dimension_coverage_from_context(macro_context, signals)
+    )
+    provider_coverage = _macro_provider_coverage(provider_results)
+    status_counts = _provider_status_counts(provider_coverage)
+    latest_update = _latest_macro_update(signals, provider_coverage)
+    data_quality = {
+        "provider_total": len(provider_coverage),
+        "success_count": status_counts.get("completed", 0),
+        "empty_count": status_counts.get("empty", 0),
+        "failed_count": status_counts.get("failed", 0),
+        "skipped_count": status_counts.get("skipped", 0),
+        "unavailable_count": status_counts.get("unavailable", 0),
+        "signal_count": len(signals),
+        "last_updated": latest_update,
+        "source": "macro_provider_results",
+    }
+    required_dimensions = int(dimension_coverage.get("required_dimension_count") or MACRO_REQUIRED_DIMENSION_COUNT)
+    dimension_count = int(dimension_coverage.get("dimension_count") or 0)
+    evidence_insufficiency = {
+        "insufficient": not bool(dimension_coverage.get("sufficient_evidence")),
+        "dimension_count": dimension_count,
+        "required_dimension_count": required_dimensions,
+        "missing_dimensions": dimension_coverage.get("missing_dimensions") or [],
+        "missing_dimension_labels": dimension_coverage.get("missing_dimension_labels") or [],
+        "reason": (
+            "宏观证据不足：少于 3 类独立信号维度。"
+            if dimension_count < required_dimensions
+            else ""
+        ),
+    }
+    return {
+        "macro_provider_coverage": provider_coverage,
+        "macro_data_quality": data_quality,
+        "macro_dimension_coverage": dimension_coverage,
+        "macro_evidence_insufficiency": evidence_insufficiency,
+    }
+
+
+def _macro_provider_coverage(provider_results: dict[str, Any]) -> dict[str, Any]:
+    coverage: dict[str, Any] = {}
+    for provider_id, raw_result in provider_results.items():
+        if not isinstance(raw_result, dict):
+            continue
+        signals = _normalize_macro_signals(raw_result.get("signals"))
+        first_signal = signals[0] if signals else {}
+        metadata = raw_result.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        coverage[str(provider_id)] = {
+            "provider_id": str(raw_result.get("provider_id") or provider_id),
+            "status": str(raw_result.get("status") or "unknown"),
+            "signal_count": len(signals),
+            "elapsed_ms": int(raw_result.get("elapsed_ms") or 0),
+            "error": raw_result.get("error"),
+            "data_quality": _macro_signal_data_quality(first_signal) if first_signal else metadata.get("data_quality"),
+            "freshness": _macro_signal_freshness(first_signal) if first_signal else metadata.get("source_time"),
+            "source_url": first_signal.get("source_url") if isinstance(first_signal, dict) else None,
+            "reason": metadata.get("reason") or metadata.get("message") or raw_result.get("error"),
+        }
+    return coverage
+
+
+def _provider_status_counts(provider_coverage: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in provider_coverage.values():
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _latest_macro_update(signals: list[dict[str, Any]], provider_coverage: dict[str, Any]) -> str | None:
+    candidates: list[str] = []
+    for signal in signals:
+        freshness = _macro_signal_freshness(signal)
+        if freshness:
+            candidates.append(str(freshness))
+    for item in provider_coverage.values():
+        if isinstance(item, dict) and item.get("freshness"):
+            candidates.append(str(item["freshness"]))
+    return max(candidates) if candidates else None
+
+
+def _macro_signal_data_quality(signal: dict[str, Any]) -> str | None:
+    metadata = signal.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    value = metadata.get("data_quality") or metadata.get("source_quality") or metadata.get("provider_quality")
+    return str(value) if value else None
+
+
+def _macro_signal_freshness(signal: dict[str, Any]) -> str | None:
+    metadata = signal.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    value = (
+        signal.get("observed_at")
+        or metadata.get("source_time")
+        or metadata.get("updated_at")
+        or metadata.get("update_time")
+        or metadata.get("expiration")
+    )
+    return str(value) if value else None
 
 
 def _build_research_queries(item: ResolvedSymbol, question: str, *, max_queries: int = 3) -> list[str]:

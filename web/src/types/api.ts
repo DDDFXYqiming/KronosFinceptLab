@@ -217,6 +217,7 @@ export interface MacroProviderResultView {
   provider_id: string;
   status: string;
   signals?: MacroSignal[];
+  signal_count?: number;
   elapsed_ms?: number;
   error?: string | null;
   metadata?: Record<string, any>;
@@ -290,6 +291,43 @@ export interface AgentAnalyzeResponse {
   clarification_required: boolean;
   clarifying_question?: string | null;
   error?: string | null;
+  macro_provider_coverage?: Record<string, MacroProviderCoverage> | null;
+  macro_data_quality?: MacroDataQualitySummary | null;
+  macro_dimension_coverage?: MacroEvidenceCoverage | null;
+  macro_evidence_insufficiency?: MacroEvidenceInsufficiency | null;
+}
+
+export interface MacroProviderCoverage {
+  provider_id: string;
+  status: string;
+  signal_count: number;
+  elapsed_ms: number;
+  error?: string | null;
+  data_quality?: string | null;
+  freshness?: string | null;
+  source_url?: string | null;
+  reason?: string | null;
+}
+
+export interface MacroDataQualitySummary {
+  provider_total: number;
+  success_count: number;
+  empty_count: number;
+  failed_count: number;
+  skipped_count: number;
+  unavailable_count: number;
+  signal_count: number;
+  last_updated?: string | null;
+  source: string;
+}
+
+export interface MacroEvidenceInsufficiency {
+  insufficient: boolean;
+  dimension_count: number;
+  required_dimension_count: number;
+  missing_dimensions: string[];
+  missing_dimension_labels: string[];
+  reason: string;
 }
 
 export interface IndicatorResponse {

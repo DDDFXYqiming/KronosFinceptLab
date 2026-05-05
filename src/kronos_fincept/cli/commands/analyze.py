@@ -14,6 +14,56 @@ def analyze_group():
     pass
 
 
+def _echo_macro_coverage(payload: dict) -> None:
+    data_quality = payload.get("macro_data_quality") or {}
+    dimension_coverage = payload.get("macro_dimension_coverage") or {}
+    provider_coverage = payload.get("macro_provider_coverage") or {}
+    insufficiency = payload.get("macro_evidence_insufficiency") or {}
+    if not any([data_quality, dimension_coverage, provider_coverage, insufficiency]):
+        return
+
+    click.echo("\nMacro Coverage:")
+    if data_quality:
+        click.echo(
+            "- Providers: "
+            f"{data_quality.get('provider_total', 0)} total, "
+            f"{data_quality.get('success_count', 0)} completed, "
+            f"{data_quality.get('empty_count', 0)} empty, "
+            f"{data_quality.get('failed_count', 0)} failed, "
+            f"{data_quality.get('skipped_count', 0)} skipped, "
+            f"{data_quality.get('unavailable_count', 0)} unavailable"
+        )
+        click.echo(
+            "- Signals: "
+            f"{data_quality.get('signal_count', 0)}"
+            + (f"; updated {data_quality.get('last_updated')}" if data_quality.get("last_updated") else "")
+        )
+    if dimension_coverage:
+        click.echo(
+            "- Evidence dimensions: "
+            f"{dimension_coverage.get('dimension_count', 0)}/"
+            f"{dimension_coverage.get('required_dimension_count', 3)} "
+            f"({'sufficient' if dimension_coverage.get('sufficient_evidence') else 'insufficient'})"
+        )
+        labels = dimension_coverage.get("dimension_labels") or []
+        if labels:
+            click.echo("- Dimensions: " + ", ".join(str(item) for item in labels))
+    if insufficiency.get("insufficient") and insufficiency.get("reason"):
+        click.echo(f"- Evidence warning: {insufficiency['reason']}")
+    if provider_coverage:
+        click.echo("- Provider status:")
+        for provider_id, row in sorted(provider_coverage.items()):
+            if not isinstance(row, dict):
+                continue
+            reason = row.get("reason") or row.get("error") or ""
+            reason_suffix = f" ({reason})" if reason else ""
+            click.echo(
+                f"  - {provider_id}: {row.get('status', 'unknown')}, "
+                f"signals={row.get('signal_count', 0)}, "
+                f"elapsed={row.get('elapsed_ms', 0)}ms{reason_suffix}"
+            )
+
+
 @analyze_group.command()
 @click.option('--symbol', required=True, help='Stock symbol')
 @click.option('--shares', type=float, default=1000000000, help='Shares outstanding')
@@ -557,6 +607,7 @@ def agent(ctx, question, symbol, market, dry_run, output_format):
                 click.echo(result.clarifying_question)
             else:
                 click.echo(result.final_report)
+                _echo_macro_coverage(payload)
                 click.echo("\nTool Calls:")
                 for call in result.tool_calls:
                     click.echo(f"- [{call.status}] {call.name}: {call.summary}")
@@ -601,6 +652,7 @@ def macro(ctx, question, symbols, market, providers, output_format):
                 click.echo(result.clarifying_question)
             else:
                 click.echo(result.final_report)
+                _echo_macro_coverage(payload)
                 click.echo("\nTool Calls:")
                 for call in result.tool_calls:
                     click.echo(f"- [{call.status}] {call.name}: {call.summary}")

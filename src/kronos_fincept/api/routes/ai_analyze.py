@@ -89,6 +89,10 @@ class AgentAnalyzeResponse(BaseModel):
     clarification_required: bool = False
     clarifying_question: str | None = None
     error: str | None = None
+    macro_provider_coverage: dict[str, Any] | None = None
+    macro_data_quality: dict[str, Any] | None = None
+    macro_dimension_coverage: dict[str, Any] | None = None
+    macro_evidence_insufficiency: dict[str, Any] | None = None
 
 
 # ── Endpoints ──

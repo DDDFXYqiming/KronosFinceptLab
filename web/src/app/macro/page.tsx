@@ -17,7 +17,7 @@ import type {
   MacroSignal,
 } from "@/types/api";
 
-const VERSION = "v10.8.4";
+const VERSION = "v10.8.5";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 const EXAMPLES = [
@@ -134,12 +134,30 @@ function getMacroToolCall(result: AgentAnalyzeResponse | null): AgentToolCall | 
 }
 
 function getMacroProviderRows(result: AgentAnalyzeResponse | null): MacroProviderResultView[] {
+  const coverage = result?.macro_provider_coverage;
+  if (coverage && typeof coverage === "object" && !Array.isArray(coverage)) {
+    return Object.entries(coverage).map(([providerId, row]) => ({
+      provider_id: row?.provider_id || providerId,
+      status: row?.status || "unknown",
+      signals: [],
+      signal_count: row?.signal_count,
+      elapsed_ms: row?.elapsed_ms,
+      error: row?.error,
+      metadata: {
+        data_quality: row?.data_quality,
+        source_time: row?.freshness,
+        source_url: row?.source_url,
+        reason: row?.reason,
+      },
+    }));
+  }
   const raw = getMacroToolCall(result)?.metadata?.provider_results;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
   return Object.entries(raw as Record<string, MacroProviderResultView>).map(([providerId, row]) => ({
     provider_id: row?.provider_id || providerId,
     status: row?.status || "unknown",
     signals: normalizeSignals(row?.signals),
+    signal_count: row?.signal_count,
     elapsed_ms: row?.elapsed_ms,
     error: row?.error,
     metadata: row?.metadata || {},
@@ -176,18 +194,22 @@ function MacroDataQuality({
   result: AgentAnalyzeResponse;
   signals: MacroSignal[];
 }) {
-  const evidence: MacroEvidenceCoverage | undefined = result.report?.macro_evidence;
+  const evidence: MacroEvidenceCoverage | undefined = result.macro_dimension_coverage || result.report?.macro_evidence;
   const macroCall = getMacroToolCall(result);
   const providerRows = getMacroProviderRows(result);
   const statusCounts = evidence?.provider_status_counts || {};
+  const quality = result.macro_data_quality;
   const providerTotal =
+    quality?.provider_total ||
     providerRows.length ||
     Object.values(statusCounts).reduce((sum, count) => sum + Number(count || 0), 0) ||
     Number(macroCall?.metadata?.provider_ids?.length || 0);
-  const successCount = Number(statusCounts.completed || 0);
-  const emptyCount = Number(statusCounts.empty || 0);
+  const successCount = Number(quality?.success_count ?? statusCounts.completed ?? 0);
+  const emptyCount = Number(quality?.empty_count ?? statusCounts.empty ?? 0);
   const degradedCount =
-    Number(statusCounts.failed || 0) + Number(statusCounts.skipped || 0) + Number(statusCounts.unavailable || 0);
+    Number(quality?.failed_count ?? statusCounts.failed ?? 0) +
+    Number(quality?.skipped_count ?? statusCounts.skipped ?? 0) +
+    Number(quality?.unavailable_count ?? statusCounts.unavailable ?? 0);
   const dimensionLabel = evidence
     ? `${evidence.dimension_count}/${evidence.required_dimension_count}`
     : "-";
@@ -204,7 +226,7 @@ function MacroDataQuality({
         </div>
         <div className="rounded-lg border border-border bg-background p-3">
           <p className="text-xs text-muted-foreground">有效信号</p>
-          <p className="mt-1 font-mono text-2xl text-foreground">{signals.length}</p>
+          <p className="mt-1 font-mono text-2xl text-foreground">{quality?.signal_count ?? signals.length}</p>
           <p className="mt-1 text-xs text-muted-foreground">按来源输出真实结构化信号</p>
         </div>
         <div className="rounded-lg border border-border bg-background p-3">
@@ -216,7 +238,7 @@ function MacroDataQuality({
         </div>
         <div className="rounded-lg border border-border bg-background p-3">
           <p className="text-xs text-muted-foreground">更新时间</p>
-          <p className="mt-1 font-mono text-sm text-foreground">{result.timestamp.slice(0, 19)}</p>
+          <p className="mt-1 font-mono text-sm text-foreground">{quality?.last_updated || result.timestamp.slice(0, 19)}</p>
           <p className="mt-1 text-xs text-muted-foreground">本轮请求完成时间</p>
         </div>
       </div>
@@ -255,7 +277,7 @@ function ProviderCoverageMatrix({ rows }: { rows: MacroProviderResultView[] }) {
             </summary>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
               <span>信号数</span>
-              <span className="text-right font-mono text-foreground">{row.signals?.length || 0}</span>
+              <span className="text-right font-mono text-foreground">{row.signal_count ?? row.signals?.length ?? 0}</span>
               <span>耗时</span>
               <span className="text-right font-mono text-foreground">{formatElapsedMs(Number(row.elapsed_ms || 0))}</span>
               <span>原因</span>
@@ -281,14 +303,15 @@ function ProviderCoverageMatrix({ rows }: { rows: MacroProviderResultView[] }) {
             <tbody>
               {rows.map((row) => {
                 const firstSignal = row.signals?.[0];
+                const metadata = row.metadata || {};
                 return (
                   <tr key={row.provider_id} className="border-b border-border last:border-b-0">
                     <td className="py-2 font-mono font-semibold text-foreground">{row.provider_id}</td>
                     <td className="py-2 text-muted-foreground">{statusLabel(row.status)}</td>
                     <td className="py-2 text-right font-mono text-foreground">{formatElapsedMs(Number(row.elapsed_ms || 0))}</td>
-                    <td className="py-2 text-right font-mono text-foreground">{row.signals?.length || 0}</td>
-                    <td className="py-2 text-muted-foreground">{firstSignal ? signalDataQuality(firstSignal) : "-"}</td>
-                    <td className="py-2 text-muted-foreground">{firstSignal ? signalFreshness(firstSignal) : "-"}</td>
+                    <td className="py-2 text-right font-mono text-foreground">{row.signal_count ?? row.signals?.length ?? 0}</td>
+                    <td className="py-2 text-muted-foreground">{firstSignal ? signalDataQuality(firstSignal) : String(metadata.data_quality || "-")}</td>
+                    <td className="py-2 text-muted-foreground">{firstSignal ? signalFreshness(firstSignal) : String(metadata.source_time || "-")}</td>
                     <td className="py-2 text-muted-foreground">{providerReason(row)}</td>
                   </tr>
                 );
@@ -642,7 +665,7 @@ export default function MacroPage() {
   const scenarios = normalizeScenarios(report?.probability_scenarios);
   const monitoring = normalizeMonitoring(report?.monitoring_signals);
   const providerRows = getMacroProviderRows(result);
-  const evidence = report?.macro_evidence;
+  const evidence = result?.macro_dimension_coverage || report?.macro_evidence;
 
   return (
     <div className="page-shell space-y-6">
