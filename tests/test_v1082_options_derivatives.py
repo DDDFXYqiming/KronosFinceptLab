@@ -69,6 +69,32 @@ def test_v1082_yfinance_options_returns_structured_volatility_signals() -> None:
     assert by_type["options_put_call_open_interest"].metadata["data_quality"] == "yfinance_options_chain"
 
 
+def test_v1082_fear_greed_falls_back_to_vix_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get_json(url: str, **kwargs):
+        if "fearandgreed" in url:
+            raise RuntimeError("cnn unavailable")
+        assert "%5EVIX" in url
+        return {
+            "chart": {
+                "result": [
+                    {
+                        "timestamp": [1777600000, 1778040000],
+                        "indicators": {"quote": [{"close": [12.0, 15.0]}]},
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(digital_oracle, "_get_json", fake_get_json)
+
+    signals = digital_oracle.FearGreedProvider().fetch_signals(MacroQuery("黄金风险偏好"))
+
+    assert len(signals) == 1
+    assert signals[0].signal_type == "vix_fear_proxy"
+    assert signals[0].value == pytest.approx(0.25)
+    assert signals[0].metadata["data_quality"] == "fallback_yahoo_chart_vix"
+
+
 def test_v1082_deribit_returns_crypto_options_and_futures_structure(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_get_json(url: str, **kwargs):
         params = kwargs.get("params") or {}

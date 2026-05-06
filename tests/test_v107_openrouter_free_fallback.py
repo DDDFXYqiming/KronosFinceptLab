@@ -256,7 +256,7 @@ def test_v107_report_falls_back_to_deepseek_when_openrouter_content_is_not_json(
     assert [call["json"]["model"] for call in calls] == ["openrouter/free", "deepseek-v4-flash"]
 
 
-def test_v107_web_report_uses_short_provider_budgets(monkeypatch):
+def test_v107_web_report_uses_free_provider_budget_before_deepseek(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -295,10 +295,10 @@ def test_v107_web_report_uses_short_provider_budgets(monkeypatch):
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [12, 16]
+    assert [call["timeout"] for call in calls] == [45, 30]
 
 
-def test_v107_web_macro_report_uses_tighter_provider_budgets(monkeypatch):
+def test_v107_web_macro_report_uses_free_provider_budget_before_deepseek(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -337,7 +337,7 @@ def test_v107_web_macro_report_uses_tighter_provider_budgets(monkeypatch):
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在宏观 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [12, 12]
+    assert [call["timeout"] for call in calls] == [45, 25]
 
 
 def test_v107_web_macro_uses_local_route_and_fast_provider_manager(monkeypatch):

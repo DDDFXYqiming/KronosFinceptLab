@@ -821,10 +821,13 @@ class FearGreedProvider(MacroProvider):
     capabilities = ("market_sentiment",)
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
-        payload = _get_json("https://production.dataviz.cnn.io/index/fearandgreed/graphdata")
+        try:
+            payload = _get_json("https://production.dataviz.cnn.io/index/fearandgreed/graphdata", timeout=3)
+        except Exception:
+            return self._vix_proxy_signal()
         data = payload.get("fear_and_greed") if isinstance(payload, dict) else {}
         if not isinstance(data, dict):
-            return []
+            return self._vix_proxy_signal()
         score = _number(data.get("score"))
         rating = str(data.get("rating") or "")
         return [
@@ -837,6 +840,53 @@ class FearGreedProvider(MacroProvider):
                 confidence=0.63 if score is not None else 0.4,
                 observed_at=str(data.get("timestamp") or ""),
                 source_url="https://www.cnn.com/markets/fear-and-greed",
+            )
+        ]
+
+    def _vix_proxy_signal(self) -> list[MacroSignal]:
+        try:
+            payload = _get_json(
+                "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX",
+                params={"range": "1mo", "interval": "1d"},
+                timeout=8,
+            )
+        except Exception:
+            return []
+        chart = payload.get("chart") if isinstance(payload, dict) else {}
+        results = chart.get("result") if isinstance(chart, dict) else []
+        first_result = results[0] if isinstance(results, list) and results else {}
+        quote = (((first_result.get("indicators") or {}).get("quote") or [{}])[0]) if isinstance(first_result, dict) else {}
+        closes = [_number(item) for item in (quote.get("close") or []) if _number(item) is not None]
+        if len(closes) < 2:
+            return []
+        latest = closes[-1]
+        first = closes[0]
+        if latest is None or first in (None, 0):
+            return []
+        change = round(latest / first - 1.0, 6)
+        observed_at = None
+        timestamps = first_result.get("timestamp") if isinstance(first_result, dict) else []
+        if isinstance(timestamps, list) and timestamps:
+            try:
+                observed_at = str(date.fromtimestamp(int(timestamps[-1])))
+            except Exception:
+                observed_at = None
+        return [
+            _signal(
+                source=self.provider_id,
+                signal_type="vix_fear_proxy",
+                value=change,
+                interpretation="CNN Fear & Greed 接口不可用时，使用 VIX 近 1 个月变化作为风险情绪代理；VIX 上行通常表示恐慌升温。",
+                time_horizon="short",
+                confidence=0.52,
+                observed_at=observed_at,
+                source_url="https://finance.yahoo.com/quote/%5EVIX/",
+                metadata={
+                    "proxy": "vix_1mo_change_yahoo_chart",
+                    "latest": latest,
+                    "first": first,
+                    "data_quality": "fallback_yahoo_chart_vix",
+                },
             )
         ]
 

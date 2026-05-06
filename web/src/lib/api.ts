@@ -43,7 +43,7 @@ export type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 const DEFAULT_TIMEOUT_MS = 45000;
-const AGENT_ANALYZE_TIMEOUT_MS = 90000;
+const AGENT_ANALYZE_TIMEOUT_MS = 120000;
 
 export interface ApiClientOptions {
   signal?: AbortSignal;
@@ -206,8 +206,11 @@ async function fetchApi<T>(
     return res.json();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      const message = "请求超时或已取消";
-      logApiFailure(path, 0, clientRequestId, message);
+      const cancelledByCaller = callerSignal?.aborted === true;
+      const message = cancelledByCaller ? "请求已取消" : "请求超时或已取消";
+      if (!cancelledByCaller) {
+        logApiFailure(path, 0, clientRequestId, message);
+      }
       throw new ApiError(message, { status: 0, requestId: clientRequestId, path, type: "request_aborted" });
     }
     throw error;

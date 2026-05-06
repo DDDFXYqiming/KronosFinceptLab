@@ -6,11 +6,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_next_build_is_configured_for_standalone_and_zeabur_script():
     next_config = (ROOT / "web/next.config.js").read_text(encoding="utf-8")
+    api_proxy_route = (ROOT / "web/src/app/api/[...path]/route.ts").read_text(encoding="utf-8")
     package_json = (ROOT / "web/package.json").read_text(encoding="utf-8")
     build_script = (ROOT / "web/scripts/build_zeabur.js").read_text(encoding="utf-8")
 
     assert 'output: "standalone"' in next_config
-    assert "INTERNAL_API_URL" in next_config
+    assert "INTERNAL_API_URL" in api_proxy_route
+    assert "API_PROXY_TIMEOUT_MS" in api_proxy_route
     assert '"build:zeabur": "node scripts/build_zeabur.js"' in package_json
     assert 'NEXT_IGNORE_INCORRECT_LOCKFILE = "1"' in build_script
     assert 'NEXT_TELEMETRY_DISABLED = "1"' in build_script
