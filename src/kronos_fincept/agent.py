@@ -106,6 +106,7 @@ ALLOWED_SCOPE_PATTERNS = [
     r"\b\d{6}\b",
     r"股票|股价|证券|A股|美股|港股|行情|走势|趋势|上涨|下跌|涨幅|跌幅|买|卖|持有|风险|预测|回测|量化|投资|资产|组合",
     r"估值|目标价|财报|业绩|短期|中期|长期|看好|看空",
+    r"能买吗|能不能买|可以买|适合买|该不该买|值不值|见底|到顶|抄底|追高",
     r"Kronos|Camelos|DeepSeek|模型|财务|技术面|基本面|指标|VaR|Sharpe|波动|回撤",
     r"API|CLI|Web|部署|Zeabur|日志|告警|数据源|BaoStock|AkShare|Yahoo",
 ]
@@ -128,7 +129,7 @@ MACRO_ALLOWED_PATTERNS = [
     r"比特币|BTC|ETH|加密|crypto|Deribit|CoinGecko",
     r"泡沫|AI|半导体|行业周期|估值|买入时机|该不该买|能不能买",
     r"A股|港股|美股|大盘|指数|上证|深证|沪深|创业板|科创|恒生|国企指数|纳指|标普|道指|罗素",
-    r"市场位置|现在位置|位置怎么样|还有救|适合.*(买|配置|入场)|风险偏好|资金面|流动性|估值区间",
+    r"市场位置|现在位置|位置怎么样|适合.*(买|配置|入场)|风险偏好|资金面|流动性|估值区间",
     r"\b[A-Z]{1,5}\b|\b\d{6}\b",
 ]
 
@@ -647,10 +648,20 @@ def analyze_investment_question(
         )
 
     web_analysis = _is_web_analysis_context(context)
-    if web_analysis:
-        route = _local_route_decision(clean_question, explicit_symbol=symbol, explicit_market=market)
-    else:
-        route = classify_agent_request(clean_question, explicit_symbol=symbol, explicit_market=market)
+    route = classify_agent_request(clean_question, explicit_symbol=symbol, explicit_market=market)
+    if web_analysis and not route.allowed and _should_delegate_web_analysis_to_macro(clean_question, [], route=route):
+        log_event(
+            logger,
+            logging.INFO,
+            "agent.analysis.macro_redirect",
+            "Delegating symbol-less web analysis question to macro agent",
+            router=route.source,
+        )
+        return analyze_macro_question(
+            clean_question,
+            market=market,
+            context=_web_analysis_macro_context(context),
+        )
     if not route.allowed:
         log_event(
             logger,
@@ -667,9 +678,22 @@ def analyze_investment_question(
         )
 
     if _is_web_analysis_context(context):
-        route = replace(route, needs_macro=_web_analysis_requires_embedded_macro(clean_question))
+        route = replace(route, needs_macro=route.needs_macro or _web_analysis_requires_embedded_macro(clean_question))
 
     resolved = route.symbols or resolve_symbols(clean_question, explicit_symbol=symbol, explicit_market=market)
+    if web_analysis and _should_delegate_web_analysis_to_macro(clean_question, resolved, route=route):
+        log_event(
+            logger,
+            logging.INFO,
+            "agent.analysis.macro_redirect",
+            "Delegating symbol-less web analysis question to macro agent",
+            router=route.source,
+        )
+        return analyze_macro_question(
+            clean_question,
+            market=market,
+            context=_web_analysis_macro_context(context),
+        )
     if route.needs_clarification or not resolved:
         log_event(logger, logging.INFO, "agent.analysis.clarification", "Agent could not resolve a symbol")
         return _clarification_result(
@@ -914,20 +938,12 @@ def analyze_macro_question(
         return _rejection_result(question=clean_question, reason=hard_reason, timestamp=now)
 
     web_macro = _is_web_macro_context(context)
-    if web_macro:
-        route = _local_macro_route_decision(
-            clean_question,
-            symbols=symbols,
-            market=market,
-            provider_ids=provider_ids,
-        )
-    else:
-        route = classify_macro_request(
-            clean_question,
-            symbols=symbols,
-            market=market,
-            provider_ids=provider_ids,
-        )
+    route = classify_macro_request(
+        clean_question,
+        symbols=symbols,
+        market=market,
+        provider_ids=provider_ids,
+    )
     if not route.allowed or route.needs_clarification:
         return _clarification_result(
             question=clean_question,
@@ -1539,6 +1555,36 @@ def _is_web_llm_context(context: dict[str, Any] | None) -> bool:
 
 def _is_web_macro_context(context: dict[str, Any] | None) -> bool:
     return _web_context_entry(context) == "web-macro"
+
+
+def _web_analysis_macro_context(context: dict[str, Any] | None) -> dict[str, Any]:
+    forwarded = dict(context or {})
+    source_entry = _web_context_entry(context)
+    if source_entry:
+        forwarded["source_entry"] = source_entry
+    forwarded["entry"] = "web-macro"
+    return forwarded
+
+
+def _should_delegate_web_analysis_to_macro(
+    text: str,
+    resolved: list[ResolvedSymbol],
+    *,
+    route: AgentRouteDecision | None = None,
+) -> bool:
+    clean_text = (text or "").strip()
+    if resolved or not clean_text or _hard_security_rejection(clean_text):
+        return False
+    if route is not None:
+        if route.needs_macro:
+            return True
+        if route.source != "local_fallback":
+            return False
+    return (
+        _is_macro_question(clean_text)
+        or _question_requires_macro(clean_text)
+        or _web_analysis_requires_embedded_macro(clean_text)
+    )
 
 
 def _web_analysis_requires_embedded_macro(text: str) -> bool:

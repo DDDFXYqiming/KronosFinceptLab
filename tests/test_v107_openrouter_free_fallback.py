@@ -340,14 +340,21 @@ def test_v107_web_macro_report_uses_free_provider_budget_before_deepseek(monkeyp
     assert [call["timeout"] for call in calls] == [45, 25]
 
 
-def test_v107_web_macro_uses_local_route_and_fast_provider_manager(monkeypatch):
+def test_v107_web_macro_uses_llm_route_and_fast_provider_manager(monkeypatch):
     from kronos_fincept import agent
     from kronos_fincept.macro import MacroGatherResult, MacroProviderResult, MacroSignal
 
     captured: dict[str, object] = {}
 
-    def fail_llm_router(*args, **kwargs):
-        raise AssertionError("web-macro should not block on the LLM router")
+    def fake_llm_router(*args, **kwargs):
+        captured["router_called"] = True
+        return agent.MacroRouteDecision(
+            allowed=True,
+            symbols=["A股"],
+            market="cn",
+            provider_ids=["fear_greed", "us_treasury", "web_search"],
+            source="openrouter_macro_router",
+        )
 
     class FakeMacroManager:
         def gather(self, query, *, provider_ids=None):
@@ -376,23 +383,28 @@ def test_v107_web_macro_uses_local_route_and_fast_provider_manager(monkeypatch):
         captured["fast_mode"] = fast_mode
         return FakeMacroManager()
 
-    monkeypatch.setattr(agent, "_call_deepseek_macro_router", fail_llm_router)
+    monkeypatch.setattr(agent, "_call_deepseek_macro_router", fake_llm_router)
     monkeypatch.setattr(agent, "_create_macro_data_manager", fake_create_manager)
     monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
 
     result = agent.analyze_macro_question("A股现在位置怎么样", context={"entry": "web-macro"})
 
     assert result.ok is True
-    assert result.steps[0].summary.startswith("已通过 local_macro_fallback")
+    assert result.steps[0].summary.startswith("已通过 openrouter_macro_router")
+    assert captured["router_called"] is True
     assert captured["fast_mode"] is True
-    assert captured["provider_ids"]
+    assert captured["provider_ids"] == ["fear_greed", "us_treasury", "web_search"]
 
 
-def test_v107_web_analysis_uses_local_route_to_avoid_router_latency(monkeypatch):
+def test_v107_web_analysis_uses_llm_route_before_local_fallback(monkeypatch):
     from kronos_fincept import agent
 
-    def fail_router(*args, **kwargs):
-        raise AssertionError("web-analysis should not block on the LLM router")
+    def fake_router(*args, **kwargs):
+        return agent.AgentRouteDecision(
+            allowed=True,
+            symbols=[agent.ResolvedSymbol("600036", "cn", "招商银行")],
+            source="openrouter_router",
+        )
 
     def fake_asset_context(item, *, question, dry_run, search_query_limit=3, include_prediction=True):
         return (
@@ -429,7 +441,7 @@ def test_v107_web_analysis_uses_local_route_to_avoid_router_latency(monkeypatch)
             ),
         )
 
-    monkeypatch.setattr(agent, "_call_deepseek_router", fail_router)
+    monkeypatch.setattr(agent, "_call_deepseek_router", fake_router)
     monkeypatch.setattr(agent, "_build_asset_context", fake_asset_context)
     monkeypatch.setattr(agent, "_generate_report", fake_generate_report)
 
@@ -441,4 +453,4 @@ def test_v107_web_analysis_uses_local_route_to_avoid_router_latency(monkeypatch)
 
     assert result.ok is True
     assert result.symbol == "600036"
-    assert result.steps[1].summary.startswith("通过 local_fallback")
+    assert result.steps[1].summary.startswith("通过 openrouter_router")

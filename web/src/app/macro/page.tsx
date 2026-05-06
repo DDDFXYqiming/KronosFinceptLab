@@ -17,7 +17,7 @@ import type {
   MacroSignal,
 } from "@/types/api";
 
-const VERSION = "v10.8.7";
+const VERSION = "v10.8.8";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 const EXAMPLES = [
