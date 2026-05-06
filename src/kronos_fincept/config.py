@@ -114,7 +114,7 @@ class OpenRouterConfig:
     """OpenRouter compatible API config used as a low-cost first LLM hop."""
     api_key: str = field(default_factory=lambda: _get("OPENROUTER_API_KEY"))
     base_url: str = field(default_factory=lambda: _get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"))
-    model: str = field(default_factory=lambda: _get("OPENROUTER_MODEL", "openrouter/free"))
+    model: str = field(default_factory=lambda: _get("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"))
 
     @property
     def is_configured(self) -> bool:

@@ -28,12 +28,14 @@ _LAST_REPORT_LLM_METADATA: dict[str, Any] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
 ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 5, "deepseek": 8}
-WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 4, "deepseek": 16}
+WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 12, "deepseek": 16}
 WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 25
-WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 4, "deepseek": 12}
+WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 12, "deepseek": 12}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 12
 WEB_MACRO_TIMEOUT_SECONDS = 8.0
 WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 4.0
+LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
+LLM_CONTEXT_MAX_TEXT_CHARS = 600
 
 
 AGENT_SCOPE_DESCRIPTION = (
@@ -286,7 +288,10 @@ def _llm_provider_chain() -> list[LLMChatProvider]:
                 display_name="OpenRouter Free",
                 api_key=str(getattr(openrouter, "api_key", "") or ""),
                 base_url=str(getattr(openrouter, "base_url", "https://openrouter.ai/api/v1") or ""),
-                model=str(getattr(openrouter, "model", "openrouter/free") or "openrouter/free"),
+                model=str(
+                    getattr(openrouter, "model", "nvidia/nemotron-3-super-120b-a12b:free")
+                    or "nvidia/nemotron-3-super-120b-a12b:free"
+                ),
             )
         )
     deepseek = getattr(llm, "deepseek", None)
@@ -2951,6 +2956,129 @@ def _serialize_deepseek_user_prompt(user_prompt: dict[str, Any]) -> str | None:
         return None
 
 
+def _compact_llm_report_context(context: dict[str, Any]) -> dict[str, Any]:
+    compact = dict(context)
+    assets = context.get("assets")
+    if isinstance(assets, list):
+        compact["assets"] = [_compact_llm_asset_context(asset) for asset in assets if isinstance(asset, dict)]
+    return compact
+
+
+def _compact_llm_asset_context(asset: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "symbol",
+        "market",
+        "name",
+        "model",
+        "market_data",
+        "financial_data",
+        "risk_metrics",
+        "kronos_prediction",
+        "kronos_prediction_error",
+        "kronos_prediction_deferred",
+    ):
+        if key in asset:
+            compact[key] = asset[key]
+    if "technical_indicators" in asset:
+        compact["technical_indicators"] = _compact_technical_indicators_for_llm(asset.get("technical_indicators"))
+    if "online_research" in asset:
+        compact["online_research"] = _compact_online_research_for_llm(asset.get("online_research"))
+    return compact
+
+
+def _compact_technical_indicators_for_llm(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+
+    compact: dict[str, Any] = {}
+    for indicator, payload in value.items():
+        compact[indicator] = _compact_indicator_payload(payload)
+    compact["_policy"] = "full indicator arrays omitted; latest/recent points retained for LLM budget control"
+    return compact
+
+
+def _compact_indicator_payload(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return _json_safe(payload)
+
+    compact: dict[str, Any] = {}
+    for key, item in payload.items():
+        if isinstance(item, (list, tuple)):
+            compact.update(_compact_series_for_llm(key, item))
+        elif isinstance(item, (str, bool, int, float)) or item is None:
+            compact[key] = _round_float(item)
+        elif isinstance(item, dict):
+            compact[key] = _compact_indicator_payload(item)
+        else:
+            compact[key] = _json_safe(item)
+    return compact
+
+
+def _compact_series_for_llm(name: str, series: list[Any] | tuple[Any, ...]) -> dict[str, Any]:
+    numeric = [_safe_float(item) for item in series if isinstance(item, (int, float))]
+    prefix = "" if name == "values" else f"{name}_"
+    if not numeric:
+        return {f"{prefix}points": len(series), f"{prefix}recent": []}
+    current = numeric[-1]
+    previous = numeric[-2] if len(numeric) >= 2 else None
+    compact: dict[str, Any] = {
+        f"{prefix}current": _round_float(current),
+        f"{prefix}points": len(numeric),
+        f"{prefix}recent": [_round_float(item) for item in numeric[-3:]],
+    }
+    if previous is not None:
+        compact[f"{prefix}previous"] = _round_float(previous)
+        compact[f"{prefix}change"] = _round_float(current - previous)
+    return compact
+
+
+def _compact_online_research_for_llm(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+
+    compact: dict[str, Any] = {}
+    for key in ("enabled", "provider", "providers", "queries", "query_groups", "sources", "policy"):
+        if key in value:
+            compact[key] = value[key]
+
+    results = value.get("results")
+    if isinstance(results, list):
+        compact["results"] = [
+            _compact_research_result_for_llm(item)
+            for item in results[:LLM_CONTEXT_MAX_RESEARCH_RESULTS]
+            if isinstance(item, dict)
+        ]
+        compact["result_count"] = len(results)
+        compact["results_truncated"] = len(results) > LLM_CONTEXT_MAX_RESEARCH_RESULTS
+    return compact
+
+
+def _compact_research_result_for_llm(item: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("title", "snippet", "summary", "url", "source", "provider", "published_at", "timestamp"):
+        if key not in item:
+            continue
+        value = item.get(key)
+        compact[key] = _trim_llm_text(value) if isinstance(value, str) else value
+    return compact
+
+
+def _trim_llm_text(value: Any, *, limit: int = LLM_CONTEXT_MAX_TEXT_CHARS) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "...[truncated]"
+
+
+def _round_float(value: Any) -> Any:
+    if isinstance(value, float):
+        return round(value, 6) if math.isfinite(value) else None
+    return value
+
+
 def _deepseek_structured_json_options(
     *, temperature: float, max_tokens: int, model: str | None = None
 ) -> dict[str, Any]:
@@ -3069,14 +3197,25 @@ asset_reports: [
     "disclaimer": "仅供研究"
   }}
 ]。单标的也可以返回 asset_reports。"""
+        prompt_context = _compact_llm_report_context(context)
         user_prompt = {
             "question": question,
-            "trusted_project_context": context,
+            "trusted_project_context": prompt_context,
             "output_language": "zh-CN",
         }
         user_content = _serialize_deepseek_user_prompt(user_prompt)
         if user_content is None:
             return None
+        log_event(
+            logger,
+            logging.INFO,
+            "agent.llm.report.context_prepared",
+            "Prepared compact LLM report context.",
+            input_chars=len(user_content),
+            asset_count=len(prompt_context.get("assets") or []),
+            has_macro=isinstance(prompt_context.get("macro"), dict),
+            provider_timeouts=_report_provider_timeouts(context),
+        )
 
         result = _call_structured_llm_json(
             [
