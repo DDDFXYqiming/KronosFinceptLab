@@ -24,6 +24,7 @@ from kronos_fincept.logging_config import log_event
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
 
 _KRONOS_REPO_ENV = "KRONOS_REPO_PATH"
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
 _PREDICTOR_CACHE_LOCK = threading.RLock()
 _INFERENCE_LOCK = threading.Lock()
 _PREDICTOR_CACHE: dict[tuple[str, str, int, str], "_CachedPredictor"] = {}
@@ -379,7 +380,10 @@ class KronosPredictorWrapper:
             if local_tokenizer_dir.is_dir():
                 tokenizer = KronosTokenizer.from_pretrained(str(local_tokenizer_dir))
             else:
-                tokenizer = KronosTokenizer.from_pretrained(self.tokenizer_id)
+                tokenizer = KronosTokenizer.from_pretrained(
+                    self.tokenizer_id,
+                    resume_download=True,
+                )
         except Exception as exc:
             raise RuntimeError(_hf_cache_hint(self.tokenizer_id)) from exc
 
@@ -387,7 +391,9 @@ class KronosPredictorWrapper:
             if local_model_dir.is_dir():
                 model = Kronos.from_pretrained(str(local_model_dir))
             else:
-                model = Kronos.from_pretrained(self.model_id)
+                model = Kronos.from_pretrained(
+                    self.model_id,
+                )
         except Exception as exc:
             raise RuntimeError(_hf_cache_hint(self.model_id)) from exc
 
