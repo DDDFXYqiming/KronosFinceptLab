@@ -1,0 +1,37 @@
+api_key = "sk-70297f5bfaf748f3a10c1a3c00b6058b"
+default_text_model = "deepseek-v4-flash"
+provider = "deepseek"
+reasoning_effort = "auto"
+[tui]
+alternate_screen = "never"
+mouse_capture = false
+terminal_probe_timeout_ms = 1000
+
+[http_headers]
+
+[providers.deepseek.http_headers]
+
+[providers.nvidia_nim.http_headers]
+
+[providers.openai.http_headers]
+
+[providers.openrouter.http_headers]
+
+[providers.novita.http_headers]
+
+[providers.fireworks.http_headers]
+
+[providers.sglang.http_headers]
+
+[providers.vllm.http_headers]
+
+[providers.ollama.http_headers]
+
+[projects."/mnt/c/Users/39795"]
+trust_level = "trusted"
+
+[projects."/mnt/e/AI_Projects/KronosFinceptLab"]
+trust_level = "trusted"
+
+[projects."/mnt/e/AI_Projects/multica"]
+trust_level = "trusted"

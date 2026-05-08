@@ -255,7 +255,7 @@ def _deepseek_config() -> Any:
     return getattr(_settings_llm(), "deepseek", None)
 
 
-def _deepseek_model(default: str = "deepseek-chat") -> str:
+def _deepseek_model(default: str = "deepseek-v4-flash") -> str:
     return str(getattr(_deepseek_config(), "model", default) or default)
 
 

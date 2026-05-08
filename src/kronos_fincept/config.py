@@ -102,7 +102,7 @@ class DeepSeekConfig:
     """DeepSeek config."""
     api_key: str = field(default_factory=lambda: _get("DEEPSEEK_API_KEY"))
     base_url: str = field(default_factory=lambda: _get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
-    model: str = field(default_factory=lambda: _get("DEEPSEEK_MODEL", "deepseek-chat"))
+    model: str = field(default_factory=lambda: _get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
 
     @property
     def is_configured(self) -> bool:
