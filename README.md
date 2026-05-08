@@ -57,6 +57,8 @@ V10 已推进到 v10.8.8：分析页与宏观洞察页进入 OpenRouter/DeepSeek
 
 可选变量：`OPENROUTER_API_KEY`、`OPENROUTER_BASE_URL`、`OPENROUTER_MODEL`、`KRONOS_MODEL_ID`、`KRONOS_PREWARM_ON_STARTUP`、`HF_TOKEN`、`WEB_SEARCH_PROVIDER`、`WEB_SEARCH_API_KEY`、`WEB_SEARCH_MAX_RESULTS`、`WEB_SEARCH_TIMEOUT_SECONDS`。
 
+**重要**：请务必配置 `HF_TOKEN` 环境变量，以避免 Hugging Face Hub 的未认证请求警告和速率限制。获取方式：访问 https://huggingface.co/settings/tokens 创建 token，然后在 Zeabur 等平台的环境变量中配置 `HF_TOKEN=hf_xxxx`。
+
 线上默认只加载一套 Kronos 模型。若 `KRONOS_MODEL_ID=NeoQuasar/Kronos-base`，不要再额外配置 Agent 专用小模型；预测页、分析页、API 与 CLI 会复用同一个 predictor cache。
 
 忽略边界：`.env`、`SPEC.md`、`external/`、`models/`、`.cache/`、`logs/`、`web/node_modules/`、`web/.next/` 不进入 git；Docker 镜像同样排除这些路径。
