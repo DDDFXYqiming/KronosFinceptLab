@@ -179,7 +179,7 @@ def test_v105_macro_report_contains_probability_consistency_and_monitoring(monke
     assert len(result.report["probability_scenarios"]) >= 1
     assert isinstance(result.report.get("monitoring_signals"), list)
     assert len(result.report["monitoring_signals"]) >= 1
-    assert any(step.name == "OpenRouter/DeepSeek 汇总" for step in result.steps)
+    assert any(step.name.endswith("汇总") for step in result.steps)
     assert "信号一致性评估" in result.final_report
     assert "概率估计" in result.final_report
     assert "概率场景" in result.final_report

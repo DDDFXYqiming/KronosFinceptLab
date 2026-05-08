@@ -434,7 +434,7 @@ def test_v107_web_analysis_uses_llm_route_before_local_fallback(monkeypatch):
                 "disclaimer": "仅供研究。",
             },
             agent.AgentToolCall(
-                name="deepseek_synthesis",
+                name="LLM 汇总",
                 status="fallback",
                 summary="test synthesis skipped",
                 elapsed_ms=1,

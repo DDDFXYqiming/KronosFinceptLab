@@ -44,7 +44,7 @@ def test_v100_analysis_page_keeps_five_temporary_turns_and_agent_timeout():
     assert "turn_index" in page
     assert "max_turns" in page
     assert "AGENT_ANALYZE_TIMEOUT_MS = 120000" in api
-    assert "Agent 分析包含行情、Kronos、网页检索和 OpenRouter/DeepSeek 汇总" in api
+    assert "Agent 分析包含行情、Kronos、网页检索和 LLM 汇总" in api
 
 
 def test_v100_readme_documents_digital_oracle_and_deepseek_endpoint():

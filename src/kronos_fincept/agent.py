@@ -863,7 +863,7 @@ def analyze_investment_question(
     macro_response_fields = _macro_response_fields(macro_context, report)
     steps.append(
         AgentStep(
-            name="OpenRouter/DeepSeek 汇总",
+            name=f"{llm_call.name}",
             status=llm_call.status,
             summary=llm_call.summary,
             elapsed_ms=_elapsed_ms(started_at),
@@ -1036,7 +1036,7 @@ def analyze_macro_question(
     )
     steps.append(
         AgentStep(
-            name="OpenRouter/DeepSeek 汇总",
+            name=f"{llm_call.name}",
             status=llm_call.status,
             summary=llm_call.summary,
             elapsed_ms=_elapsed_ms(started_at),
@@ -2927,7 +2927,7 @@ def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, 
         provider_display = str(llm_metadata.get("provider_display") or "DeepSeek")
         model = str(llm_metadata.get("model") or _deepseek_model())
         return report, AgentToolCall(
-            name="deepseek_synthesis",
+            name=f"{provider_display} 汇总",
             status="completed",
             summary=f"{provider_display} 已基于项目工具结果生成结构化报告。",
             elapsed_ms=_elapsed_ms(started),
@@ -2939,9 +2939,9 @@ def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, 
         )
 
     return _fallback_report(context), AgentToolCall(
-        name="deepseek_synthesis",
+        name="LLM 汇总",
         status="fallback",
-        summary="OpenRouter Free 与 DeepSeek 未配置或调用失败，已使用本地结构化报告模板。",
+        summary="LLM 未配置或调用失败，已使用本地结构化报告模板。",
         elapsed_ms=_elapsed_ms(started),
         metadata=_tool_metadata(model=_deepseek_model(), fallback=True),
     )
@@ -3417,7 +3417,7 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
         _normalize_report(
         {
             "conclusion": conclusion,
-            "short_term_prediction": "宏观问题不直接调用 Kronos K 线预测；本结论来自宏观 provider 与 DeepSeek/本地模板汇总。",
+            "short_term_prediction": "宏观问题不直接调用 Kronos K 线预测；本结论来自宏观 provider 与 LLM/本地模板汇总。",
             "technical": "不适用。宏观链路关注预测市场、利率、持仓、情绪、衍生品和公开网页信号。",
             "fundamentals": "不适用。若问题涉及具体公司，后续可在个股分析页单独查看基本面。",
             "risk": "宏观结论受数据时效、provider 可用性、事件突发性和样本覆盖影响。",

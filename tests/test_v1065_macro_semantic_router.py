@@ -48,7 +48,7 @@ def _patch_macro_runtime(monkeypatch):
                 "disclaimer": "仅供研究。",
             },
             agent.AgentToolCall(
-                name="deepseek_synthesis",
+                name="DeepSeek 汇总",
                 status="completed",
                 summary="test synthesis",
                 elapsed_ms=0,

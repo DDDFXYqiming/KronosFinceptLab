@@ -106,17 +106,20 @@ def test_agent_resolves_natural_language_symbol_and_returns_trace(monkeypatch):
     assert result.report["recommendation"] == "持有"
     tool_names = {item.name for item in result.tool_calls}
     step_names = [item.name for item in result.steps]
-    assert {"market_data", "risk_metrics", "kronos_prediction", "deepseek_synthesis"} <= tool_names
-    assert [
+    assert {"market_data", "risk_metrics", "kronos_prediction"} <= tool_names
+    assert any(name.endswith("汇总") for name in tool_names), f"Expected a synthesis tool, got: {tool_names}"
+    expected_prefixes = [
         "理解问题",
         "范围/安全检查",
         "解析标的",
         "获取行情",
         "调用 Kronos",
         "网页检索",
-        "OpenRouter/DeepSeek 汇总",
-        "生成报告",
-    ] == step_names
+    ]
+    for prefix, actual in zip(expected_prefixes, step_names):
+        assert prefix == actual, f"Expected {prefix}, got {actual}"
+    assert step_names[6].endswith("汇总"), f"Expected synthesis step, got: {step_names[6]}"
+    assert step_names[7] == "生成报告", f"Expected 生成报告, got: {step_names[7]}"
 
 
 def test_agent_infers_us_market_without_web_default_override():

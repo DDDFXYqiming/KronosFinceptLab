@@ -81,16 +81,17 @@ def test_v95_agent_steps_are_traceable_for_web_api_cli(monkeypatch):
         reset_request_id(token)
 
     assert result.ok is True
-    assert [step.name for step in result.steps] == [
+    step_names = [step.name for step in result.steps]
+    assert step_names[:6] == [
         "理解问题",
         "范围/安全检查",
         "解析标的",
         "获取行情",
         "调用 Kronos",
         "网页检索",
-        "OpenRouter/DeepSeek 汇总",
-        "生成报告",
     ]
+    assert step_names[6].endswith("汇总"), f"Expected synthesis step, got: {step_names[6]}"
+    assert step_names[7] == "生成报告"
     assert all("request_id" in call.metadata for call in result.tool_calls)
     assert any(call.metadata["request_id"] == "req-v95" for call in result.tool_calls)
 

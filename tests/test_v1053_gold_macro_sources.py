@@ -222,7 +222,7 @@ def test_v1053_agent_gold_macro_report_keeps_direct_gold_sources(monkeypatch) ->
                 "macro_signals": macro["signals"],
             },
             agent_module.AgentToolCall(
-                name="deepseek_synthesis",
+                name="LLM 汇总",
                 status="skipped",
                 summary="test synthesis skipped",
                 elapsed_ms=0,

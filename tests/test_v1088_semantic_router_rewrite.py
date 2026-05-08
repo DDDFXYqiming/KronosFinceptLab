@@ -55,7 +55,7 @@ def _patch_asset_runtime(monkeypatch) -> None:
                 "disclaimer": "仅供研究。",
             },
             agent.AgentToolCall(
-                name="deepseek_synthesis",
+                name="DeepSeek 汇总",
                 status="completed",
                 summary="test synthesis",
                 elapsed_ms=0,
@@ -84,7 +84,7 @@ def _patch_macro_runtime(monkeypatch) -> FakeMacroManager:
                 "disclaimer": "仅供研究。",
             },
             agent.AgentToolCall(
-                name="deepseek_synthesis",
+                name="DeepSeek 汇总",
                 status="completed",
                 summary="test synthesis",
                 elapsed_ms=0,

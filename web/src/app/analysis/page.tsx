@@ -27,7 +27,7 @@ const LOADING_STEPS = [
   "获取行情",
   "调用 Kronos",
   "网页检索",
-  "OpenRouter/DeepSeek 汇总",
+  "LLM 汇总",
   "生成报告",
 ];
 const EXAMPLES = [

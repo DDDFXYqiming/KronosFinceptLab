@@ -31,7 +31,7 @@ const LOADING_STEPS = [
   "范围/安全检查",
   "选择宏观数据源",
   "获取宏观信号",
-  "OpenRouter/DeepSeek 汇总",
+  "LLM 汇总",
   "生成宏观报告",
 ];
 
