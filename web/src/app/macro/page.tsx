@@ -325,21 +325,45 @@ function ProviderCoverageMatrix({ rows }: { rows: MacroProviderResultView[] }) {
 }
 
 function StepStrip({ result, loading }: { result: AgentAnalyzeResponse | null; loading: boolean }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [pulseTick, setPulseTick] = useState(0);
+
+  useEffect(() => {
+    if (!loading || result) {
+      setActiveIndex(0);
+      setPulseTick(0);
+      return;
+    }
+    setActiveIndex(0);
+    setPulseTick(0);
+    const stepTimer = window.setInterval(() => {
+      setActiveIndex((current) => Math.min(current + 1, LOADING_STEPS.length - 1));
+    }, 900);
+    const pulseTimer = window.setInterval(() => {
+      setPulseTick((current) => current + 1);
+    }, 220);
+    return () => {
+      window.clearInterval(stepTimer);
+      window.clearInterval(pulseTimer);
+    };
+  }, [loading, result]);
+
   const steps = result?.steps?.length
     ? result.steps
     : LOADING_STEPS.map((name, index) => ({
       name,
-      status: loading ? (index === 0 ? "running" : "pending") : "pending",
+      status: !loading ? "pending" : index < activeIndex ? "completed" : index === activeIndex ? "running" : "pending",
       summary: "",
-      elapsed_ms: 0,
+      elapsed_ms: index < activeIndex ? (index + 1) * 900 : index === activeIndex ? ((pulseTick % 4) + 1) * 220 : 0,
     }));
 
   const completed = steps.filter((step) => isFinishedStepStatus(step.status)).length;
-  const progress = result
+  const baseProgress = result
     ? completed / Math.max(steps.length, 1)
     : loading
-      ? Math.max(0.1, 1 / Math.max(steps.length, 1))
+      ? (activeIndex + 0.4 + (pulseTick % 4) * 0.08) / LOADING_STEPS.length
       : 0;
+  const progressPercent = Math.max(0, Math.min(100, baseProgress * 100));
 
   return (
     <div className="space-y-3">
@@ -347,12 +371,12 @@ function StepStrip({ result, loading }: { result: AgentAnalyzeResponse | null; l
         <p className="text-sm text-muted-foreground">
           进度 {Math.min(completed, steps.length)}/{steps.length}
         </p>
-        <p className="text-xs text-muted-foreground">{loading ? "执行中..." : "已完成"}</p>
+        {loading && !result && <p className="text-xs text-muted-foreground">正在实时推进…</p>}
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-muted">
         <div
           className={`h-full rounded-full transition-all duration-500 ${loading && !result ? "timeline-progress-live" : "bg-accent"}`}
-          style={{ width: `${Math.max(0, Math.min(100, progress * 100))}%` }}
+          style={{ width: `${progressPercent}%` }}
         />
       </div>
       <div className="table-scroll">
