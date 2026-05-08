@@ -639,6 +639,7 @@ export default function MacroPage() {
     }
 
     inFlightRef.current = true;
+    setResult(null);
     setLoading(true);
     setError("");
     try {

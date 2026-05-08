@@ -677,6 +677,7 @@ function AnalysisContent() {
     }
 
     inFlightRef.current = true;
+    setResult(null);
     setLoading(true);
     setError("");
     try {
