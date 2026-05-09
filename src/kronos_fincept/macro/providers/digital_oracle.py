@@ -1249,6 +1249,175 @@ class DeribitProvider(MacroProvider):
         return signals
 
 
+class DBnomicsProvider(MacroProvider):
+    """Macro-economic indicators via DBnomics API (IMF, FRED, OECD, Eurostat).
+
+    DBnomics aggregates 100+ official statistical sources. This provider fetches
+    the latest observation for key macro series using the free v22 API.
+    Zero API key, zero dependencies.
+    """
+
+    provider_id = "dbnomics"
+    display_name = "DBnomics"
+    capabilities = ("macro_economy", "growth", "inflation", "labor_market")
+
+    _DBNOMICS_SERIES: tuple[tuple[str, str, str, str], ...] = (
+        # (provider, dataset, series_key, label)
+        ("IMF", "WEO:2025-04", "USA.NGDPRPPPPC.pcent", "IMF 美国 GDP 增速预测"),
+        ("IMF", "WEO:2025-04", "USA.PCPIPCH.pcent", "IMF 美国通胀率预测"),
+        ("IMF", "WEO:2025-04", "USA.LUR.pcent", "IMF 美国失业率预测"),
+        ("IMF", "WEO:2025-04", "CHN.NGDPRPPPPC.pcent", "IMF 中国 GDP 增速预测"),
+        ("IMF", "WEO:2025-04", "CHN.PCPIPCH.pcent", "IMF 中国通胀率预测"),
+        ("OECD", "EO/EO147", "USA.GDPV_ANNPCT.pcent", "OECD 美国 GDP 增速"),
+        ("OECD", "EO/EO147", "USA.CPI.pcent", "OECD 美国通胀率"),
+    )
+
+    def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        signals: list[MacroSignal] = []
+        text = _query_text(query)
+        for provider, dataset, series_key, label in self._DBNOMICS_SERIES:
+            if len(signals) >= max(1, query.limit):
+                break
+            url = f"https://api.db.nomics.world/v22/series/{provider}/{dataset}/{series_key}"
+            try:
+                payload = _get_json(url, params={"observations": "1"}, timeout=8)
+            except Exception:
+                continue
+            docs = payload.get("series") if isinstance(payload, dict) else {}
+            if not isinstance(docs, {}):
+                docs = {}
+            series = docs.get("docs") if isinstance(docs, dict) else []
+            if not isinstance(series, list) or not series:
+                continue
+            data = series[0]
+            period_data = data.get("period") if isinstance(data, dict) else {}
+            if not isinstance(period_data, dict):
+                continue
+            value = _number(period_data.get("value"))
+            period = str(period_data.get("period") or data.get("period_start_day") or "")
+            signals.append(
+                _signal(
+                    source=self.provider_id,
+                    signal_type=f"macro_{provider.lower()}_{series_key.rsplit('.', 1)[0].lower().replace('.', '_')}",
+                    value=value,
+                    interpretation=f"{label} 最新观测值，来自 {provider} 官方统计。",
+                    time_horizon="long",
+                    confidence=0.7 if value is not None else 0.4,
+                    observed_at=period or None,
+                    source_url=f"https://db.nomics.world/{provider}/{dataset}/{series_key}",
+                    metadata={
+                        "provider": provider,
+                        "dataset": dataset,
+                        "series": series_key,
+                        "label": label,
+                        "period": period,
+                        "data_quality": f"official_{provider.lower()}",
+                    },
+                )
+            )
+        return signals
+
+
+class StooqProvider(MacroProvider):
+    """International asset price data via Stooq (stooq.com).
+
+    Stooq provides free daily OHLCV data for global stocks, ETFs, indices,
+    forex, and crypto — especially useful for markets where Yahoo Finance
+    coverage is thin (e.g. Eastern European stocks, Polish GPW).
+
+    Uses the CSV API: https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv
+    Zero API key, zero dependencies.
+    """
+
+    provider_id = "stooq"
+    display_name = "Stooq"
+    capabilities = ("asset_price", "trend", "international")
+
+    _STOOQ_INDICES: tuple[tuple[str, str, str], ...] = (
+        ("^DJI", "DJI", "道琼斯工业指数"),
+        ("^SPX", "SPX", "标普500"),
+        ("^NDQ", "NDQ", "纳斯达克"),
+        ("^FTSE", "FTSE", "英国富时100"),
+        ("^N225", "N225", "日经225"),
+        ("^HSI", "HSI", "恒生指数"),
+        ("^GDAXI", "DAX", "德国DAX"),
+    )
+
+    def __init__(self, yfinance_loader: Any | None = None) -> None:
+        self._yfinance_loader = yfinance_loader
+
+    def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        signals: list[MacroSignal] = []
+        text = _query_text(query)
+
+        # First try to use a specific symbol from the query
+        symbol: str | None = None
+        label: str = ""
+        if query.symbols:
+            symbol = str(query.symbols[0]).strip().upper()
+            label = symbol
+
+        # If no symbol or it's a generic query, check against known indices
+        if not symbol or len(signals) >= max(1, query.limit):
+            for stooq_sym, short_label, desc in self._STOOQ_INDICES:
+                if len(signals) >= max(1, query.limit):
+                    break
+                if not symbol and (short_label.lower() in text or desc in text):
+                    symbol = stooq_sym
+                    label = desc
+
+        if not symbol:
+            # Fallback to S&P 500
+            symbol = "^SPX"
+            label = "标普500"
+
+        try:
+            # Stooq CSV API
+            url = f"https://stooq.com/q/l/?s={urllib.parse.quote(symbol)}&f=sd2t2ohlcv&h&e=csv"
+            text_response = _get_text(url, timeout=8)
+            if not text_response or "\n" not in text_response:
+                return signals
+            lines = text_response.strip().split("\n")
+            if len(lines) < 2:
+                return signals
+            reader = csv.DictReader(io.StringIO(text_response))
+            rows = [dict(row) for row in reader if row]
+            if not rows:
+                return signals
+
+            # Latest row
+            latest = rows[-1]
+            close_val = _number(latest.get("Close"))
+            open_val = _number(latest.get("Open"))
+            date_val = str(latest.get("Date") or "")
+
+            if close_val is not None and open_val is not None and open_val != 0:
+                change = round(close_val / open_val - 1.0, 6) if open_val else None
+                signals.append(
+                    _signal(
+                        source=self.provider_id,
+                        signal_type="price_update",
+                        value=change,
+                        interpretation=f"{label}（{symbol}）最新交易数据，来自 Stooq。",
+                        time_horizon="short",
+                        confidence=0.6 if change is not None else 0.4,
+                        observed_at=date_val or None,
+                        source_url=f"https://stooq.com/q/?s={symbol}",
+                        metadata={
+                            "symbol": symbol,
+                            "label": label,
+                            "close": close_val,
+                            "open": open_val,
+                            "data_quality": "stooq_csv",
+                        },
+                    )
+                )
+        except Exception:
+            pass
+
+        return signals
+
+
 def create_default_providers() -> list[MacroProvider]:
     return [
         PolymarketProvider(),
@@ -1266,6 +1435,8 @@ def create_default_providers() -> list[MacroProvider]:
         YahooPriceProvider(),
         DeribitProvider(),
         CurrencyProvider(),
+        DBnomicsProvider(),
+        StooqProvider(),
     ]
 
 
