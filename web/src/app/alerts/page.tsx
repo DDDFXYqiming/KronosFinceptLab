@@ -16,7 +16,7 @@ const ALERT_TYPES = [
   { value: "rsi_oversold", label: "RSI 超卖" },
 ];
 
-export function maskContactValue(value?: string | null): string | null {
+function maskContactValue(value?: string | null): string | null {
   if (!value) return null;
   if (value.length <= 8) return "[REDACTED]";
   return `${value.slice(0, 4)}...[REDACTED]...${value.slice(-4)}`;
