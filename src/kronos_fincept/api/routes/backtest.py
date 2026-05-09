@@ -80,6 +80,8 @@ def _run_ranking_backtest(
     step: int,
     top_k: int,
     initial_equity: float = 100000.0,
+    fee_bps: float = 0.0,
+    slippage_bps: float = 0.0,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Run the ranking backtest loop.
 
@@ -124,6 +126,8 @@ def _run_ranking_backtest(
             entry_price = float(df.iloc[i]["close"])
             exit_price = float(df.iloc[end_idx - 1]["close"])
             ret = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
+            trading_cost = 2 * (fee_bps + slippage_bps) / 10000.0
+            ret -= trading_cost
             portfolio_return += ret / len(selected)
             total_trades += 1
             if ret > 0:
@@ -225,7 +229,16 @@ async def backtest_ranking(req: BacktestRequestIn) -> BacktestResponseOut:
             req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
         )
         curve, trades, wins = _run_ranking_backtest(
-            dfs, symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
+            dfs,
+            symbols,
+            predictor,
+            req.window_size,
+            req.pred_len,
+            req.step,
+            req.top_k,
+            req.initial_equity,
+            req.fee_bps,
+            req.slippage_bps,
         )
         return dfs, symbols, curve, trades, wins
 
@@ -264,7 +277,16 @@ async def backtest_report(req: BacktestReportRequestIn) -> BacktestReportRespons
             req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len,
         )
         curve, trades, wins = _run_ranking_backtest(
-            dfs, symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
+            dfs,
+            symbols,
+            predictor,
+            req.window_size,
+            req.pred_len,
+            req.step,
+            req.top_k,
+            req.initial_equity,
+            req.fee_bps,
+            req.slippage_bps,
         )
         return dfs, symbols, curve, trades, wins
 

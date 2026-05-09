@@ -39,6 +39,10 @@ DEFAULT_REPORT_DIR = os.path.join(os.getcwd(), "backtest_reports")
 @click.option("--pred-len", type=int, default=5, help="Prediction length")
 @click.option("--window-size", type=int, default=60, help="Lookback window size")
 @click.option("--step", type=int, default=5, help="Rebalance step (trading days)")
+@click.option("--initial-equity", type=float, default=100000.0, help="Initial portfolio equity")
+@click.option("--benchmark", type=str, default=None, help="Optional benchmark symbol for generated report")
+@click.option("--fee-bps", type=float, default=0.0, help="One-way trading fee in basis points")
+@click.option("--slippage-bps", type=float, default=0.0, help="One-way slippage in basis points")
 @click.option("--dry-run", is_flag=True, default=True, help="Use mock predictor")
 @click.option("--report", is_flag=True, default=False, help="Generate HTML report")
 @click.pass_context
@@ -51,6 +55,10 @@ def backtest_ranking(
     pred_len: int,
     window_size: int,
     step: int,
+    initial_equity: float,
+    benchmark: str | None,
+    fee_bps: float,
+    slippage_bps: float,
     dry_run: bool,
     report: bool,
 ) -> None:
@@ -103,7 +111,7 @@ def backtest_ranking(
         dfs[sym] = df
 
     # Run backtest
-    equity = 100000.0
+    equity = initial_equity
     equity_curve = []
     total_trades = 0
     winning_trades = 0
@@ -138,6 +146,8 @@ def backtest_ranking(
             entry_price = float(df.iloc[i]["close"])
             exit_price = float(df.iloc[end_idx - 1]["close"])
             ret = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
+            trading_cost = 2 * (fee_bps + slippage_bps) / 10000.0
+            ret -= trading_cost
             portfolio_return += ret / len(selected)
             total_trades += 1
             if ret > 0:
@@ -207,10 +217,16 @@ def backtest_ranking(
 
     # Generate HTML report if --report flag is set
     if report:
-        _generate_report(result, symbol_list, start, end)
+        _generate_report(result, symbol_list, start, end, benchmark=benchmark)
 
 
-def _generate_report(result: dict, symbols: list[str], start: str, end: str) -> None:
+def _generate_report(
+    result: dict,
+    symbols: list[str],
+    start: str,
+    end: str,
+    benchmark: str | None = None,
+) -> None:
     """Generate HTML report from backtest result and print file path."""
     from kronos_fincept.backtest_report import BacktestReportGenerator
 
@@ -229,7 +245,8 @@ def _generate_report(result: dict, symbols: list[str], start: str, end: str) -> 
         symbol=", ".join(symbols),
         metrics=metrics,
         equity_curve=equity_curve,
-        strategy_name="Ranking Strategy",
+        benchmark_data=None,
+        strategy_name=f"Ranking Strategy{f' vs {benchmark}' if benchmark else ''}",
     )
     gen.export_html(html, output_path)
     click.echo(f"")

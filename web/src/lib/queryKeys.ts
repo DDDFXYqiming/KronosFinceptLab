@@ -5,7 +5,7 @@ export const queryKeys = {
   all: ["kronos"] as const,
   health: () => [...queryKeys.all, "health"] as const,
   search: (query: string) => [...queryKeys.all, "search", query.trim()] as const,
-  data: (params: { symbol: string; market: Market | string; startDate: string; endDate: string }) =>
+  data: (params: { symbol: string; market: Market | string; startDate: string; endDate: string; adjust?: string }) =>
     [
       ...queryKeys.all,
       "data",
@@ -13,6 +13,7 @@ export const queryKeys = {
       params.market,
       params.startDate,
       params.endDate,
+      params.adjust || "",
     ] as const,
   forecast: (params: {
     symbol: string;
@@ -40,7 +41,17 @@ export const queryKeys = {
       params.market,
       params.predLen,
     ] as const,
-  backtest: (params: { symbols: string[] | string; startDate: string; endDate: string; topK: number }) =>
+  backtest: (params: {
+    symbols: string[] | string;
+    startDate: string;
+    endDate: string;
+    topK: number;
+    predLen?: number;
+    windowSize?: number;
+    step?: number;
+    initialEquity?: number;
+    benchmark?: string;
+  }) =>
     [
       ...queryKeys.all,
       "backtest",
@@ -48,7 +59,15 @@ export const queryKeys = {
       params.startDate,
       params.endDate,
       params.topK,
+      params.predLen || 5,
+      params.windowSize || 120,
+      params.step || params.predLen || 5,
+      params.initialEquity || 100000,
+      params.benchmark || "",
     ] as const,
+  indicator: (params: { symbol: string; market: Market | string }) =>
+    [...queryKeys.all, "indicator", normalizeSymbol(params.symbol), params.market] as const,
+  alerts: () => [...queryKeys.all, "alerts"] as const,
   agent: (params: { question: string; symbol?: string | null; market?: Market | string | null }) =>
     [
       ...queryKeys.all,

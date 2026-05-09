@@ -43,10 +43,13 @@ export interface ForecastResponse {
 export interface RankedSignal {
   rank: number;
   symbol: string;
+  market?: string;
   last_close: number;
   predicted_close: number;
   predicted_return: number;
   elapsed_ms: number;
+  risk_label?: string;
+  failure_reason?: string;
 }
 
 export interface BatchResponse {
@@ -58,6 +61,7 @@ export interface BatchResponse {
 export interface DataResponse {
   ok: boolean;
   symbol: string;
+  market?: string;
   count: number;
   rows: ForecastRow[];
 }
@@ -81,9 +85,18 @@ export interface BacktestMetrics {
 export interface BacktestResponse {
   ok: boolean;
   symbols: string[];
+  start_date?: string;
+  end_date?: string;
+  top_k?: number;
   metrics: BacktestMetrics;
   equity_curve: { date: string; equity: number; return: number; selected: string[] }[];
   metadata: { device: string; elapsed_ms: number; warning: string };
+}
+
+export interface BacktestReportResponse {
+  ok: boolean;
+  html: string;
+  filename: string;
 }
 
 export interface HealthResponse {
@@ -337,4 +350,53 @@ export interface IndicatorResponse {
   current_price: number;
   indicators: Record<string, any>;
   data_points: number;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  alert_type: string;
+  symbol: string;
+  market: string;
+  params: Record<string, any>;
+  enabled: boolean;
+  channel: string;
+  webhook_url?: string | null;
+  email_to?: string | null;
+}
+
+export interface AlertRulesResponse {
+  ok: boolean;
+  rules: AlertRule[];
+}
+
+export interface AlertRuleRequest {
+  name: string;
+  alert_type: string;
+  symbol: string;
+  market?: string;
+  params?: Record<string, any>;
+  enabled?: boolean;
+  channel?: string;
+  webhook_url?: string | null;
+  email_to?: string | null;
+}
+
+export interface AlertEvent {
+  rule_id: string;
+  rule_name: string;
+  alert_type: string;
+  symbol: string;
+  message: string;
+  current_value: number;
+  threshold_value: number;
+  timestamp: string;
+  severity: string;
+}
+
+export interface AlertCheckResponse {
+  ok: boolean;
+  checked: number;
+  triggered: number;
+  events: AlertEvent[];
 }

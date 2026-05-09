@@ -117,6 +117,7 @@ class BatchForecastResponseOut(BaseModel):
 class DataResponseOut(BaseModel):
     ok: bool
     symbol: str
+    market: str = "cn"
     count: int
     rows: list[dict[str, Any]]
 
@@ -143,6 +144,10 @@ class BacktestRequestIn(BaseModel):
     pred_len: int = Field(default=5, ge=1, le=60)
     window_size: int = Field(default=60, ge=10, le=250, description="Lookback window for each prediction")
     step: int = Field(default=5, ge=1, description="Trading days between rebalances")
+    initial_equity: float = Field(default=100000.0, gt=0, description="Initial portfolio equity")
+    benchmark: str | None = Field(default=None, description="Optional benchmark symbol for UI/report alignment")
+    fee_bps: float = Field(default=0.0, ge=0, description="One-way trading fee in basis points")
+    slippage_bps: float = Field(default=0.0, ge=0, description="One-way slippage in basis points")
     dry_run: bool = True
 
 
@@ -199,6 +204,9 @@ class BacktestReportRequestIn(BaseModel):
     pred_len: int = Field(default=5, ge=1, le=60)
     window_size: int = Field(default=60, ge=10, le=250, description="Lookback window for each prediction")
     step: int = Field(default=5, ge=1, description="Trading days between rebalances")
+    initial_equity: float = Field(default=100000.0, gt=0, description="Initial portfolio equity")
+    fee_bps: float = Field(default=0.0, ge=0, description="One-way trading fee in basis points")
+    slippage_bps: float = Field(default=0.0, ge=0, description="One-way slippage in basis points")
     dry_run: bool = True
     benchmark: str | None = Field(default=None, description="Benchmark index symbol, e.g. '000300' for CSI 300")
     strategy_name: str = Field(default="Ranking Strategy", description="Display name for the report")

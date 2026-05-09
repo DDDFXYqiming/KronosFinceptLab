@@ -35,6 +35,7 @@ async def get_global_market_data(
         return DataResponseOut(
             ok=True,
             symbol=symbol,
+            market=market,
             count=len(raw_data),
             rows=raw_data,
         )
@@ -120,6 +121,7 @@ async def get_a_stock_data(
     return DataResponseOut(
         ok=True,
         symbol=symbol,
+        market="cn",
         count=len(rows),
         rows=rows,
     )

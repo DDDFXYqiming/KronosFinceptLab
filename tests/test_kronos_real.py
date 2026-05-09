@@ -24,7 +24,11 @@ _kronos_model_available = False
 try:
     import torch  # noqa: F401
     _torch_available = True
-except ImportError:
+except Exception:
+    # Torch can be partially installed in lightweight/dev environments, where
+    # import raises OSError for missing shared libraries instead of ImportError.
+    # Treat that the same as unavailable so the optional real-Kronos smoke test
+    # is skipped rather than breaking collection.
     pass
 
 if _torch_available and _KRONOS_REPO.is_dir():
