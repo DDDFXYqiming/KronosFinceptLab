@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && python3 -m venv /opt/venv \
     && rm -rf /var/lib/apt/lists/*
 
+# KRONOS_MODEL_ID options: NeoQuasar/Kronos-base (default), NeoQuasar/Kronos-mini (fastest), NeoQuasar/Kronos-small
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/app/src \
     NEXT_TELEMETRY_DISABLED=1 \
@@ -53,7 +54,6 @@ ENV PATH="/opt/venv/bin:$PATH" \
     API_PORT=8000 \
     KRONOS_REPO_PATH=/app/external/Kronos \
     HF_HOME=/app/.cache/huggingface \
-    # KRONOS_MODEL_ID options: NeoQuasar/Kronos-base (default), NeoQuasar/Kronos-mini (fastest), NeoQuasar/Kronos-small
     KRONOS_MODEL_ID=NeoQuasar/Kronos-base \
     KRONOS_ENABLE_REAL_MODEL=1 \
     KRONOS_ALLOW_DRY_RUN=0 \
