@@ -1020,6 +1020,77 @@ class WebSearchProvider(MacroProvider):
         return WebSearchClient()
 
 
+class CurrencyProvider(MacroProvider):
+    """Major currency pair data via Yahoo Finance.
+
+    Provides FX rate trends for DXY-proxy (EUR/USD) and USD/CNY as macro signals.
+    Uses the same yfinance loader pattern as YahooPriceProvider and YFinanceProvider.
+    """
+
+    provider_id = "currency"
+    display_name = "Currency (Yahoo Finance)"
+    capabilities = ("currency_pair", "fx_rate", "dollar_strength")
+
+    _CURRENCY_PAIRS = (
+        ("EURUSD=X", "EUR/USD", "euro"),
+        ("USDCNY=X", "USD/CNY", "yuan"),
+        ("USDJPY=X", "USD/JPY", "yen"),
+        ("GBPUSD=X", "GBP/USD", "sterling"),
+    )
+
+    def __init__(self, yfinance_loader: Any | None = None) -> None:
+        self._yfinance_loader = yfinance_loader
+
+    def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        yf = self._load_yfinance()
+        if yf is None:
+            return []
+        text = _query_text(query)
+        signals: list[MacroSignal] = []
+        for symbol, label, tag in self._CURRENCY_PAIRS:
+            if len(signals) >= max(1, query.limit):
+                break
+            try:
+                history = yf.Ticker(symbol).history(period="1mo")
+                if history is None or getattr(history, "empty", True):
+                    continue
+                close = history["Close"]
+                latest = float(close.iloc[-1])
+                first = float(close.iloc[0])
+                change = round(latest / first - 1.0, 6) if first else None
+                signals.append(
+                    _signal(
+                        source=self.provider_id,
+                        signal_type="fx_rate_1m_change",
+                        value=change,
+                        interpretation=f"{label} 近 1 个月变动，辅助判断美元强弱与跨境资本压力。",
+                        time_horizon="short",
+                        confidence=0.62 if change is not None else 0.4,
+                        source_url="https://finance.yahoo.com/",
+                        metadata={
+                            "symbol": symbol,
+                            "label": label,
+                            "tag": tag,
+                            "latest": latest,
+                            "first": first,
+                            "data_quality": "yfinance_fx",
+                        },
+                    )
+                )
+            except Exception:
+                continue
+        return signals
+
+    def _load_yfinance(self) -> Any | None:
+        if self._yfinance_loader is not None:
+            return self._yfinance_loader()
+        try:
+            import yfinance as yf  # type: ignore
+            return yf
+        except Exception:
+            return None
+
+
 class YahooPriceProvider(MacroProvider):
     provider_id = "yahoo_price"
     display_name = "Yahoo Finance Prices"
@@ -1194,6 +1265,7 @@ def create_default_providers() -> list[MacroProvider]:
         WebSearchProvider(),
         YahooPriceProvider(),
         DeribitProvider(),
+        CurrencyProvider(),
     ]
 
 

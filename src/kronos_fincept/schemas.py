@@ -7,7 +7,42 @@ from typing import Any
 
 DEFAULT_MODEL_ID = "NeoQuasar/Kronos-base"
 DEFAULT_TOKENIZER_ID = "NeoQuasar/Kronos-Tokenizer-base"
+
+# ── Kronos model family ──
+# Model Zoo (from upstream Kronos README):
+#   Kronos-mini  4.1M  ctx=2048  Tokenizer-2k
+#   Kronos-small 24.7M ctx=512   Tokenizer-base
+#   Kronos-base  102.3M ctx=512  Tokenizer-base
+#   Kronos-large 499.2M ctx=512  Tokenizer-base (closed)
+
+_KRONOS_MODEL_VARIANTS: dict[str, dict[str, str | int]] = {
+    "NeoQuasar/Kronos-mini": {"tokenizer": "NeoQuasar/Kronos-Tokenizer-2k", "max_context": 2048},
+    "NeoQuasar/Kronos-small": {"tokenizer": "NeoQuasar/Kronos-Tokenizer-base", "max_context": 512},
+    "NeoQuasar/Kronos-base": {"tokenizer": "NeoQuasar/Kronos-Tokenizer-base", "max_context": 512},
+}
+
 RESEARCH_WARNING = "Research forecast only; not trading advice."
+
+
+def resolve_tokenizer_id(model_id: str) -> str:
+    """Return the appropriate tokenizer ID for a given Kronos model ID."""
+    variant = _KRONOS_MODEL_VARIANTS.get(model_id)
+    if variant is not None:
+        return str(variant["tokenizer"])
+    # Fallback: if model_id contains "mini", use Tokenizer-2k
+    if "mini" in model_id.lower():
+        return "NeoQuasar/Kronos-Tokenizer-2k"
+    return DEFAULT_TOKENIZER_ID
+
+
+def resolve_max_context(model_id: str) -> int:
+    """Return the appropriate max_context for a given Kronos model ID."""
+    variant = _KRONOS_MODEL_VARIANTS.get(model_id)
+    if variant is not None:
+        return int(variant["max_context"])
+    if "mini" in model_id.lower():
+        return 2048
+    return 512
 
 
 def _required(mapping: dict[str, Any], key: str) -> Any:

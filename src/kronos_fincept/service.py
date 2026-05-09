@@ -15,7 +15,14 @@ from kronos_fincept.predictor import (
     ProbabilisticForecastResult,
     prewarm_predictor,
 )
-from kronos_fincept.schemas import DEFAULT_MODEL_ID, ForecastRequest, RESEARCH_WARNING, build_error_response
+from kronos_fincept.schemas import (
+    DEFAULT_MODEL_ID,
+    ForecastRequest,
+    RESEARCH_WARNING,
+    build_error_response,
+    resolve_tokenizer_id,
+    resolve_max_context,
+)
 
 
 def _effective_model_id(model_id: str) -> str:
@@ -117,8 +124,8 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
     # Real inference
     predictor = KronosPredictorWrapper(
         model_id=_effective_model_id(request.model_id),
-        tokenizer_id=request.tokenizer_id,
-        max_context=request.max_context,
+        tokenizer_id=resolve_tokenizer_id(_effective_model_id(request.model_id)),
+        max_context=resolve_max_context(_effective_model_id(request.model_id)),
         temperature=request.temperature,
         top_k=request.top_k,
         top_p=request.top_p,
@@ -164,9 +171,11 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
 
 def prewarm_default_predictor() -> dict[str, Any]:
     """Preload the configured real Kronos predictor into the shared process cache."""
+    effective_id = _effective_model_id(DEFAULT_MODEL_ID)
     return prewarm_predictor(
-        model_id=_effective_model_id(DEFAULT_MODEL_ID),
-        tokenizer_id=settings.kronos.tokenizer_id,
+        model_id=effective_id,
+        tokenizer_id=resolve_tokenizer_id(effective_id),
+        max_context=resolve_max_context(effective_id),
     )
 
 
@@ -211,10 +220,11 @@ def batch_forecast_from_requests(
 
     if use_batch:
         # Prepare batch inputs
+        effective_id = _effective_model_id(requests[0].model_id)
         predictor = KronosPredictorWrapper(
-            model_id=_effective_model_id(requests[0].model_id),
-            tokenizer_id=requests[0].tokenizer_id,
-            max_context=requests[0].max_context,
+            model_id=effective_id,
+            tokenizer_id=resolve_tokenizer_id(effective_id),
+            max_context=resolve_max_context(effective_id),
             temperature=requests[0].temperature,
             top_k=requests[0].top_k,
             top_p=requests[0].top_p,
