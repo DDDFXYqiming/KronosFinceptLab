@@ -165,6 +165,8 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "yahoo_price",
         "deribit",
         "currency",
+        "dbnomics",
+        "stooq",
     }
 )
 MACRO_REQUIRED_DIMENSION_COUNT = 3
@@ -186,6 +188,7 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "cftc_cot": "positioning",
     "coingecko": "market_price",
     "currency": "market_price",
+    "dbnomics": "official_macro",
     "edgar": "filings",
     "bis": "official_macro",
     "worldbank": "official_macro",
@@ -195,6 +198,7 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "web_search": "sentiment_news",
     "yahoo_price": "market_price",
     "deribit": "crypto_derivatives",
+    "stooq": "market_price",
 }
 MACRO_SIGNAL_DIMENSION_HINTS: tuple[tuple[str, str], ...] = (
     ("filing", "filings"),
@@ -3258,8 +3262,9 @@ Digital Oracle 5 条铁规则：
 JSON 字段：
 conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties, recommendation, confidence, risk_level, disclaimer,
 如果 trusted_project_context.macro 存在，还必须输出：
-macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals。
+macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions。
 macro_signals 为数组，每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
+time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。信号分层规则：短期（3-12个月）= 期权、VIX、预测市场近月、价格动量、FOMC概率；中期（1-3年）= 收益率曲线、CFTC持仓、信用周期、GDP预测；长期（3-10年）= BIS信用缺口、世界银行GDP、设备订单、人口结构等。
 cross_validation 和 contradictions 合起来视为“信号一致性评估”区块：前者写共振信号，后者写矛盾信号及原因。
 probability_scenarios 为数组，每项包含 scenario, probability, basis。必须读取 trusted_project_context.macro.dimension_coverage；只有 sufficient_evidence=true 才能输出高置信度方向判断。少于 3 个独立宏观维度时必须明确说明缺口，不要编造，confidence 不得超过 0.45，recommendation 使用“观察”或“需更多证据”。概率总和应接近 1。
 monitoring_signals 为数组，每项包含 signal, current_value, threshold, meaning；至少给出 3 条可操作监控项（不足时说明原因）。
@@ -3469,6 +3474,7 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
             "contradictions": contradictions,
             "probability_scenarios": _default_probability_scenarios(signals),
             "monitoring_signals": _default_monitoring_signals(signals, errors),
+            "time_stratified_sub_conclusions": _default_time_stratified_sub_conclusions(signals),
             "macro_evidence": coverage,
         }
         ),
@@ -3486,6 +3492,7 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
         "contradictions",
         "probability_scenarios",
         "monitoring_signals",
+        "time_stratified_sub_conclusions",
     ]:
         if not merged.get(key):
             merged[key] = fallback.get(key)
@@ -3587,6 +3594,38 @@ def _default_monitoring_signals(signals: list[dict[str, Any]], errors: dict[str,
     return monitoring
 
 
+def _default_time_stratified_sub_conclusions(signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build default time-stratified sub-conclusions from signal time_horizon fields."""
+    horizon_groups: dict[str, list[str]] = {"短期": [], "中期": [], "长期": []}
+    for item in signals[:8]:
+        horizon = str(item.get("time_horizon") or "mixed")
+        source = str(item.get("source") or "")
+        interpretation = str(item.get("interpretation") or "")
+        text = f"{source}: {interpretation[:80]}"
+        if horizon == "short":
+            horizon_groups["短期"].append(text)
+        elif horizon == "long":
+            horizon_groups["长期"].append(text)
+        else:
+            horizon_groups["中期"].append(text)
+    sub_conclusions: list[dict[str, Any]] = []
+    for dimension in ("短期", "中期", "长期"):
+        items = horizon_groups[dimension]
+        if items:
+            sub_conclusions.append(
+                {
+                    "dimension": dimension,
+                    "judgment": "；".join(items[:3]) if items else f"{dimension}暂无可用信号。",
+                    "confidence": "高" if len(items) >= 2 else "中",
+                }
+            )
+    if not sub_conclusions:
+        sub_conclusions.append(
+            {"dimension": "全周期", "judgment": "宏观信号暂时不足，无法给出时间分层结论。", "confidence": "低"}
+        )
+    return sub_conclusions
+
+
 def _normalize_probability_scenarios(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
@@ -3638,6 +3677,28 @@ def _normalize_monitoring_signals(value: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _normalize_time_stratified_sub_conclusions(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        dimension = str(item.get("dimension") or "").strip()
+        judgment = str(item.get("judgment") or "").strip()
+        confidence = str(item.get("confidence") or "中").strip()
+        if not dimension or not judgment:
+            continue
+        rows.append(
+            {
+                "dimension": dimension,
+                "judgment": judgment,
+                "confidence": confidence,
+            }
+        )
+    return rows
+
+
 def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     confidence = payload.get("confidence", 0.5)
     try:
@@ -3675,6 +3736,9 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     monitoring_signals = _normalize_monitoring_signals(payload.get("monitoring_signals"))
     if monitoring_signals:
         normalized["monitoring_signals"] = monitoring_signals
+    time_stratified = _normalize_time_stratified_sub_conclusions(payload.get("time_stratified_sub_conclusions"))
+    if time_stratified:
+        normalized["time_stratified_sub_conclusions"] = time_stratified
     if isinstance(payload.get("macro_evidence"), dict):
         normalized["macro_evidence"] = payload["macro_evidence"]
     return normalized
