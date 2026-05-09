@@ -2586,6 +2586,7 @@ def _build_market_data(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
         "current_price": latest_close,
         "latest_timestamp": str(latest.get("timestamp")),
         "data_points": len(rows),
+        "rows": rows,
         "price_change_1d": _pct_change(latest_close, prev_close),
         "price_change_1w": _pct_change(latest_close, week_close),
         "volume": _safe_float(latest.get("volume")),
