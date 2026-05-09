@@ -239,12 +239,7 @@ def _build_chat_completions_url(base_url: str) -> str:
     normalized = (base_url or "").strip().rstrip("/")
     if normalized.endswith("/chat/completions"):
         return normalized
-    # Standard OpenAI-compatible APIs use /v1/chat/completions.
-    # Auto-append /v1 so users can set base URLs without it (e.g.
-    # DEEPSEEK_BASE_URL=https://api.deepseek.com instead of /v1).
-    if normalized.endswith("/v1"):
-        return f"{normalized}/chat/completions"
-    return f"{normalized}/v1/chat/completions"
+    return f"{normalized}/chat/completions"
 
 
 def _build_deepseek_chat_url(base_url: str) -> str:
@@ -276,7 +271,7 @@ def _deepseek_model(default: str = "deepseek-v4-flash") -> str:
     return str(getattr(_deepseek_config(), "model", default) or default)
 
 
-def _deepseek_base_url(default: str = "https://api.deepseek.com") -> str:
+def _deepseek_base_url(default: str = "https://api.deepseek.com/chat/completions") -> str:
     return str(getattr(_deepseek_config(), "base_url", default) or default)
 
 
@@ -305,7 +300,7 @@ def _llm_provider_chain() -> list[LLMChatProvider]:
                 name="openrouter",
                 display_name="OpenRouter Free",
                 api_key=str(getattr(openrouter, "api_key", "") or ""),
-                base_url=str(getattr(openrouter, "base_url", "https://openrouter.ai/api") or ""),
+                base_url=str(getattr(openrouter, "base_url", "https://openrouter.ai/api/v1/chat/completions") or ""),
                 model=str(
                     getattr(openrouter, "model", "nvidia/nemotron-3-super-120b-a12b:free")
                     or "nvidia/nemotron-3-super-120b-a12b:free"
@@ -319,7 +314,7 @@ def _llm_provider_chain() -> list[LLMChatProvider]:
                 name="deepseek",
                 display_name="DeepSeek",
                 api_key=str(getattr(deepseek, "api_key", "") or ""),
-                base_url=str(getattr(deepseek, "base_url", "https://api.deepseek.com") or ""),
+                base_url=str(getattr(deepseek, "base_url", "https://api.deepseek.com/chat/completions") or ""),
                 model=str(getattr(deepseek, "model", "deepseek-chat") or "deepseek-chat"),
             )
         )
