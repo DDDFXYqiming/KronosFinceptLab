@@ -17,7 +17,13 @@ from kronos_fincept.config import settings
 from kronos_fincept.cninfo import CninfoDisclosureClient
 from kronos_fincept.logging_config import get_request_id, log_event
 from kronos_fincept.macro import MacroDataManager, MacroGatherResult, MacroQuery
-from kronos_fincept.schemas import DEFAULT_MODEL_ID, ForecastRequest, ForecastRow
+from kronos_fincept.schemas import (
+    DEFAULT_MODEL_ID,
+    ForecastRequest,
+    ForecastRow,
+    resolve_tokenizer_id,
+    resolve_max_context,
+)
 from kronos_fincept.web_search import WebSearchClient, WebSearchResponse
 
 
@@ -158,6 +164,7 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "web_search",
         "yahoo_price",
         "deribit",
+        "currency",
     }
 )
 MACRO_REQUIRED_DIMENSION_COUNT = 3
@@ -178,6 +185,7 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "us_treasury": "rates",
     "cftc_cot": "positioning",
     "coingecko": "market_price",
+    "currency": "market_price",
     "edgar": "filings",
     "bis": "official_macro",
     "worldbank": "official_macro",
@@ -2655,12 +2663,15 @@ def _forecast_request_for_rows(symbol: str, rows: list[dict[str, Any]], *, dry_r
         )
         for row in rows[-100:]
     ]
+    effective_id = _active_kronos_model_id()
     return ForecastRequest(
         symbol=symbol,
         timeframe="1d",
         rows=forecast_rows,
         pred_len=5,
-        model_id=_active_kronos_model_id(),
+        model_id=effective_id,
+        tokenizer_id=resolve_tokenizer_id(effective_id),
+        max_context=resolve_max_context(effective_id),
         dry_run=dry_run,
         sample_count=1,
     )
