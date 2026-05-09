@@ -128,6 +128,16 @@ def _get_engine() -> AlertEngine:
     return get_engine(storage_path=str(storage_path))
 
 
+def _mask_contact_value(value: str | None) -> str | None:
+    """Mask webhook/email secrets before returning them to clients."""
+    if value is None:
+        return None
+    text = str(value)
+    if len(text) <= 8:
+        return "[REDACTED]"
+    return f"{text[:5]}...[REDACTED]...{text[-4:]}"
+
+
 def _rule_to_out(rule: AlertRule) -> AlertRuleOut:
     """Convert internal AlertRule to Pydantic output model."""
     return AlertRuleOut(
@@ -139,8 +149,8 @@ def _rule_to_out(rule: AlertRule) -> AlertRuleOut:
         params=rule.params,
         enabled=rule.enabled,
         channel=rule.channel.value,
-        webhook_url=rule.webhook_url,
-        email_to=rule.email_to,
+        webhook_url=_mask_contact_value(rule.webhook_url),
+        email_to=_mask_contact_value(rule.email_to),
     )
 
 

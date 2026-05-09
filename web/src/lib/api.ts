@@ -3,6 +3,11 @@ import type {
   AIAnalyzeResponse,
   AgentAnalyzeRequest,
   AgentAnalyzeResponse,
+  AlertCheckResponse,
+  AlertRule,
+  AlertRuleRequest,
+  AlertRulesResponse,
+  BacktestReportResponse,
   BacktestResponse,
   BatchResponse,
   DataResponse,
@@ -23,7 +28,13 @@ export type {
   AgentReport,
   AgentStep,
   AgentToolCall,
+  AlertCheckResponse,
+  AlertEvent,
+  AlertRule,
+  AlertRuleRequest,
+  AlertRulesResponse,
   BacktestMetrics,
+  BacktestReportResponse,
   BacktestResponse,
   BatchResponse,
   DataResponse,
@@ -231,6 +242,10 @@ function post<T>(path: string, body: unknown, options?: ApiClientOptions): Promi
   });
 }
 
+function del<T>(path: string, options?: ApiClientOptions): Promise<T> {
+  return fetchApi<T>(path, { method: "DELETE", ...options });
+}
+
 export const api = {
   health: (options?: ApiClientOptions) => get<HealthResponse>("/health", options),
 
@@ -240,8 +255,18 @@ export const api = {
   batch: (assets: ForecastRequest[], pred_len: number, dry_run = false, options?: ApiClientOptions) =>
     post<BatchResponse>("/batch", { assets, pred_len, dry_run }, options),
 
-  getData: (symbol: string, startDate: string, endDate: string, options?: ApiClientOptions) =>
-    get<DataResponse>(`/data/a-stock/${symbol}?start_date=${startDate}&end_date=${endDate}`, options),
+  getData: (
+    symbol: string,
+    startDate: string,
+    endDate: string,
+    adjustOrOptions: string | ApiClientOptions = "qfq",
+    maybeOptions?: ApiClientOptions
+  ) => {
+    const adjust = typeof adjustOrOptions === "string" ? adjustOrOptions : "qfq";
+    const options = typeof adjustOrOptions === "string" ? maybeOptions : adjustOrOptions;
+    const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+    return get<DataResponse>(`/data/a-stock/${symbol}?${params.toString()}&adjust=${encodeURIComponent(adjust)}`, options);
+  },
 
   search: (query: string, options?: ApiClientOptions) =>
     get<{ ok: boolean; results: SearchResult[] }>(`/data/search?q=${encodeURIComponent(query)}`, options),
@@ -253,10 +278,35 @@ export const api = {
       end_date: string;
       top_k: number;
       pred_len?: number;
+      window_size?: number;
+      step?: number;
+      initial_equity?: number;
+      benchmark?: string;
+      fee_bps?: number;
+      slippage_bps?: number;
       dry_run?: boolean;
     },
     options?: ApiClientOptions
   ) => post<BacktestResponse>("/backtest/ranking", params, options),
+
+  backtestReport: (
+    params: {
+      symbols: string[];
+      start_date: string;
+      end_date: string;
+      top_k: number;
+      pred_len?: number;
+      window_size?: number;
+      step?: number;
+      initial_equity?: number;
+      benchmark?: string;
+      fee_bps?: number;
+      slippage_bps?: number;
+      strategy_name?: string;
+      dry_run?: boolean;
+    },
+    options?: ApiClientOptions
+  ) => post<BacktestReportResponse>("/backtest/report", params, options),
 
   getGlobalData: (
     symbol: string,
@@ -299,4 +349,15 @@ export const api = {
 
   analyzeDerivative: (symbol: string, market: string, options?: ApiClientOptions) =>
     post<any>("/v1/analyze/derivative", { symbol, market }, options),
+
+  alertList: (options?: ApiClientOptions) => get<AlertRulesResponse>("/alert/rules", options),
+
+  alertCreate: (req: AlertRuleRequest, options?: ApiClientOptions) =>
+    post<AlertRule>("/alert/rules", req, options),
+
+  alertDelete: (ruleId: string, options?: ApiClientOptions) =>
+    del<{ ok: boolean; message: string }>(`/alert/rules/${encodeURIComponent(ruleId)}`, options),
+
+  alertCheck: (ruleId?: string | null, options?: ApiClientOptions) =>
+    post<AlertCheckResponse>("/alert/check", ruleId ? { rule_id: ruleId } : {}, options),
 };

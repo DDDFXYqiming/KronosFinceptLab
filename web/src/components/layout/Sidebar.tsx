@@ -13,6 +13,8 @@ export const navItems = [
   { href: "/batch", label: "批量对比" },
   { href: "/backtest", label: "回测" },
   { href: "/data", label: "数据" },
+  { href: "/settings", label: "设置" },
+  { href: "/alerts", label: "告警" },
 ];
 
 export function Sidebar() {
