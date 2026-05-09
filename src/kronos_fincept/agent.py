@@ -2526,24 +2526,49 @@ def _fetch_price_data(symbol: str, market: str) -> list[dict[str, Any]]:
 
 
 def _fetch_financial_summary(symbol: str, market: str) -> dict[str, Any] | None:
-    if market != "cn":
-        return None
-    try:
-        from kronos_fincept.financial import FinancialDataManager
+    if market == "cn":
+        try:
+            from kronos_fincept.financial import FinancialDataManager
 
-        data = FinancialDataManager().get_financial_data(symbol)
-        if not data:
+            data = FinancialDataManager().get_financial_data(symbol)
+            if not data:
+                return None
+            latest_income = data.income_statements[0] if data.income_statements else None
+            return {
+                "symbol": data.symbol,
+                "name": getattr(data, "name", None),
+                "revenue": getattr(latest_income, "revenue", None) if latest_income else None,
+                "net_income": getattr(latest_income, "net_income", None) if latest_income else None,
+                "gross_profit": getattr(latest_income, "gross_profit", None) if latest_income else None,
+                "period": getattr(latest_income, "period", None) if latest_income else None,
+            }
+        except Exception:
             return None
-        latest_income = data.income_statements[0] if data.income_statements else None
-        return {
-            "symbol": data.symbol,
-            "name": getattr(data, "name", None),
-            "revenue": getattr(latest_income, "revenue", None) if latest_income else None,
-            "net_income": getattr(latest_income, "net_income", None) if latest_income else None,
-            "gross_profit": getattr(latest_income, "gross_profit", None) if latest_income else None,
-            "period": getattr(latest_income, "period", None) if latest_income else None,
-        }
-    except Exception:
+    elif market == "us":
+        try:
+            import yfinance as yf
+
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            if not info:
+                return None
+            return {
+                "symbol": symbol,
+                "name": info.get("longName") or info.get("shortName"),
+                "pe": info.get("trailingPE"),
+                "pb": info.get("priceToBook"),
+                "roe": info.get("returnOnEquity"),
+                "revenue": info.get("totalRevenue"),
+                "net_income": info.get("netIncomeToCommon"),
+                "market_cap": info.get("marketCap"),
+                "debt_ratio": info.get("debtToEquity"),
+                "current_ratio": info.get("currentRatio"),
+                "gross_profit": info.get("grossProfits"),
+                "period": None,
+            }
+        except Exception:
+            return None
+    else:
         return None
 
 

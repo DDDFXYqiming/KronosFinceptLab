@@ -31,14 +31,6 @@
 - **FinceptTerminal**: https://github.com/Fincept-Corporation/FinceptTerminal — 金融终端（参考设计，不直接依赖）
 - **Digital Oracle**: https://github.com/komako-workshop/digital-oracle — 宏观金融信号与 provider 方法论（v10.1 起参考集成）
 
-## Current status
-
-Version: v10.8.8
-
-V10 已推进到 v10.8.8：分析页与宏观洞察页进入 OpenRouter/DeepSeek 语义路由优先模式。配置 `OPENROUTER_API_KEY` 后，入口范围判断、标的识别和宏观意图判定会先调用 OpenRouter Free，失败后自动回退到 DeepSeek，再失败才使用本地 fallback；本地正则只作为模型不可用时的降级兜底，不再作为 Web 入口主判定逻辑。v10.8.7 已将 Web 汇总 OpenRouter 预算按真实 API 测试校准到 12s，并在发送给 LLM 前压缩技术指标数组和网页检索冗余 payload；v10.8 已补齐 Digital Oracle 空 provider、扩展期权/衍生品信号、新增宏观证据维度校验，并把 provider 覆盖、数据质量、证据维度和证据不足信息同步到 Web/API/CLI，测试基线已覆盖这些契约。
-
-宏观数据入口由 `MacroDataManager` 统一调度，支持 provider 并行、单源超时降级与黄金/商品资产映射。Agent 分析页在 LLM 判定为宏观/大盘/商品/加密/跨市场问题且无具体标的时，会自动转入宏观洞察；普通个股问法仍走个股行情、Kronos、网页检索和报告汇总主链路。部署排障时可直接用健康接口确认运行版本。
-
 ## 三端能力对照
 
 | 能力 | Web | API | CLI |
@@ -50,18 +42,6 @@ V10 已推进到 v10.8.8：分析页与宏观洞察页进入 OpenRouter/DeepSeek
 | 风险/估值/组合 | `/analysis` 汇总展示 | `POST /api/v1/analyze/*` | `kronos analyze risk/dcf/portfolio` |
 | 回测 | `/backtest` | `POST /api/backtest/ranking` | `kronos backtest ranking` |
 | 健康检查 | Header 状态 | `GET /api/health` | `kronos serve` 后访问 health |
-
-## Zeabur 配置
-
-必要变量：`PORT`、`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`JWT_SECRET`。`DEEPSEEK_BASE_URL` 推荐填写根地址 `https://api.deepseek.com`；若误填完整 `https://api.deepseek.com/chat/completions`，后端会兼容处理。
-
-可选变量：`OPENROUTER_API_KEY`、`OPENROUTER_BASE_URL`、`OPENROUTER_MODEL`、`KRONOS_MODEL_ID`、`KRONOS_PREWARM_ON_STARTUP`、`HF_TOKEN`、`WEB_SEARCH_PROVIDER`、`WEB_SEARCH_API_KEY`、`WEB_SEARCH_MAX_RESULTS`、`WEB_SEARCH_TIMEOUT_SECONDS`。
-
-**重要**：请务必配置 `HF_TOKEN` 环境变量，以避免 Hugging Face Hub 的未认证请求警告和速率限制。获取方式：访问 https://huggingface.co/settings/tokens 创建 token，然后在 Zeabur 等平台的环境变量中配置 `HF_TOKEN=hf_xxxx`。
-
-线上默认只加载一套 Kronos 模型。若 `KRONOS_MODEL_ID=NeoQuasar/Kronos-base`，不要再额外配置 Agent 专用小模型；预测页、分析页、API 与 CLI 会复用同一个 predictor cache。
-
-忽略边界：`.env`、`SPEC.md`、`external/`、`models/`、`.cache/`、`logs/`、`web/node_modules/`、`web/.next/` 不进入 git；Docker 镜像同样排除这些路径。
 
 ## 质量闸门
 

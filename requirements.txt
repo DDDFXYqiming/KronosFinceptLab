@@ -25,6 +25,9 @@ einops>=0.8
 safetensors>=0.6
 tqdm>=4.67
 
+# SciPy (required by RiskCalculator)
+scipy>=1.10
+
 # Dev / Test
 pytest>=8.0
 pytest-asyncio>=0.21

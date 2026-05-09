@@ -1,0 +1,10 @@
+- [x] `scipy>=1.10` 已添加到 `pyproject.toml` 的 `deploy` 依赖组
+- [x] `scipy>=1.10` 已添加到 `requirements.txt`
+- [x] `_fetch_financial_summary` 函数支持 `market="us"` 参数
+- [x] 美股财务摘要通过 `yfinance.Ticker.info` 获取
+- [x] 返回的财务摘要包含：pe, pb, roe, revenue, net_profit, market_cap, debt_ratio, current_ratio
+- [x] A 股（cn）财务数据获取仍然正常工作
+- [x] 港股（hk）仍然返回 None（预期行为）
+- [x] 本地测试通过：AAPL 和 NVDA 的 financial_data 不再跳过
+- [x] 本地测试通过：RiskCalculator 导入成功
+- [ ] 代码已推送到 GitHub
