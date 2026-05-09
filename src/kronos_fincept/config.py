@@ -78,7 +78,7 @@ class KronosConfig:
 class OpenAIConfig:
     """OpenAI / compatible API config."""
     api_key: str = field(default_factory=lambda: _get("OPENAI_API_KEY"))
-    base_url: str = field(default_factory=lambda: _get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+    base_url: str = field(default_factory=lambda: _get("OPENAI_BASE_URL", "https://api.openai.com"))
     model: str = field(default_factory=lambda: _get("OPENAI_MODEL", "gpt-4o"))
 
     @property
@@ -101,7 +101,7 @@ class AnthropicConfig:
 class DeepSeekConfig:
     """DeepSeek config."""
     api_key: str = field(default_factory=lambda: _get("DEEPSEEK_API_KEY"))
-    base_url: str = field(default_factory=lambda: _get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
+    base_url: str = field(default_factory=lambda: _get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
     model: str = field(default_factory=lambda: _get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
 
     @property
@@ -113,7 +113,7 @@ class DeepSeekConfig:
 class OpenRouterConfig:
     """OpenRouter compatible API config used as a low-cost first LLM hop."""
     api_key: str = field(default_factory=lambda: _get("OPENROUTER_API_KEY"))
-    base_url: str = field(default_factory=lambda: _get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"))
+    base_url: str = field(default_factory=lambda: _get("OPENROUTER_BASE_URL", "https://openrouter.ai/api"))
     model: str = field(default_factory=lambda: _get("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"))
 
     @property

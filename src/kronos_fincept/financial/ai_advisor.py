@@ -94,8 +94,17 @@ class AIInvestmentAdvisor:
                 'temperature': 0.7
             }
             
+            # Normalize URL: ensure /v1/chat/completions path
+            def _ensure_chat_url(url: str) -> str:
+                u = url.rstrip("/")
+                if u.endswith("/chat/completions"):
+                    return u
+                if u.endswith("/v1"):
+                    return f"{u}/chat/completions"
+                return f"{u}/v1/chat/completions"
+
             response = requests.post(
-                f'{self.base_url}/chat/completions',
+                _ensure_chat_url(self.base_url),
                 headers=headers,
                 json=data,
                 timeout=30
