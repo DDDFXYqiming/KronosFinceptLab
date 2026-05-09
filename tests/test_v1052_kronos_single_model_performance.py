@@ -52,7 +52,11 @@ def test_v1052_default_predictor_prewarm_uses_shared_configured_model(monkeypatc
     result = service.prewarm_default_predictor()
 
     assert result["model_id"] == "NeoQuasar/Kronos-base"
-    assert captured == {"model_id": "NeoQuasar/Kronos-base", "tokenizer_id": "tokenizer"}
+    assert captured == {
+        "model_id": "NeoQuasar/Kronos-base",
+        "tokenizer_id": "tokenizer",
+        "max_context": 512,
+    }
 
 
 def test_v1052_multi_asset_agent_defers_to_shared_batch_prediction(monkeypatch):

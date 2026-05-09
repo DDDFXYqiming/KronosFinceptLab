@@ -1,5 +1,7 @@
 # KronosFinceptLab
 
+Version: v10.8.7
+
 独立的 Python + Rust + Web 金融量化分析平台，集成 Kronos K 线基础模型。
 
 ## 技术栈
@@ -31,6 +33,8 @@
 - **FinceptTerminal**: https://github.com/Fincept-Corporation/FinceptTerminal — 金融终端（参考设计，不直接依赖）
 - **Digital Oracle**: https://github.com/komako-workshop/digital-oracle — 宏观金融信号与 provider 方法论（v10.1 起参考集成）
 
+宏观分析由 `MacroDataManager` 统一调度 Digital Oracle 风格 provider，当前覆盖预测市场、利率曲线、CFTC COT、链上/加密、SEC/EDGAR、BIS、WorldBank、Yahoo/期权、恐贪指数、FedWatch、网页检索、汇率、DBnomics 与 Stooq 等 17 类信号源。
+
 ## 三端能力对照
 
 | 能力 | Web | API | CLI |
@@ -42,6 +46,26 @@
 | 风险/估值/组合 | `/analysis` 汇总展示 | `POST /api/v1/analyze/*` | `kronos analyze risk/dcf/portfolio` |
 | 回测 | `/backtest` | `POST /api/backtest/ranking` | `kronos backtest ranking` |
 | 健康检查 | Header 状态 | `GET /api/health` | `kronos serve` 后访问 health |
+
+## Zeabur 配置
+
+Zeabur 单容器镜像同时运行 FastAPI 与 Next.js standalone。核心环境变量建议在服务后台以私有变量配置：
+
+| 变量 | 说明 |
+|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek LLM 私有密钥，用于 Agent 路由与结构化报告兜底。 |
+| `DEEPSEEK_BASE_URL` | 支持 `https://api.deepseek.com` 或完整 `https://api.deepseek.com/chat/completions`。 |
+| `DEEPSEEK_MODEL` | DeepSeek 模型名，例如 `deepseek-v4-flash` 或兼容模型。 |
+| `OPENROUTER_API_KEY` | OpenRouter Free-first 私有密钥；失败时自动回退 DeepSeek。 |
+| `OPENROUTER_BASE_URL` | 支持 `https://openrouter.ai/api/v1` 或完整 `chat/completions` endpoint。 |
+| `OPENROUTER_MODEL` | 默认 `openrouter/free`，也可显式使用可用 free 模型。 |
+| `HF_TOKEN` | Hugging Face 下载令牌，获取地址：https://huggingface.co/settings/tokens。 |
+| `KRONOS_MODEL_ID` | 默认 `NeoQuasar/Kronos-base`，Web/API/CLI/Agent 共用同一模型配置。 |
+| `KRONOS_PREWARM_ON_STARTUP` | Zeabur 镜像默认 `1`，启动时预热共享 Kronos predictor。 |
+| `WEB_SEARCH_PROVIDER` | Digital Oracle / Agent 网页检索 provider，例如 tavily、brave、serper、custom。 |
+| `WEB_SEARCH_API_KEY` | 网页检索私有密钥。 |
+
+部署边界：`.env`、`SPEC.md`、`external/`、`models/`、`.cache/`、`logs/`、`web/node_modules/`、`web/.next/` 不进入 Git/Docker 上下文；模型权重通过 `HF_HOME` 与 `HF_TOKEN` 在运行环境下载或缓存。
 
 ## 质量闸门
 

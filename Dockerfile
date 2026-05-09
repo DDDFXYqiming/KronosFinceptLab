@@ -46,7 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && python3 -m venv /opt/venv \
     && rm -rf /var/lib/apt/lists/*
 
-# KRONOS_MODEL_ID options: NeoQuasar/Kronos-base (default), NeoQuasar/Kronos-mini (fastest), NeoQuasar/Kronos-small
+# KRONOS_MODEL_ID options: NeoQuasar/Kronos-base (default), NeoQuasar/Kronos-mini (fastest)
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/app/src \
     NEXT_TELEMETRY_DISABLED=1 \

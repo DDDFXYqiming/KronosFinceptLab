@@ -34,14 +34,15 @@ _LAST_REPORT_LLM_METADATA: dict[str, Any] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
 ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 5, "deepseek": 8}
-WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 45, "deepseek": 30}
+WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 30}
 WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 30
-WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 45, "deepseek": 25}
+WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 25}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 30
 WEB_MACRO_TIMEOUT_SECONDS = 16.0
 WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 12.0
 LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
 LLM_CONTEXT_MAX_TEXT_CHARS = 600
+LLM_CONTEXT_RECENT_MARKET_ROWS = 5
 
 
 AGENT_SCOPE_DESCRIPTION = (
@@ -302,8 +303,8 @@ def _llm_provider_chain() -> list[LLMChatProvider]:
                 api_key=str(getattr(openrouter, "api_key", "") or ""),
                 base_url=str(getattr(openrouter, "base_url", "https://openrouter.ai/api/v1/chat/completions") or ""),
                 model=str(
-                    getattr(openrouter, "model", "nvidia/nemotron-3-super-120b-a12b:free")
-                    or "nvidia/nemotron-3-super-120b-a12b:free"
+                    getattr(openrouter, "model", "openrouter/free")
+                    or "openrouter/free"
                 ),
             )
         )
@@ -3058,7 +3059,6 @@ def _compact_llm_asset_context(asset: dict[str, Any]) -> dict[str, Any]:
         "market",
         "name",
         "model",
-        "market_data",
         "financial_data",
         "risk_metrics",
         "kronos_prediction",
@@ -3067,10 +3067,51 @@ def _compact_llm_asset_context(asset: dict[str, Any]) -> dict[str, Any]:
     ):
         if key in asset:
             compact[key] = asset[key]
+    if "market_data" in asset:
+        compact["market_data"] = _compact_market_data_for_llm(asset.get("market_data"))
     if "technical_indicators" in asset:
         compact["technical_indicators"] = _compact_technical_indicators_for_llm(asset.get("technical_indicators"))
     if "online_research" in asset:
         compact["online_research"] = _compact_online_research_for_llm(asset.get("online_research"))
+    return compact
+
+
+def _compact_market_data_for_llm(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+
+    compact: dict[str, Any] = {}
+    rows = value.get("rows")
+    for key, item in value.items():
+        if key == "rows":
+            continue
+        if isinstance(item, float):
+            compact[key] = _round_float(item)
+        elif isinstance(item, (str, bool, int)) or item is None:
+            compact[key] = item
+        else:
+            compact[key] = _json_safe(item)
+
+    if isinstance(rows, list):
+        recent_rows = [
+            _compact_market_row_for_llm(row)
+            for row in rows[-LLM_CONTEXT_RECENT_MARKET_ROWS:]
+            if isinstance(row, dict)
+        ]
+        compact["row_count"] = len(rows)
+        compact["recent_rows"] = recent_rows
+        compact["rows_truncated"] = len(rows) > len(recent_rows)
+        compact["_policy"] = "full OHLCV rows omitted; latest rows retained for LLM budget control"
+    return compact
+
+
+def _compact_market_row_for_llm(row: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("timestamp", "open", "high", "low", "close", "volume", "amount"):
+        if key not in row:
+            continue
+        value = row.get(key)
+        compact[key] = _round_float(value) if isinstance(value, float) else value
     return compact
 
 

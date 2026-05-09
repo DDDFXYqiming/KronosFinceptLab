@@ -172,9 +172,10 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
 def prewarm_default_predictor() -> dict[str, Any]:
     """Preload the configured real Kronos predictor into the shared process cache."""
     effective_id = _effective_model_id(DEFAULT_MODEL_ID)
+    tokenizer_id = getattr(settings.kronos, "tokenizer_id", "") or resolve_tokenizer_id(effective_id)
     return prewarm_predictor(
         model_id=effective_id,
-        tokenizer_id=resolve_tokenizer_id(effective_id),
+        tokenizer_id=tokenizer_id,
         max_context=resolve_max_context(effective_id),
     )
 

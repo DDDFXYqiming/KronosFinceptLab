@@ -95,7 +95,7 @@ def test_v101_macro_manager_imports_and_registers_digital_oracle_providers():
     provider_ids = {item.provider_id for item in providers}
 
     assert MacroDataManager
-    assert len(providers) == 14
+    assert len(providers) == 17
     assert {
         "polymarket",
         "kalshi",
@@ -111,6 +111,9 @@ def test_v101_macro_manager_imports_and_registers_digital_oracle_providers():
         "web_search",
         "yahoo_price",
         "deribit",
+        "currency",
+        "dbnomics",
+        "stooq",
     } <= provider_ids
 
 
