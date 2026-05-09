@@ -57,6 +57,7 @@ deploy = [
     "baostock>=0.8.8",
     "yfinance>=0.2",
     "requests>=2.31",
+    "scipy>=1.10",
 ]
 deploy-model = [
     "fastapi>=0.100",
@@ -72,6 +73,7 @@ deploy-model = [
     "einops>=0.8",
     "safetensors>=0.6",
     "tqdm>=4.67",
+    "scipy>=1.10",
 ]
 
 [project.scripts]
