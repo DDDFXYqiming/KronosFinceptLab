@@ -13,7 +13,7 @@ def test_v1022_deepseek_v4_flash_uses_non_thinking_json_mode():
     assert options["max_tokens"] == 1800
 
 
-def test_v1022_deepseek_legacy_model_keeps_json_mode_without_thinking():
+def test_v1022_deepseek_all_models_use_non_thinking_json_mode():
     from kronos_fincept import agent
 
     options = agent._deepseek_structured_json_options(
@@ -23,7 +23,7 @@ def test_v1022_deepseek_legacy_model_keeps_json_mode_without_thinking():
     )
 
     assert options["response_format"] == {"type": "json_object"}
-    assert "thinking" not in options
+    assert options["thinking"] == {"type": "disabled"}
 
 
 def test_v1022_deepseek_empty_content_does_not_raise():

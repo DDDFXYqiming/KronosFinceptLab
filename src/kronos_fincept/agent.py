@@ -477,6 +477,7 @@ def _llm_request_payload(
             "messages": _openrouter_compatible_messages(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "thinking": {"type": "disabled"},
         }
 
     return {
@@ -3215,9 +3216,7 @@ def _deepseek_structured_json_options(
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
-    selected_model = (model or _deepseek_model()).lower()
-    if selected_model.startswith("deepseek-v4-"):
-        options["thinking"] = {"type": "disabled"}
+    options["thinking"] = {"type": "disabled"}
     return options
 
 
