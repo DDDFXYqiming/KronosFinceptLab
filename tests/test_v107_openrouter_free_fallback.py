@@ -337,7 +337,7 @@ def test_v107_web_macro_report_uses_free_provider_budget_before_deepseek(monkeyp
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在宏观 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [8, 25]
+    assert [call["timeout"] for call in calls] == [8, 35]
 
 
 def test_v107_web_macro_uses_llm_route_and_fast_provider_manager(monkeypatch):
