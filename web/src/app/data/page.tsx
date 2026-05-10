@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
+import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { PriceLineChart } from "@/components/charts/PriceLineChart";
 import { api, formatApiError } from "@/lib/api";
@@ -176,6 +177,7 @@ export default function DataPage() {
 
   return (
     <div className="page-shell space-y-6">
+      <SectionLabel>数据浏览</SectionLabel>
       <h1 className="page-title">数据浏览</h1>
       <Card>
         <CardTitle subtitle="搜索、跨市场拉取、查看指标，并一键跳转预测/分析。">搜索股票</CardTitle>

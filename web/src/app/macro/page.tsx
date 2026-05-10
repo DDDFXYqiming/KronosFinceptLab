@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
+import { SectionLabel } from "@/components/ui/SectionLabel";
 import { api, formatApiError } from "@/lib/api";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
@@ -694,9 +695,10 @@ export default function MacroPage() {
 
   return (
     <div className="page-shell space-y-6">
-      <h1 className="page-title">宏观洞察</h1>
+      <SectionLabel>宏观洞察</SectionLabel>
+      <h1 className="page-title">宏观信号分析</h1>
 
-      <Card>
+      <Card featured>
         <form onSubmit={handleSubmit} className="space-y-4">
           <textarea
             value={question}
@@ -712,7 +714,7 @@ export default function MacroPage() {
                   key={item}
                   type="button"
                   onClick={() => setQuestion(item)}
-                  className="min-h-11 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
+                  className="min-h-11 rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground transition-all duration-200 hover:border-accent/40 hover:bg-accent/5 hover:text-accent"
                 >
                   {item}
                 </button>
@@ -770,7 +772,7 @@ export default function MacroPage() {
                   setQuestion(item.question);
                   setError("");
                 }}
-                className="rounded-lg border border-border bg-surface px-3 py-2 text-left transition-colors hover:border-accent"
+                className="rounded-xl border border-border bg-card p-3 text-left transition-all duration-200 hover:border-accent/30 hover:shadow-accent-sm hover:-translate-y-0.5"
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium text-foreground">{item.question}</span>
@@ -787,7 +789,7 @@ export default function MacroPage() {
         </Card>
       )}
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
+      {error && <div className="rounded-xl border border-error/20 bg-error/5 p-4 text-sm text-error"><div className="flex items-start gap-3"><span className="mt-0.5 shrink-0 text-base">⚠️</span><span>{error}</span></div></div>}
 
       {result && (
         <>
@@ -902,9 +904,10 @@ export default function MacroPage() {
 
       {!result && !error && !loading && (
         <Card>
-          <div className="py-12 text-center text-muted-foreground">
-            <p className="mb-2 text-lg">输入一个宏观问题</p>
-            <p className="text-sm">例如：现在适合买黄金吗、WW3 的概率是多少。</p>
+          <div className="flex flex-col items-center py-16 text-center">
+            <span className="text-4xl mb-4">🌐</span>
+            <p className="text-lg font-semibold text-foreground mb-2">输入一个宏观问题</p>
+            <p className="text-sm text-muted-foreground">例如：现在适合买黄金吗、WW3 的概率是多少。</p>
           </div>
         </Card>
       )}

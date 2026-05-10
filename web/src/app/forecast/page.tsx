@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
+import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { DEFAULT_MARKET, MARKET_OPTIONS, normalizeMarket, type Market } from "@/lib/markets";
@@ -325,6 +326,7 @@ function ForecastContent() {
 
   return (
     <div className="page-shell space-y-6">
+      <SectionLabel>价格预测</SectionLabel>
       <h1 className="page-title">价格预测</h1>
 
       {/* Controls */}

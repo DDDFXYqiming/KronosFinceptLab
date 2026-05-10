@@ -3,7 +3,8 @@
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardTitle } from "@/components/ui/Card";
+import { Card, CardTitle, CardGrid } from "@/components/ui/Card";
+import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { api, formatApiError } from "@/lib/api";
 import { normalizeMarket, type Market } from "@/lib/markets";
@@ -734,9 +735,10 @@ function AnalysisContent() {
 
   return (
     <div className="page-shell space-y-6">
-      <h1 className="page-title">AI 分析</h1>
+      <SectionLabel>AI 分析</SectionLabel>
+      <h1 className="page-title">智能深度分析</h1>
 
-      <Card>
+      <Card featured>
         <form onSubmit={handleSubmit} className="space-y-4">
           <textarea
             value={question}
@@ -752,7 +754,7 @@ function AnalysisContent() {
                   key={item}
                   type="button"
                   onClick={() => setQuestion(item)}
-                  className="min-h-11 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-foreground"
+                  className="min-h-11 rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground transition-all duration-200 hover:border-accent/40 hover:bg-accent/5 hover:text-accent"
                 >
                   {item}
                 </button>
@@ -810,7 +812,7 @@ function AnalysisContent() {
                   setQuestion(item.question);
                   setError("");
                 }}
-                className="rounded-lg border border-border bg-surface px-3 py-2 text-left transition-colors hover:border-accent"
+                className="rounded-xl border border-border bg-card p-3 text-left transition-all duration-200 hover:border-accent/30 hover:shadow-accent-sm hover:-translate-y-0.5"
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium text-foreground">
@@ -828,8 +830,11 @@ function AnalysisContent() {
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-          {error}
+        <div className="rounded-xl border border-error/20 bg-error/5 p-4 text-sm text-error">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 shrink-0 text-base">⚠️</span>
+            <span>{error}</span>
+          </div>
         </div>
       )}
 
@@ -913,9 +918,10 @@ function AnalysisContent() {
 
       {!result && !error && !loading && (
         <Card>
-          <div className="text-center py-12 text-muted-foreground">
-            <p className="text-lg mb-2">输入一个自然语言问题</p>
-            <p className="text-sm">例如：帮我看看招商银行现在能不能买。</p>
+          <div className="flex flex-col items-center py-16 text-center">
+            <span className="text-4xl mb-4">🤖</span>
+            <p className="text-lg font-semibold text-foreground mb-2">输入一个自然语言问题</p>
+            <p className="text-sm text-muted-foreground">例如：帮我看看招商银行现在能不能买。</p>
           </div>
         </Card>
       )}

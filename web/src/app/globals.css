@@ -273,6 +273,110 @@ code, pre, .font-mono {
   opacity: 0.5;
 }
 
+/* ── Hero Style ── */
+.hero-gradient {
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 82, 255, 0.1) 0%, transparent 60%);
+}
+
+.dark .hero-gradient {
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 82, 255, 0.15) 0%, transparent 60%);
+}
+
+/* ── Glass surface ── */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+.dark .glass {
+  background: rgba(17, 24, 39, 0.7);
+  border-color: rgba(30, 41, 59, 0.6);
+}
+
+/* ── Inline code ── */
+.inline-code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: var(--color-muted);
+  color: var(--color-accent);
+}
+
+/* ── Table enhancements ── */
+.table-modern {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-modern th {
+  font-family: "Inter", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted-foreground);
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-muted);
+}
+
+.table-modern th:first-child { border-radius: 8px 0 0 0; }
+.table-modern th:last-child { border-radius: 0 8px 0 0; }
+
+.table-modern td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.875rem;
+}
+
+.table-modern tr:last-child td { border-bottom: none; }
+.table-modern tr:hover td { background: rgba(0, 82, 255, 0.02); }
+
+.dark .table-modern tr:hover td { background: rgba(0, 82, 255, 0.04); }
+
+/* ── Divider ── */
+.divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 1.5rem 0;
+}
+
+.divider-accent {
+  height: 2px;
+  background: linear-gradient(to right, var(--color-accent), transparent);
+  margin: 1.5rem 0;
+}
+
+/* ── Number highlight ── */
+.num {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-up { color: var(--color-success); }
+.stat-down { color: var(--color-error); }
+
+/* ── Page background texture (subtle) ── */
+.page-bg {
+  position: relative;
+}
+
+.page-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 0%, rgba(0, 82, 255, 0.03) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 100% 100%, rgba(77, 124, 255, 0.03) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;

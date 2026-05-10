@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
+import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { BacktestEquityChart } from "@/components/charts/BacktestEquityChart";
 import { api, formatApiError } from "@/lib/api";
@@ -129,6 +130,7 @@ export default function BacktestPage() {
 
   return (
     <div className="page-shell space-y-6">
+      <SectionLabel>策略回测</SectionLabel>
       <h1 className="page-title">策略回测</h1>
 
       <Card>
