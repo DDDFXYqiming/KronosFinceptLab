@@ -738,7 +738,7 @@ function AnalysisContent() {
       <SectionLabel>AI 分析</SectionLabel>
       <h1 className="page-title">智能深度分析</h1>
 
-      <Card featured>
+      <Card>
         <form onSubmit={handleSubmit} className="space-y-4">
           <textarea
             value={question}

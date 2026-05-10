@@ -52,7 +52,7 @@ export default function Dashboard() {
         variants={stagger}
         initial="hidden"
         animate="visible"
-        className="hero-gradient -mx-4 -mt-5 px-4 pb-8 pt-12 md:-mx-6 md:-mt-6 md:px-6 md:pb-12 md:pt-16"
+        className="-mx-4 -mt-5 px-4 pb-8 pt-12 md:-mx-6 md:-mt-6 md:px-6 md:pb-12 md:pt-16"
       >
         <motion.div variants={fadeInUp}>
           <SectionLabel>KronosFinceptLab</SectionLabel>
@@ -91,7 +91,7 @@ export default function Dashboard() {
       </CardGrid>
 
       {/* ── Quick Links ── */}
-      <Card featured>
+      <Card>
         <CardTitle subtitle="选择工具开始分析">快捷入口</CardTitle>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
           {quickLinks.map((link) => (
