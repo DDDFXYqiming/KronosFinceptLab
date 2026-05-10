@@ -2,13 +2,19 @@
 
 Replaces hardcoded example buttons on analysis/macro pages with fresh,
 random suggestions regenerated periodically by the LLM.
+
+Diversity guarantee: each generation uses a random seed, avoids repeating
+questions from the last 3 generations, and retries with a different seed
+if overlap exceeds 50%.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,10 +32,14 @@ class SuggestionResult:
     generated_at: float  # Unix timestamp
 
 
-# In-memory cache: {(type,): (timestamp, questions)}
+# In-memory cache: {type: SuggestionResult}
 _cache: dict[str, SuggestionResult] = {}
 
-SUGGESTION_CACHE_TTL_SECONDS = 8 * 3600  # 8 hours
+# History: track last 3 generations per type to avoid repeats
+_history: dict[str, deque[list[str]]] = {"analysis": deque(maxlen=3), "macro": deque(maxlen=3)}
+
+SUGGESTION_CACHE_TTL_SECONDS = 8 * 3600
+MAX_RETRIES = 3
 
 # ── Prompt templates ──
 
@@ -45,10 +55,8 @@ _ANALYSIS_SYSTEM = """\
 - 包含至少一个带有具体股票名称或代码的问题
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
+- 必须与先前给出的建议完全不同，刻意探索新角度、新标的、新问法
 - 只输出 JSON，不要任何解释"""
-
-_ANALYSIS_USER = """\
-请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。"""
 
 _MACRO_SYSTEM = """\
 你是 KronosFinceptLab 的宏观洞察问题生成器。
@@ -62,10 +70,39 @@ _MACRO_SYSTEM = """\
 - 覆盖不同宏观维度（利率、商品、地缘、加密、市场情绪等）
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
+- 必须与先前给出的建议完全不同，刻意探索新角度、新问法
 - 只输出 JSON，不要任何解释"""
 
-_MACRO_USER = """\
-请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。"""
+# Random "flavor" phrases injected into user prompt to steer diversity
+_ANALYSIS_FLAVORS = [
+    "侧重科技股和半导体板块",
+    "侧重消费和医药板块",
+    "侧重银行和金融板块",
+    "侧重能源和资源板块",
+    "侧重港股和跨境标的",
+    "侧重加密货币和数字资产",
+    "侧重 ETF 和指数基金",
+    "侧重技术面和量化因子",
+    "侧重财报和基本面估值",
+    "侧重宏观经济对个股的影响",
+    "侧重新兴市场和中小盘",
+    "侧重避险资产和防御策略",
+]
+
+_MACRO_FLAVORS = [
+    "侧重利率和央行政策",
+    "侧重地缘政治和战争风险",
+    "侧重商品价格和通胀预期",
+    "侧重加密货币和数字资产",
+    "侧重全球贸易和供应链",
+    "侧重市场情绪和泡沫风险",
+    "侧重房地产和信贷周期",
+    "侧重汇率和资本流动",
+    "侧重劳动力市场和消费",
+    "侧重科技创新和产业周期",
+    "侧重 ESG 和气候风险",
+    "侧重新兴市场和债务风险",
+]
 
 # ── Hardcoded fallbacks ──
 
@@ -145,74 +182,121 @@ def _validate_questions(questions: list[str], question_type: str) -> list[str]:
     return clean
 
 
+def _overlap_ratio(new_questions: list[str], history: deque[list[str]]) -> float:
+    """Return the fraction of new questions that match any historical question."""
+    if not history or not new_questions:
+        return 0.0
+    new_set = set(q.lower() for q in new_questions)
+    old_set = set()
+    for past in history:
+        old_set.update(q.lower() for q in past)
+    if not old_set:
+        return 0.0
+    return len(new_set & old_set) / len(new_set)
+
+
 def _call_llm_for_suggestions(
     system_prompt: str,
-    user_prompt: str,
+    user_prompt_template: str,
+    flavors: list[str],
     expected_count: int,
     question_type: str,
 ) -> list[str]:
-    """Call the LLM to generate suggestions, with validation and fallback."""
-    try:
-        from kronos_fincept.agent import _call_structured_llm_json
+    """Call the LLM to generate suggestions, with diversity retries."""
+    from kronos_fincept.agent import _call_structured_llm_json
 
-        # Use a simple text completion approach (not JSON structured)
-        # We'll use _call_structured_llm_json with a simple text extraction
+    history = _history[question_type]
+    used_flavors: set[str] = set()
+
+    for attempt in range(MAX_RETRIES):
+        # Pick a random flavor not yet tried in this generation cycle
+        available = [f for f in flavors if f not in used_flavors]
+        if not available:
+            available = flavors  # fallback: reuse
+        flavor = random.choice(available)
+        used_flavors.add(flavor)
+
+        # Build user prompt with diversity instructions
+        avoid_text = ""
+        if history:
+            past_samples = []
+            for past_set in history:
+                past_samples.extend(past_set[:2])  # show at most 2 per past set
+            if past_samples:
+                sample_str = "、".join(f"「{q}」" for q in past_samples[:6])
+                avoid_text = f"\n严禁生成与以下历史建议重复或高度相似的问题：{sample_str}"
+
+        user_prompt = f"{user_prompt_template}\n本次侧重方向：{flavor}。{avoid_text}"
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
 
-        result = _call_structured_llm_json(
-            messages,
-            temperature=0.9,
-            max_tokens=300,
-            timeout=15,
-            purpose="suggestions",
-        )
+        try:
+            result = _call_structured_llm_json(
+                messages,
+                temperature=0.95,
+                max_tokens=300,
+                timeout=15,
+                purpose="suggestions",
+            )
 
-        if result is None:
-            logger.warning("LLM suggestions call returned None, using fallbacks")
-            return _ANALYSIS_FALLBACKS if question_type == "analysis" else _MACRO_FALLBACKS
+            if result is None:
+                continue
 
-        parsed, provider = result
+            parsed, _provider = result
 
-        # Extract questions from JSON response
-        questions = []
-        if isinstance(parsed, dict):
-            raw = parsed.get("questions")
-            if isinstance(raw, list):
-                questions = [str(q).strip() for q in raw if q]
-        if not questions:
-            # Fallback: try to parse from content field
-            content = parsed.get("content") or parsed.get("text") or ""
-            if isinstance(content, str):
-                lines = [line.strip() for line in content.split("\n") if line.strip()]
-                questions = [line.lstrip("0123456789. -•·\"'") for line in lines]
-                questions = [q.strip("\"'") for q in questions if q.strip()]
+            # Extract questions from JSON response
+            questions: list[str] = []
+            if isinstance(parsed, dict):
+                raw = parsed.get("questions")
+                if isinstance(raw, list):
+                    questions = [str(q).strip() for q in raw if q]
+            if not questions:
+                content = parsed.get("content") or parsed.get("text") or ""
+                if isinstance(content, str):
+                    lines = [line.strip() for line in content.split("\n") if line.strip()]
+                    questions = [line.lstrip("0123456789. -•·\"'") for line in lines]
+                    questions = [q.strip("\"'") for q in questions if q.strip()]
 
-        # Validate
-        valid = _validate_questions(questions, question_type)
+            # Validate
+            valid = _validate_questions(questions, question_type)
 
-        if len(valid) >= expected_count:
-            return valid[:expected_count]
+            if len(valid) < expected_count:
+                logger.warning(
+                    "Attempt %d: %d valid from %d generated (need %d)",
+                    attempt + 1, len(valid), len(questions), expected_count,
+                )
+                continue
 
-        logger.warning(
-            "LLM generated %d suggestions but only %d passed validation (need %d)",
-            len(questions),
-            len(valid),
-            expected_count,
-        )
-        return _ANALYSIS_FALLBACKS if question_type == "analysis" else _MACRO_FALLBACKS
+            # Check diversity against history
+            candidates = valid[:expected_count]
+            ratio = _overlap_ratio(candidates, history)
+            if ratio > 0.5 and attempt < MAX_RETRIES - 1:
+                logger.info(
+                    "Attempt %d: %.0f%% overlap with history, retrying with different flavor",
+                    attempt + 1, ratio * 100,
+                )
+                continue
 
-    except Exception as exc:
-        log_event(
-            logger,
-            logging.WARNING,
-            "suggestions.llm_failed",
-            f"LLM suggestion generation failed: {exc}",
-            error_type=type(exc).__name__,
-        )
-        return _ANALYSIS_FALLBACKS if question_type == "analysis" else _MACRO_FALLBACKS
+            # Success
+            history.append(candidates)
+            return candidates
+
+        except Exception as exc:
+            log_event(
+                logger,
+                logging.WARNING,
+                "suggestions.llm_attempt_failed",
+                f"LLM suggestion attempt {attempt + 1} failed: {exc}",
+                error_type=type(exc).__name__,
+            )
+            continue
+
+    # All retries exhausted
+    logger.warning("All %d LLM suggestion retries failed, using fallbacks", MAX_RETRIES)
+    return _ANALYSIS_FALLBACKS if question_type == "analysis" else _MACRO_FALLBACKS
 
 
 # ── Route ──
@@ -241,7 +325,8 @@ async def get_suggestions(
         questions = await asyncio.to_thread(
             _call_llm_for_suggestions,
             _ANALYSIS_SYSTEM,
-            _ANALYSIS_USER,
+            "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
+            _ANALYSIS_FLAVORS,
             3,
             "analysis",
         )
@@ -249,7 +334,8 @@ async def get_suggestions(
         questions = await asyncio.to_thread(
             _call_llm_for_suggestions,
             _MACRO_SYSTEM,
-            _MACRO_USER,
+            "请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。",
+            _MACRO_FLAVORS,
             4,
             "macro",
         )
