@@ -698,7 +698,7 @@ export default function MacroPage() {
       <SectionLabel>宏观洞察</SectionLabel>
       <h1 className="page-title">宏观信号分析</h1>
 
-      <Card featured>
+      <Card>
         <form onSubmit={handleSubmit} className="space-y-4">
           <textarea
             value={question}
