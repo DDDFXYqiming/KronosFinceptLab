@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
+import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { ReturnComparisonChart } from "@/components/charts/ReturnComparisonChart";
 import { ApiError, api, formatApiError } from "@/lib/api";
@@ -238,6 +239,7 @@ function BatchContent() {
 
   return (
     <div className="page-shell space-y-6">
+      <SectionLabel>批量对比</SectionLabel>
       <h1 className="page-title">批量对比</h1>
       <Card>
         <CardTitle subtitle="支持常用股票池、自选股、排序、导出和失败重试。">多标的对比</CardTitle>
