@@ -21,7 +21,7 @@ import type {
 const VERSION = "v10.8.8";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
-const EXAMPLES = [
+const _HARDCODED_EXAMPLES = [
   "WW3 的概率是多少",
   "现在适合买黄金吗",
   "AI 是不是泡沫",
@@ -616,6 +616,28 @@ export default function MacroPage() {
   const [error, setError] = useSessionState("kronos-macro-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-macro-result", null);
   const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-macro-history", []);
+  const [examples, setExamples] = useState<string[]>(_HARDCODED_EXAMPLES);
+
+  // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
+  useEffect(() => {
+    const cacheKey = "kronos-macro-suggestions";
+    try {
+      const cached = window.sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const { questions, generated_at } = JSON.parse(cached);
+        if (Date.now() / 1000 - generated_at < 8 * 3600) {
+          setExamples(questions);
+          return;
+        }
+      }
+    } catch {}
+    api.getSuggestions("macro").then((res) => {
+      if (res.questions?.length) {
+        setExamples(res.questions);
+        try { window.sessionStorage.setItem(cacheKey, JSON.stringify(res)); } catch {}
+      }
+    }).catch(() => {});
+  }, []);
 
   const appendHistory = (entry: AgentAnalyzeResponse) => {
     setHistory((current) => {
@@ -709,7 +731,7 @@ export default function MacroPage() {
           />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-wrap gap-2">
-              {EXAMPLES.map((item) => (
+              {examples.map((item) => (
                 <button
                   key={item}
                   type="button"

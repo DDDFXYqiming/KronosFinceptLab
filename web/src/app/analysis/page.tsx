@@ -31,7 +31,7 @@ const LOADING_STEPS = [
   "LLM 汇总",
   "生成报告",
 ];
-const EXAMPLES = [
+const _HARDCODED_EXAMPLES = [
   `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`,
   "比较招商银行和贵州茅台的中短期风险",
   "分析一下 AAPL 和 NVDA 最近走势",
@@ -650,6 +650,28 @@ function AnalysisContent() {
   const [error, setError] = useSessionState("kronos-analysis-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-analysis-result", null);
   const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-analysis-history", []);
+  const [examples, setExamples] = useState<string[]>(_HARDCODED_EXAMPLES);
+
+  // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
+  useEffect(() => {
+    const cacheKey = "kronos-analysis-suggestions";
+    try {
+      const cached = window.sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const { questions, generated_at } = JSON.parse(cached);
+        if (Date.now() / 1000 - generated_at < 8 * 3600) {
+          setExamples(questions);
+          return;
+        }
+      }
+    } catch {}
+    api.getSuggestions("analysis").then((res) => {
+      if (res.questions?.length) {
+        setExamples(res.questions);
+        try { window.sessionStorage.setItem(cacheKey, JSON.stringify(res)); } catch {}
+      }
+    }).catch(() => {});
+  }, []);
 
   const appendHistory = (entry: AgentAnalyzeResponse) => {
     setHistory((current) => {
@@ -749,7 +771,7 @@ function AnalysisContent() {
           />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-wrap gap-2">
-              {EXAMPLES.map((item) => (
+              {examples.map((item) => (
                 <button
                   key={item}
                   type="button"
