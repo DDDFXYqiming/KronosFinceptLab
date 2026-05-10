@@ -789,7 +789,7 @@ export default function MacroPage() {
         </Card>
       )}
 
-      {error && <div className="rounded-xl border border-error/20 bg-error/5 p-4 text-sm text-error"><div className="flex items-start gap-3"><span className="mt-0.5 shrink-0 text-base">⚠️</span><span>{error}</span></div></div>}
+      {error && <div className="rounded-xl border border-error/20 bg-error/5 p-4 text-sm text-error"><div className="flex items-start gap-3"><span className="mt-0.5 shrink-0 text-base"><svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg></span><span>{error}</span></div></div>}
 
       {result && (
         <>
@@ -905,7 +905,6 @@ export default function MacroPage() {
       {!result && !error && !loading && (
         <Card>
           <div className="flex flex-col items-center py-16 text-center">
-            <span className="text-4xl mb-4">🌐</span>
             <p className="text-lg font-semibold text-foreground mb-2">输入一个宏观问题</p>
             <p className="text-sm text-muted-foreground">例如：现在适合买黄金吗、WW3 的概率是多少。</p>
           </div>
