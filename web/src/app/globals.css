@@ -275,11 +275,11 @@ code, pre, .font-mono {
 
 /* ── Hero Style ── */
 .hero-gradient {
-  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 82, 255, 0.1) 0%, transparent 60%);
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 82, 255, 0.06) 0%, transparent 55%);
 }
 
 .dark .hero-gradient {
-  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 82, 255, 0.15) 0%, transparent 60%);
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0, 82, 255, 0.10) 0%, transparent 55%);
 }
 
 /* ── Glass surface ── */
