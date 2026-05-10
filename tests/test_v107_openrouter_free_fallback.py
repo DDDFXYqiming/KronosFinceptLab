@@ -136,7 +136,7 @@ def test_v107_stock_router_falls_back_from_openrouter_to_deepseek(monkeypatch):
     assert [(item.symbol, item.market, item.name) for item in decision.symbols] == [("600036", "cn", "招商银行")]
     assert [call["json"]["model"] for call in calls] == ["openrouter/free", "deepseek-v4-flash"]
     assert calls[0]["headers"]["HTTP-Referer"].endswith("KronosFinceptLab")
-    assert "thinking" not in calls[0]["json"]
+    assert calls[0]["json"]["thinking"] == {"type": "disabled"}
     assert calls[1]["json"]["thinking"] == {"type": "disabled"}
 
 

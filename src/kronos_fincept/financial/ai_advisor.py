@@ -91,7 +91,8 @@ class AIInvestmentAdvisor:
                     {'role': 'user', 'content': prompt}
                 ],
                 'max_tokens': max_tokens,
-                'temperature': 0.7
+                'temperature': 0.7,
+                'thinking': {'type': 'disabled'}
             }
             
             # Normalize URL: pass through if already /chat/completions
