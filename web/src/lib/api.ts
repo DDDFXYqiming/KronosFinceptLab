@@ -360,4 +360,7 @@ export const api = {
 
   alertCheck: (ruleId?: string | null, options?: ApiClientOptions) =>
     post<AlertCheckResponse>("/alert/check", ruleId ? { rule_id: ruleId } : {}, options),
+
+  getSuggestions: (type: "analysis" | "macro" = "analysis", options?: ApiClientOptions) =>
+    get<{ questions: string[]; generated_at: number; source: string }>(`/v1/suggestions?type=${type}`, options),
 };
