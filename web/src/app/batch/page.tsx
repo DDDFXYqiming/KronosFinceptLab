@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -82,7 +82,7 @@ function toFailure(symbol: string, stage: BatchFailure["stage"], err: unknown): 
   };
 }
 
-export default function BatchPage() {
+function BatchContent() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const activeAbortRef = useRef<AbortController | null>(null);
@@ -256,5 +256,13 @@ export default function BatchPage() {
       {failures.length > 0 && <Card><CardTitle>失败项</CardTitle><div className="space-y-2">{failures.map((failure) => <div key={`${failure.symbol}-${failure.stage}`} className="rounded-lg border border-border p-3 text-sm"><span className="font-mono font-bold">{failure.symbol}</span> · {failure.stage} · {failure.message}{failure.requestId ? ` request_id=${failure.requestId}` : ""}</div>)}</div></Card>}
       {results.length === 0 && failures.length === 0 && !loading && !error && <Card><div className="py-12 text-center text-gray-500"><p className="mb-2 text-lg">批量标的对比</p><p className="text-sm">输入多个股票代码，对比预测收益率。</p></div></Card>}
     </div>
+  );
+}
+
+export default function BatchPage() {
+  return (
+    <Suspense fallback={<div className="p-12 text-center text-gray-500">加载中...</div>}>
+      <BatchContent />
+    </Suspense>
   );
 }

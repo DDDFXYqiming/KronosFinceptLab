@@ -32,6 +32,9 @@ for (const file of appFiles) {
   const rel = path.relative(root, file).replace(/\\/g, "/");
   assert(!/from\s+["']recharts["']/.test(content), `${rel} must not import recharts in app routes`);
   assert(!/text-3xl\s+font-display/.test(content), `${rel} uses a desktop-only title size`);
+  if (content.includes("useSearchParams(")) {
+    assert(/<Suspense(?:\s|>)/.test(content), `${rel} must wrap useSearchParams content in a Suspense boundary`);
+  }
 }
 
 const pages = [
