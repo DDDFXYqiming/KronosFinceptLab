@@ -17,7 +17,7 @@ function compactModelName(modelId?: string): string {
 
 export function Header() {
   const pathname = usePathname();
-  const { toggleSidebar } = useAppStore();
+  const { sidebarOpen, toggleSidebar } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { data: health } = useQuery({
     queryKey: queryKeys.health(),
@@ -43,7 +43,11 @@ export function Header() {
 
   return (
     <>
-      <header className="mobile-safe-top sticky top-0 z-30 border-b border-border bg-card/90 backdrop-blur-md">
+      <header
+        className={`mobile-safe-top fixed left-0 right-0 top-0 z-40 border-b border-border bg-card/95 shadow-sm backdrop-blur-md transition-all duration-300 md:z-30 ${
+          sidebarOpen ? "md:left-60" : "md:left-16"
+        }`}
+      >
         <div className="flex h-16 min-w-0 items-center gap-3 px-4 md:px-6">
           <button
             onClick={() => setMobileMenuOpen(true)}
