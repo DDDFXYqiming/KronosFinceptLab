@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useIsFetching, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
@@ -21,6 +21,13 @@ import type {
 const VERSION = "v10.8.8";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
+
+type ActiveMacroRun = {
+  queryKey: QueryKey;
+  question: string;
+  turnIndex: number;
+  startedAt: number;
+};
 const _HARDCODED_EXAMPLES = [
   "WW3 的概率是多少",
   "现在适合买黄金吗",
@@ -616,7 +623,13 @@ export default function MacroPage() {
   const [error, setError] = useSessionState("kronos-macro-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-macro-result", null);
   const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-macro-history", []);
+  const [activeRun, setActiveRun] = useSessionState<ActiveMacroRun | null>("kronos-macro-active-run", null);
   const [examples, setExamples] = useState<string[]>(_HARDCODED_EXAMPLES);
+  const activeRunFetching = useIsFetching({
+    queryKey: activeRun?.queryKey ?? ["kronos-macro-no-active-run"],
+    exact: true,
+  });
+  const displayLoading = loading || activeRunFetching > 0 || Boolean(activeRun && !error);
 
   // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
   useEffect(() => {
@@ -639,14 +652,68 @@ export default function MacroPage() {
     }).catch(() => {});
   }, []);
 
-  const appendHistory = (entry: AgentAnalyzeResponse) => {
+  const appendHistory = useCallback((entry: AgentAnalyzeResponse) => {
     setHistory((current) => {
       const deduped = current.filter(
         (item) => !(item.timestamp === entry.timestamp && item.question === entry.question)
       );
       return [...deduped, entry].slice(-MAX_MACRO_TURNS);
     });
-  };
+  }, [setHistory]);
+
+  const buildRequest = useCallback((run: ActiveMacroRun) => ({
+    question: run.question,
+    context: {
+      entry: "web-macro",
+      version: VERSION,
+      turn_index: run.turnIndex,
+      max_turns: MAX_MACRO_TURNS,
+    },
+  }), []);
+
+  const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse) => {
+    setResult(entry);
+    appendHistory(entry);
+    setQuestion(entry.question);
+    setError("");
+    setActiveRun(null);
+  }, [appendHistory, setActiveRun, setError, setQuestion, setResult]);
+
+  const resumeActiveRun = useCallback(async (run: ActiveMacroRun) => {
+    if (inFlightRef.current) return;
+    const key = run.queryKey;
+    const cached = queryClient.getQueryData<AgentAnalyzeResponse>(key);
+    if (cached) {
+      applyCompletedRun(cached);
+      setLoading(false);
+      return;
+    }
+
+    const state = queryClient.getQueryState<AgentAnalyzeResponse>(key);
+    if (state?.status === "error") {
+      setError(formatApiError(state.error, "宏观分析请求失败"));
+      setActiveRun(null);
+      setLoading(false);
+      return;
+    }
+
+    inFlightRef.current = true;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: ({ signal }) => api.macroAnalyze(buildRequest(run), { signal }),
+      });
+      applyCompletedRun(res);
+    } catch (e) {
+      setError(formatApiError(e, "宏观分析请求失败"));
+      setActiveRun(null);
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
+    }
+  }, [applyCompletedRun, buildRequest, queryClient, setActiveRun, setError]);
 
   const handleAnalyze = async (overrideQuestion?: string, forceRefresh = false) => {
     if (inFlightRef.current) return;
@@ -655,13 +722,19 @@ export default function MacroPage() {
     const key = queryKeys.macro({ question: prompt });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
-      setResult(cached);
-      appendHistory(cached);
-      setError("");
+      applyCompletedRun(cached);
       return;
     }
 
+    const run: ActiveMacroRun = {
+      queryKey: [...key],
+      question: prompt,
+      turnIndex: Math.min(history.length + 1, MAX_MACRO_TURNS),
+      startedAt: Date.now(),
+    };
+
     inFlightRef.current = true;
+    setActiveRun(run);
     setResult(null);
     setLoading(true);
     setError("");
@@ -671,24 +744,12 @@ export default function MacroPage() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: ({ signal }) =>
-          api.macroAnalyze(
-            {
-              question: prompt,
-              context: {
-                entry: "web-macro",
-                version: VERSION,
-                turn_index: Math.min(history.length + 1, MAX_MACRO_TURNS),
-                max_turns: MAX_MACRO_TURNS,
-              },
-            },
-            { signal }
-          ),
+        queryFn: ({ signal }) => api.macroAnalyze(buildRequest(run), { signal }),
       });
-      setResult(res);
-      appendHistory(res);
+      applyCompletedRun(res);
     } catch (e) {
       setError(formatApiError(e, "宏观分析请求失败"));
+      setActiveRun(null);
     } finally {
       inFlightRef.current = false;
       setLoading(false);
@@ -705,8 +766,17 @@ export default function MacroPage() {
     setQuestion(DEFAULT_QUESTION);
     setResult(null);
     setHistory([]);
+    setActiveRun(null);
     setError("");
   };
+
+  useEffect(() => {
+    if (!activeRun) return;
+    if (result) {
+      setResult(null);
+    }
+    void resumeActiveRun(activeRun);
+  }, [activeRun, result, resumeActiveRun, setResult]);
 
   const report = result?.report;
   const macroSignals = normalizeSignals(report?.macro_signals);
@@ -742,13 +812,13 @@ export default function MacroPage() {
                 </button>
               ))}
             </div>
-            <Button type="submit" loading={loading} className="w-full lg:w-auto">
+            <Button type="submit" loading={displayLoading} className="w-full lg:w-auto">
               开始洞察
             </Button>
             <Button
               type="button"
               variant="secondary"
-              disabled={loading}
+              disabled={displayLoading}
               onClick={handleNewChat}
               className="w-full lg:w-auto"
             >
@@ -758,7 +828,7 @@ export default function MacroPage() {
               <Button
                 type="button"
                 variant="secondary"
-                loading={loading}
+                loading={displayLoading}
                 onClick={() => handleAnalyze(undefined, true)}
                 className="w-full lg:w-auto"
               >
@@ -769,10 +839,10 @@ export default function MacroPage() {
         </form>
       </Card>
 
-      {(loading || result) && (
+      {(displayLoading || result) && (
         <Card>
           <CardTitle>宏观执行进度</CardTitle>
-          <StepStrip result={result} loading={loading} />
+          <StepStrip result={result} loading={displayLoading} />
         </Card>
       )}
 
@@ -924,7 +994,7 @@ export default function MacroPage() {
         </>
       )}
 
-      {!result && !error && !loading && (
+      {!result && !error && !displayLoading && (
         <Card>
           <div className="flex flex-col items-center py-16 text-center">
             <p className="text-lg font-semibold text-foreground mb-2">输入一个宏观问题</p>

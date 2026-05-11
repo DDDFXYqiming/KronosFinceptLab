@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { Card, CardTitle, CardGrid } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
@@ -39,6 +39,15 @@ const _HARDCODED_EXAMPLES = [
 
 const DEFAULT_QUESTION = `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`;
 const MAX_ANALYSIS_TURNS = 5;
+
+type ActiveAnalysisRun = {
+  queryKey: QueryKey;
+  question: string;
+  symbol?: string;
+  market?: Market;
+  turnIndex: number;
+  startedAt: number;
+};
 
 function formatElapsedMs(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "-";
@@ -650,7 +659,13 @@ function AnalysisContent() {
   const [error, setError] = useSessionState("kronos-analysis-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-analysis-result", null);
   const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-analysis-history", []);
+  const [activeRun, setActiveRun] = useSessionState<ActiveAnalysisRun | null>("kronos-analysis-active-run", null);
   const [examples, setExamples] = useState<string[]>(_HARDCODED_EXAMPLES);
+  const activeRunFetching = useIsFetching({
+    queryKey: activeRun?.queryKey ?? ["kronos-analysis-no-active-run"],
+    exact: true,
+  });
+  const displayLoading = loading || activeRunFetching > 0 || Boolean(activeRun && !error);
 
   // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
   useEffect(() => {
@@ -673,14 +688,70 @@ function AnalysisContent() {
     }).catch(() => {});
   }, []);
 
-  const appendHistory = (entry: AgentAnalyzeResponse) => {
+  const appendHistory = useCallback((entry: AgentAnalyzeResponse) => {
     setHistory((current) => {
       const deduped = current.filter(
         (item) => !(item.timestamp === entry.timestamp && item.question === entry.question)
       );
       return [...deduped, entry].slice(-MAX_ANALYSIS_TURNS);
     });
-  };
+  }, [setHistory]);
+
+  const buildRequest = useCallback((run: ActiveAnalysisRun) => ({
+    question: run.question,
+    symbol: run.symbol,
+    market: run.market,
+    context: {
+      entry: "web-analysis",
+      default_symbol: DEFAULT_SYMBOL,
+      turn_index: run.turnIndex,
+      max_turns: MAX_ANALYSIS_TURNS,
+    },
+  }), []);
+
+  const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse) => {
+    setResult(entry);
+    appendHistory(entry);
+    setQuestion(entry.question);
+    setError("");
+    setActiveRun(null);
+  }, [appendHistory, setActiveRun, setError, setQuestion, setResult]);
+
+  const resumeActiveRun = useCallback(async (run: ActiveAnalysisRun) => {
+    if (inFlightRef.current) return;
+    const key = run.queryKey;
+    const cached = queryClient.getQueryData<AgentAnalyzeResponse>(key);
+    if (cached) {
+      applyCompletedRun(cached);
+      setLoading(false);
+      return;
+    }
+
+    const state = queryClient.getQueryState<AgentAnalyzeResponse>(key);
+    if (state?.status === "error") {
+      setError(formatApiError(state.error, "分析请求失败"));
+      setActiveRun(null);
+      setLoading(false);
+      return;
+    }
+
+    inFlightRef.current = true;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await queryClient.fetchQuery({
+        queryKey: key,
+        queryFn: ({ signal }) => api.agentAnalyze(buildRequest(run), { signal }),
+      });
+      applyCompletedRun(res);
+    } catch (e: any) {
+      setError(formatApiError(e, "分析请求失败"));
+      setActiveRun(null);
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
+    }
+  }, [applyCompletedRun, buildRequest, queryClient, setActiveRun, setError]);
 
   const handleAnalyze = async (overrideQuestion?: string, forceRefresh = false) => {
     if (inFlightRef.current) return;
@@ -693,13 +764,21 @@ function AnalysisContent() {
     });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
-      setResult(cached);
-      appendHistory(cached);
-      setError("");
+      applyCompletedRun(cached);
       return;
     }
 
+    const run: ActiveAnalysisRun = {
+      queryKey: [...key],
+      question: prompt,
+      symbol: normalizedSymbolParam,
+      market: normalizedMarketParam,
+      turnIndex: Math.min(history.length + 1, MAX_ANALYSIS_TURNS),
+      startedAt: Date.now(),
+    };
+
     inFlightRef.current = true;
+    setActiveRun(run);
     setResult(null);
     setLoading(true);
     setError("");
@@ -709,23 +788,12 @@ function AnalysisContent() {
       }
       const res = await queryClient.fetchQuery({
         queryKey: key,
-        queryFn: ({ signal }) =>
-          api.agentAnalyze({
-            question: prompt,
-            symbol: normalizedSymbolParam,
-            market: normalizedMarketParam,
-            context: {
-              entry: "web-analysis",
-              default_symbol: DEFAULT_SYMBOL,
-              turn_index: Math.min(history.length + 1, MAX_ANALYSIS_TURNS),
-              max_turns: MAX_ANALYSIS_TURNS,
-            },
-          }, { signal }),
+        queryFn: ({ signal }) => api.agentAnalyze(buildRequest(run), { signal }),
       });
-      setResult(res);
-      appendHistory(res);
+      applyCompletedRun(res);
     } catch (e: any) {
       setError(formatApiError(e, "分析请求失败"));
+      setActiveRun(null);
     } finally {
       inFlightRef.current = false;
       setLoading(false);
@@ -742,8 +810,17 @@ function AnalysisContent() {
     setQuestion(DEFAULT_QUESTION);
     setResult(null);
     setHistory([]);
+    setActiveRun(null);
     setError("");
   };
+
+  useEffect(() => {
+    if (!activeRun) return;
+    if (result) {
+      setResult(null);
+    }
+    void resumeActiveRun(activeRun);
+  }, [activeRun, result, resumeActiveRun, setResult]);
 
   useEffect(() => {
     if (symbolParam) {
@@ -782,13 +859,13 @@ function AnalysisContent() {
                 </button>
               ))}
             </div>
-            <Button type="submit" loading={loading} className="w-full lg:w-auto">
+            <Button type="submit" loading={displayLoading} className="w-full lg:w-auto">
               开始分析
             </Button>
             <Button
               type="button"
               variant="secondary"
-              disabled={loading}
+              disabled={displayLoading}
               onClick={handleNewChat}
               className="w-full lg:w-auto"
             >
@@ -798,7 +875,7 @@ function AnalysisContent() {
               <Button
                 type="button"
                 variant="secondary"
-                loading={loading}
+                loading={displayLoading}
                 onClick={() => handleAnalyze(undefined, true)}
                 className="w-full lg:w-auto"
               >
@@ -809,10 +886,10 @@ function AnalysisContent() {
         </form>
       </Card>
 
-      {(loading || result) && (
+      {(displayLoading || result) && (
         <Card>
           <CardTitle>Agent 执行进度</CardTitle>
-          <StepList result={result} loading={loading} />
+          <StepList result={result} loading={displayLoading} />
         </Card>
       )}
 
@@ -938,7 +1015,7 @@ function AnalysisContent() {
         </>
       )}
 
-      {!result && !error && !loading && (
+      {!result && !error && !displayLoading && (
         <Card>
           <div className="flex flex-col items-center py-16 text-center">
             <p className="text-lg font-semibold text-foreground mb-2">输入一个自然语言问题</p>
