@@ -14,7 +14,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from pydantic import field_validator
 
+from kronos_fincept.api.models import MARKET_PATTERN, SYMBOL_PATTERN
 from kronos_fincept.alert_engine import (
     AlertEngine,
     AlertRule,
@@ -30,6 +32,7 @@ from kronos_fincept.alert_engine import (
     prediction_deviation_rule,
     volume_spike_rule,
 )
+from kronos_fincept.security_utils import env_bool, validate_webhook_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,15 +44,25 @@ router = APIRouter()
 
 class AlertRuleIn(BaseModel):
     """Input schema for creating an alert rule."""
-    name: str = Field(..., description="Human-readable rule name")
-    alert_type: str = Field(..., description="Alert type", examples=["price_change"])
-    symbol: str = Field(..., description="Ticker symbol")
-    market: str = Field(default="cn", description="Market: cn, us, hk, crypto")
+    name: str = Field(..., min_length=1, max_length=80, description="Human-readable rule name")
+    alert_type: str = Field(..., min_length=1, max_length=32, description="Alert type", examples=["price_change"])
+    symbol: str = Field(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN, description="Ticker symbol")
+    market: str = Field(default="cn", min_length=1, max_length=16, pattern=MARKET_PATTERN, description="Market: cn, us, hk, crypto")
     params: dict = Field(default_factory=dict, description="Type-specific parameters")
     enabled: bool = Field(default=True)
     channel: str = Field(default="feishu", description="Notification channel: feishu, email")
-    webhook_url: str | None = Field(default=None, description="Feishu webhook URL override")
-    email_to: str | None = Field(default=None, description="Email recipient override")
+    webhook_url: str | None = Field(default=None, max_length=512, description="Feishu webhook URL override")
+    email_to: str | None = Field(default=None, max_length=254, description="Email recipient override")
+
+    @field_validator("params")
+    @classmethod
+    def _validate_params(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(value) > 10:
+            raise ValueError("too many alert params")
+        for key, item in value.items():
+            if len(str(key)) > 40 or len(str(item)) > 120:
+                raise ValueError("alert param is too large")
+        return value
 
 
 class AlertRuleOut(BaseModel):
@@ -95,7 +108,7 @@ class AlertCheckOut(BaseModel):
 
 class AlertCheckIn(BaseModel):
     """Optional input for checking a specific rule."""
-    rule_id: str | None = Field(default=None, description="Check only this rule ID")
+    rule_id: str | None = Field(default=None, max_length=64, description="Check only this rule ID")
 
 
 class AlertDeleteOut(BaseModel):
@@ -189,8 +202,16 @@ async def create_alert_rule(req: AlertRuleIn) -> AlertRuleOut:
     }
 
     if req.webhook_url:
+        if not env_bool("KRONOS_ALLOW_CUSTOM_ALERT_CONTACTS", False):
+            raise HTTPException(status_code=400, detail="Custom alert webhook URLs are disabled")
+        try:
+            req.webhook_url = validate_webhook_url(req.webhook_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         kwargs["webhook_url"] = req.webhook_url
     if req.email_to:
+        if not env_bool("KRONOS_ALLOW_CUSTOM_ALERT_CONTACTS", False):
+            raise HTTPException(status_code=400, detail="Custom alert email recipients are disabled")
         kwargs["email_to"] = req.email_to
 
     # Merge type-specific params into kwargs

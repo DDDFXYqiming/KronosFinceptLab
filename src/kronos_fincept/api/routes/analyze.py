@@ -2,21 +2,24 @@
 API routes for financial analysis (v4.0).
 """
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-from typing import Optional, List, Dict
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal, Optional, List, Dict
 import pandas as pd
 
 router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
 
+SYMBOL_PATTERN = r"^[A-Za-z0-9._=\-^/]{1,32}$"
+PORTFOLIO_METHODS = {"max_sharpe", "min_vol", "risk_parity", "efficient_frontier"}
+
 
 # Request/Response models
 class DCFRequest(BaseModel):
-    symbol: str
-    shares_outstanding: float = 1000000000
-    beta: float = 1.0
-    debt_value: float = 0.0
-    cash_value: float = 0.0
-    tax_rate: float = 0.25
+    symbol: str = Field(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN)
+    shares_outstanding: float = Field(default=1_000_000_000, gt=0, le=10_000_000_000_000)
+    beta: float = Field(default=1.0, ge=0, le=5)
+    debt_value: float = Field(default=0.0, ge=0, le=1_000_000_000_000_000)
+    cash_value: float = Field(default=0.0, ge=0, le=1_000_000_000_000_000)
+    tax_rate: float = Field(default=0.25, ge=0, le=1)
 
 
 class DCFResponse(BaseModel):
@@ -30,9 +33,9 @@ class DCFResponse(BaseModel):
 
 
 class RiskRequest(BaseModel):
-    symbol: str
-    market_symbol: Optional[str] = "000300"
-    days: int = 252
+    symbol: str = Field(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN)
+    market_symbol: Optional[str] = Field(default="000300", max_length=32, pattern=SYMBOL_PATTERN)
+    days: int = Field(default=252, ge=20, le=1024)
 
 
 class RiskResponse(BaseModel):
@@ -49,10 +52,28 @@ class RiskResponse(BaseModel):
 
 
 class PortfolioRequest(BaseModel):
-    symbols: List[str]
-    method: str = "max_sharpe"
-    risk_free_rate: float = 0.03
-    days: int = 252
+    symbols: List[str] = Field(..., min_length=2, max_length=20)
+    method: str = Field(default="max_sharpe", max_length=32)
+    risk_free_rate: float = Field(default=0.03, ge=-0.1, le=0.5)
+    days: int = Field(default=252, ge=20, le=1024)
+
+    @field_validator("symbols")
+    @classmethod
+    def _validate_symbols(cls, values: list[str]) -> list[str]:
+        import re
+
+        pattern = re.compile(SYMBOL_PATTERN)
+        for value in values:
+            if not pattern.match(str(value)):
+                raise ValueError("invalid symbol")
+        return values
+
+    @field_validator("method")
+    @classmethod
+    def _validate_method(cls, value: str) -> str:
+        if value not in PORTFOLIO_METHODS:
+            raise ValueError("invalid optimization method")
+        return value
 
 
 class PortfolioResponse(BaseModel):
@@ -64,12 +85,12 @@ class PortfolioResponse(BaseModel):
 
 
 class DerivativeRequest(BaseModel):
-    underlying_price: float
-    strike_price: float
-    time_to_expiration: float
-    volatility: float
-    risk_free_rate: float = 0.03
-    option_type: str = "call"
+    underlying_price: float = Field(..., gt=0, le=1_000_000_000)
+    strike_price: float = Field(..., gt=0, le=1_000_000_000)
+    time_to_expiration: float = Field(..., gt=0, le=100)
+    volatility: float = Field(..., gt=0, le=10)
+    risk_free_rate: float = Field(default=0.03, ge=-0.1, le=0.5)
+    option_type: Literal["call", "put"] = "call"
 
 
 class DerivativeResponse(BaseModel):

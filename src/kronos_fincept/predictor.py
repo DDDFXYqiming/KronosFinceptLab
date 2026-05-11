@@ -22,6 +22,7 @@ import pandas as pd
 from kronos_fincept.data_adapter import make_future_timestamps
 from kronos_fincept.logging_config import log_event
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
+from kronos_fincept.security_utils import validate_kronos_model_id
 
 _KRONOS_REPO_ENV = "KRONOS_REPO_PATH"
 os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
@@ -62,7 +63,7 @@ def _hf_cache_hint(model_id: str) -> str:
     return (
         f"HuggingFace model '{model_id}' not found or download failed. "
         f"Cache location: {hf_home}. "
-        f"To use a local model directory, pass its path as model_id. "
+        f"Only service-configured allowlisted Kronos model IDs are accepted in API mode. "
         f"For offline usage, set HF_HUB_OFFLINE=1 and ensure models are pre-downloaded."
     )
 
@@ -233,7 +234,7 @@ class KronosPredictorWrapper:
         top_p: float = 0.9,
         sample_count: int = 1,
     ) -> None:
-        self.model_id = model_id
+        self.model_id = validate_kronos_model_id(model_id)
         self.tokenizer_id = tokenizer_id
         self.max_context = max_context
         self.device = device

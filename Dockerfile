@@ -5,7 +5,7 @@ WORKDIR /app/web
 ARG NPM_REGISTRY=https://registry.npmjs.org/
 ENV NEXT_IGNORE_INCORRECT_LOCKFILE=1 \
     NEXT_TELEMETRY_DISABLED=1 \
-    INTERNAL_API_URL=http://localhost:8000 \
+    INTERNAL_API_URL=http://127.0.0.1:8000 \
     NPM_CONFIG_REGISTRY=${NPM_REGISTRY} \
     NPM_CONFIG_FETCH_RETRIES=5 \
     NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
@@ -50,7 +50,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/app/src \
     NEXT_TELEMETRY_DISABLED=1 \
-    INTERNAL_API_URL=http://localhost:8000 \
+    INTERNAL_API_URL=http://127.0.0.1:8000 \
+    API_HOST=127.0.0.1 \
     API_PORT=8000 \
     KRONOS_REPO_PATH=/app/external/Kronos \
     HF_HOME=/app/.cache/huggingface \
@@ -67,18 +68,17 @@ ENV PATH="/opt/venv/bin:$PATH" \
     TOKENIZERS_PARALLELISM=false
 
 ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git
+ARG KRONOS_REPO_REF=67b630e67f6a18c9e9be918d9b4337c960db1e9a
 ARG INSTALL_KRONOS_RUNTIME=1
 ARG KRONOS_APP_VERSION=v10.8.7
 ARG KRONOS_BUILD_COMMIT=unknown
 ARG KRONOS_BUILD_REF=unknown
 ARG KRONOS_BUILD_SOURCE=docker
-ARG HF_TOKEN
 
 ENV KRONOS_APP_VERSION=$KRONOS_APP_VERSION \
     KRONOS_BUILD_COMMIT=$KRONOS_BUILD_COMMIT \
     KRONOS_BUILD_REF=$KRONOS_BUILD_REF \
-    KRONOS_BUILD_SOURCE=$KRONOS_BUILD_SOURCE \
-    HF_TOKEN=$HF_TOKEN
+    KRONOS_BUILD_SOURCE=$KRONOS_BUILD_SOURCE
 
 # Install Python deps
 COPY pyproject.toml requirements.txt ./
@@ -88,8 +88,12 @@ RUN pip install --no-cache-dir --upgrade pip \
     && if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then pip install --no-cache-dir -e ".[kronos]"; fi
 
 # Fetch upstream Kronos source code for real inference. Model weights stay out of git/image.
-RUN mkdir -p external \
-    && git clone --depth=1 "$KRONOS_REPO_URL" external/Kronos \
+RUN mkdir -p external/Kronos \
+    && git -C external/Kronos init \
+    && git -C external/Kronos remote add origin "$KRONOS_REPO_URL" \
+    && git -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF" \
+    && git -C external/Kronos checkout --detach FETCH_HEAD \
+    && test "$(git -C external/Kronos rev-parse HEAD)" = "$KRONOS_REPO_REF" \
     && test -f external/Kronos/model/__init__.py
 
 # Copy frontend build
@@ -100,6 +104,6 @@ COPY --from=frontend-builder /app/web/public web/public
 COPY scripts/zeabur_start.sh scripts/zeabur_start.sh
 RUN chmod +x scripts/zeabur_start.sh
 
-EXPOSE 8000 3000
+EXPOSE 3000
 
 CMD ["./scripts/zeabur_start.sh"]

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import math
 import time
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
@@ -25,6 +26,26 @@ from kronos_fincept.schemas import RESEARCH_WARNING
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+MAX_BACKTEST_RANGE_DAYS = 800
+MAX_BACKTEST_WORK_UNITS = 5000
+
+
+def _validate_backtest_request(req: BacktestRequestIn | BacktestReportRequestIn) -> None:
+    try:
+        start = datetime.strptime(req.start_date, "%Y%m%d")
+        end = datetime.strptime(req.end_date, "%Y%m%d")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Dates must use YYYYMMDD format") from exc
+    if end < start:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
+    span_days = (end - start).days
+    if span_days > MAX_BACKTEST_RANGE_DAYS:
+        raise HTTPException(status_code=422, detail=f"Backtest date range exceeds {MAX_BACKTEST_RANGE_DAYS} days")
+    estimated_iterations = max(1, span_days // max(1, req.step))
+    work_units = estimated_iterations * len(req.symbols)
+    if work_units > MAX_BACKTEST_WORK_UNITS:
+        raise HTTPException(status_code=422, detail="Backtest request is too large")
 
 
 def _fetch_and_prepare_data(
@@ -221,6 +242,7 @@ async def backtest_ranking(req: BacktestRequestIn) -> BacktestResponseOut:
     `pred_len` days using the last `window_size` days of data. Buy the top_k
     stocks with the highest predicted return. Hold for `step` days, then rebalance.
     """
+    _validate_backtest_request(req)
     started = time.perf_counter()
     predictor = DryRunPredictor() if req.dry_run else None
 
@@ -267,6 +289,7 @@ async def backtest_ranking(req: BacktestRequestIn) -> BacktestResponseOut:
 @router.post("/backtest/report", response_model=BacktestReportResponseOut)
 async def backtest_report(req: BacktestReportRequestIn) -> BacktestReportResponseOut:
     """Run backtest and return HTML report string for frontend display."""
+    _validate_backtest_request(req)
     from kronos_fincept.backtest_report import BacktestReportGenerator
 
     started = time.perf_counter()

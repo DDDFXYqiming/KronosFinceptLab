@@ -26,10 +26,16 @@ external/
 .env
 .env.*
 !.env.example
+secrets/
 
 # Internal planning docs
 .hermes/
 SPEC.md
+SPC.md
+spec.md
+spc.md
+docs/spec*.md
+docs/spc*.md
 docs/RUST_REFACTORING_ASSESSMENT.md
 
 # Temporary / ad-hoc scripts

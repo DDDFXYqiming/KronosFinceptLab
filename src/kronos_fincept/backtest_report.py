@@ -337,9 +337,9 @@ class BacktestReportGenerator:
         trades_section = ""
         if trades:
             trade_rows = "".join(
-                f"<tr><td>{t.get('symbol', '')}</td>"
-                f"<td>{t.get('entry', '')}</td>"
-                f"<td>{t.get('exit', '')}</td>"
+                f"<tr><td>{_escape_html(t.get('symbol', ''))}</td>"
+                f"<td>{_escape_html(t.get('entry', ''))}</td>"
+                f"<td>{_escape_html(t.get('exit', ''))}</td>"
                 f"<td>{_pct(t.get('return', 0))}</td></tr>"
                 for t in trades
             )
@@ -355,8 +355,8 @@ class BacktestReportGenerator:
         generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
         html = _HTML_TEMPLATE.format(
-            title=f"Backtest Report — {symbol}",
-            strategy_name=strategy_name,
+            title=_escape_html(f"Backtest Report — {symbol}"),
+            strategy_name=_escape_html(strategy_name),
             date_range=date_range,
             metrics_html=metrics_html,
             equity_chart=equity_chart,
@@ -404,6 +404,7 @@ class BacktestReportGenerator:
 
 def _escape_html(text: str) -> str:
     """Escape HTML special characters."""
+    text = str(text)
     return (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")

@@ -8,18 +8,18 @@ services:
       target: backend
     ports:
       - "3000:3000"
-      - "8000:8000"
     environment:
       - KRONOS_MODEL_ID=NeoQuasar/Kronos-base
       - KRONOS_DEVICE=cpu
       - PORT=3000
+      - API_HOST=127.0.0.1
       - API_PORT=8000
-      - INTERNAL_API_URL=http://localhost:8000
+      - INTERNAL_API_URL=http://127.0.0.1:8000
     volumes:
       - ./external:/app/external:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

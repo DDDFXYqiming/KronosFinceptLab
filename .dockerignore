@@ -12,7 +12,13 @@ models
 data
 .env
 .env.*
+secrets
 SPEC.md
+SPC.md
+spec.md
+spc.md
+docs/spec*.md
+docs/spc*.md
 docs/RUST_REFACTORING_ASSESSMENT.md
 web/node_modules
 web/.next

@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from kronos_fincept.logging_config import log_event
+from kronos_fincept.security_utils import env_bool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["suggestions"])
@@ -320,25 +321,32 @@ async def get_suggestions(
             "source": "cache",
         }
 
-    # Generate new suggestions
+    # Generate new suggestions. Keep LLM generation opt-in to avoid anonymous or
+    # accidental provider spend; endpoint auth/rate limits still apply.
     if type == "analysis":
-        questions = await asyncio.to_thread(
-            _call_llm_for_suggestions,
-            _ANALYSIS_SYSTEM,
-            "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
-            _ANALYSIS_FLAVORS,
-            3,
-            "analysis",
-        )
+        if env_bool("KRONOS_ENABLE_LLM_SUGGESTIONS", False):
+            questions = await asyncio.to_thread(
+                _call_llm_for_suggestions,
+                _ANALYSIS_SYSTEM,
+                "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
+                _ANALYSIS_FLAVORS,
+                3,
+                "analysis",
+            )
+        else:
+            questions = _ANALYSIS_FALLBACKS
     else:
-        questions = await asyncio.to_thread(
-            _call_llm_for_suggestions,
-            _MACRO_SYSTEM,
-            "请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。",
-            _MACRO_FLAVORS,
-            4,
-            "macro",
-        )
+        if env_bool("KRONOS_ENABLE_LLM_SUGGESTIONS", False):
+            questions = await asyncio.to_thread(
+                _call_llm_for_suggestions,
+                _MACRO_SYSTEM,
+                "请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。",
+                _MACRO_FLAVORS,
+                4,
+                "macro",
+            )
+        else:
+            questions = _MACRO_FALLBACKS
 
     # Store in cache
     result = SuggestionResult(questions=questions, generated_at=now)

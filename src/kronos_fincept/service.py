@@ -23,12 +23,13 @@ from kronos_fincept.schemas import (
     resolve_tokenizer_id,
     resolve_max_context,
 )
+from kronos_fincept.security_utils import safe_configured_model_id, validate_kronos_model_id
 
 
 def _effective_model_id(model_id: str) -> str:
     if model_id == DEFAULT_MODEL_ID and settings.kronos.model_id:
-        return settings.kronos.model_id
-    return model_id
+        return safe_configured_model_id(settings.kronos.model_id, DEFAULT_MODEL_ID)
+    return validate_kronos_model_id(model_id)
 
 
 def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
