@@ -119,6 +119,7 @@ code, pre, .font-mono {
 
   .chart-frame {
     min-height: 240px;
+    touch-action: pan-y;
   }
 }
 
