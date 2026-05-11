@@ -58,6 +58,6 @@ export const pulse = {
 // ── Motion props helpers ──
 export const viewportOnce = {
   once: true,
-  amount: 0.15,
-  margin: "-60px",
+  amount: 0.05,
+  margin: "0px 0px 320px 0px",
 } as const;
