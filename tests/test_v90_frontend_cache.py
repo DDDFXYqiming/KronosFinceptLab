@@ -94,6 +94,26 @@ def test_v90_route_switch_state_still_uses_session_storage():
     assert "kronos-watchlist-market" in read("web/src/app/watchlist/page.tsx")
 
 
+def test_v90_long_running_analysis_and_macro_runs_survive_route_switch():
+    pages = {
+        "analysis": read("web/src/app/analysis/page.tsx"),
+        "macro": read("web/src/app/macro/page.tsx"),
+    }
+
+    for name, text in pages.items():
+        assert "useIsFetching" in text, name
+        assert "ActiveAnalysisRun" in text or "ActiveMacroRun" in text, name
+        assert f"kronos-{name}-active-run" in text, name
+        assert "queryClient.getQueryState" in text, name
+        assert "resumeActiveRun" in text, name
+        assert "activeRunFetching" in text, name
+        assert "displayLoading" in text, name
+        assert "Boolean(activeRun && !error)" in text, name
+        assert "if (!activeRun) return" in text, name
+        assert "if (!activeRun || result) return" not in text, name
+        assert "setActiveRun(null)" in text, name
+
+
 def test_v90_next_data_route_is_not_ignored_as_local_data():
     gitignore = read(".gitignore")
 
