@@ -11,6 +11,7 @@ from kronos_fincept.config import settings
 from kronos_fincept.predictor import DryRunPredictor, KronosPredictorWrapper
 from kronos_fincept.predictor import _ensure_kronos_on_syspath, _resolve_kronos_repo
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
+from kronos_fincept.security_utils import safe_configured_model_id
 
 
 def get_predictor(
@@ -131,7 +132,7 @@ def get_model_info(deep: bool = False) -> dict[str, Any]:
     return {
         "status": status,
         "model_loaded": model_loaded,
-        "model_id": settings.kronos.model_id or DEFAULT_MODEL_ID,
+        "model_id": safe_configured_model_id(settings.kronos.model_id, DEFAULT_MODEL_ID),
         "tokenizer_id": settings.kronos.tokenizer_id or DEFAULT_TOKENIZER_ID,
         "device": device,
         "runtime_mode": "standard" if model_enabled else "lowmem",

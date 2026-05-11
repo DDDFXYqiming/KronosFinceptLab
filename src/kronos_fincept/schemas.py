@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from kronos_fincept.security_utils import validate_kronos_model_id
+
 DEFAULT_MODEL_ID = "NeoQuasar/Kronos-base"
 DEFAULT_TOKENIZER_ID = "NeoQuasar/Kronos-Tokenizer-base"
 
@@ -26,6 +28,7 @@ RESEARCH_WARNING = "Research forecast only; not trading advice."
 
 def resolve_tokenizer_id(model_id: str) -> str:
     """Return the appropriate tokenizer ID for a given Kronos model ID."""
+    validate_kronos_model_id(model_id)
     variant = _KRONOS_MODEL_VARIANTS.get(model_id)
     if variant is not None:
         return str(variant["tokenizer"])
@@ -37,6 +40,7 @@ def resolve_tokenizer_id(model_id: str) -> str:
 
 def resolve_max_context(model_id: str) -> int:
     """Return the appropriate max_context for a given Kronos model ID."""
+    validate_kronos_model_id(model_id)
     variant = _KRONOS_MODEL_VARIANTS.get(model_id)
     if variant is not None:
         return int(variant["max_context"])
@@ -152,7 +156,7 @@ class ForecastRequest:
             timeframe=str(payload.get("timeframe", "unknown")),
             pred_len=pred_len,
             rows=[ForecastRow.from_dict(row) for row in rows_payload],
-            model_id=str(payload.get("model_id", DEFAULT_MODEL_ID)),
+            model_id=validate_kronos_model_id(str(payload.get("model_id", DEFAULT_MODEL_ID))),
             tokenizer_id=str(payload.get("tokenizer_id", DEFAULT_TOKENIZER_ID)),
             dry_run=bool(payload.get("dry_run", False)),
             max_context=int(payload.get("max_context", 512)),
@@ -170,8 +174,8 @@ class ForecastRequest:
             timeframe=pydantic_req.timeframe,
             pred_len=pydantic_req.pred_len,
             rows=[ForecastRow.from_pydantic(r) for r in pydantic_req.rows],
-            model_id=pydantic_req.model_id,
-            tokenizer_id=pydantic_req.tokenizer_id,
+            model_id=DEFAULT_MODEL_ID,
+            tokenizer_id=DEFAULT_TOKENIZER_ID,
             dry_run=pydantic_req.dry_run,
             max_context=pydantic_req.max_context,
             temperature=pydantic_req.temperature,
@@ -202,8 +206,8 @@ class ForecastRequest:
             timeframe=timeframe,
             pred_len=pred_len,
             rows=[ForecastRow.from_pydantic(r) for r in rows],
-            model_id=model_id or DEFAULT_MODEL_ID,
-            tokenizer_id=tokenizer_id or DEFAULT_TOKENIZER_ID,
+            model_id=DEFAULT_MODEL_ID,
+            tokenizer_id=DEFAULT_TOKENIZER_ID,
             dry_run=dry_run,
             max_context=max_context if max_context is not None else 512,
             temperature=temperature if temperature is not None else 1.0,

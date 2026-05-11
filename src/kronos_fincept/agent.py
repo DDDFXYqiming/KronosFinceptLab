@@ -24,6 +24,7 @@ from kronos_fincept.schemas import (
     resolve_tokenizer_id,
     resolve_max_context,
 )
+from kronos_fincept.security_utils import env_int
 from kronos_fincept.web_search import WebSearchClient, WebSearchResponse
 
 
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 _LAST_REPORT_LLM_METADATA: dict[str, Any] = {}
+_LLM_FAILURES: dict[str, tuple[int, float]] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
 ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 5, "deepseek": 8}
@@ -386,7 +388,18 @@ def _call_structured_llm_json(
         )
         return None
 
-    for provider in providers:
+    max_attempts = max(1, env_int("KRONOS_LLM_MAX_PROVIDER_ATTEMPTS", 2))
+    for provider in providers[:max_attempts]:
+        if _llm_provider_circuit_open(provider):
+            log_event(
+                logger,
+                logging.WARNING,
+                f"agent.llm.{purpose}.circuit_open",
+                f"{provider.display_name} skipped because its failure circuit is open.",
+                provider=provider.name,
+                model=provider.model,
+            )
+            continue
         endpoint = _build_chat_completions_url(provider.base_url)
         provider_timeout = _llm_provider_timeout(provider, timeout, provider_timeouts)
         request_payload = _llm_request_payload(
@@ -447,8 +460,10 @@ def _call_structured_llm_json(
                     finish_reason=_deepseek_finish_reason(response_payload),
                 )
                 continue
+            _record_llm_provider_success(provider)
             return parsed, provider
         except Exception as exc:
+            _record_llm_provider_failure(provider)
             log_event(
                 logger,
                 logging.WARNING,
@@ -462,6 +477,22 @@ def _call_structured_llm_json(
             )
             continue
     return None
+
+
+def _llm_provider_circuit_open(provider: LLMChatProvider) -> bool:
+    threshold = max(1, env_int("KRONOS_LLM_CIRCUIT_FAILURES", 5))
+    cooldown = max(1, env_int("KRONOS_LLM_CIRCUIT_COOLDOWN_SECONDS", 300))
+    count, last_failure = _LLM_FAILURES.get(provider.name, (0, 0.0))
+    return count >= threshold and (time.time() - last_failure) < cooldown
+
+
+def _record_llm_provider_success(provider: LLMChatProvider) -> None:
+    _LLM_FAILURES.pop(provider.name, None)
+
+
+def _record_llm_provider_failure(provider: LLMChatProvider) -> None:
+    count, _ = _LLM_FAILURES.get(provider.name, (0, 0.0))
+    _LLM_FAILURES[provider.name] = (count + 1, time.time())
 
 
 def _llm_request_payload(

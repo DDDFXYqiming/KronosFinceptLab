@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from kronos_fincept.api.routes import backtest, batch, data, forecast, health, analyze, ai_analyze, alert, suggestions
+from kronos_fincept.api.security import api_docs_enabled, check_request_security, max_body_bytes
 from kronos_fincept.config import settings
 from kronos_fincept.logging_config import (
     configure_logging,
@@ -74,12 +75,14 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     configure_logging()
+    docs_enabled = api_docs_enabled()
     app = FastAPI(
         title="KronosFinceptLab API",
         description="Financial quantitative analysis platform powered by Kronos foundation models.",
         version="2.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
         lifespan=lifespan,
     )
 
@@ -107,7 +110,49 @@ def create_app() -> FastAPI:
         token = set_request_id(request_id)
         test_token = set_test_run_id(test_run_id)
         start = time.perf_counter()
+        security_decision = check_request_security(request)
+        request.state.auth_role = security_decision.role
+        request.state.auth_result = security_decision.auth_result
+        request.state.auth_key_id = security_decision.key_id
+        request.state.rate_limit = security_decision.rate_limit
+        request.state.rate_category = security_decision.rate_category
         try:
+            if not security_decision.allowed:
+                elapsed_ms = int((time.perf_counter() - start) * 1000)
+                response = JSONResponse(
+                    status_code=security_decision.status_code,
+                    content={
+                        "ok": False,
+                        "error": security_decision.error,
+                        "type": security_decision.error_type,
+                        "request_id": request_id,
+                    },
+                    headers={"X-Request-ID": request_id},
+                )
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "api.request.rejected",
+                    f"{request.method} {request.url.path} -> {security_decision.status_code}",
+                    request_id=request_id,
+                    test_run_id=test_run_id,
+                    method=request.method,
+                    path=request.url.path,
+                    status=security_decision.status_code,
+                    client=request.client.host if request.client else None,
+                    forwarded_for=request.headers.get("X-Forwarded-For"),
+                    user_agent=request.headers.get("User-Agent"),
+                    content_length=request.headers.get("Content-Length"),
+                    auth_result=security_decision.auth_result,
+                    auth_role=security_decision.role,
+                    rate_limit=security_decision.rate_limit,
+                    rate_category=security_decision.rate_category,
+                    duration_ms=elapsed_ms,
+                )
+                return response
+            body_limit_response = await _check_streamed_body_size(request, request_id)
+            if body_limit_response is not None:
+                return body_limit_response
             response = await call_next(request)
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             response.headers["X-Request-ID"] = request_id
@@ -124,6 +169,13 @@ def create_app() -> FastAPI:
                 path=request.url.path,
                 status=response.status_code,
                 client=request.client.host if request.client else None,
+                forwarded_for=request.headers.get("X-Forwarded-For"),
+                user_agent=request.headers.get("User-Agent"),
+                content_length=request.headers.get("Content-Length"),
+                auth_result=security_decision.auth_result,
+                auth_role=security_decision.role,
+                rate_limit=security_decision.rate_limit,
+                rate_category=security_decision.rate_category,
                 duration_ms=elapsed_ms,
             )
             return response
@@ -139,6 +191,13 @@ def create_app() -> FastAPI:
                 method=request.method,
                 path=request.url.path,
                 client=request.client.host if request.client else None,
+                forwarded_for=request.headers.get("X-Forwarded-For"),
+                user_agent=request.headers.get("User-Agent"),
+                content_length=request.headers.get("Content-Length"),
+                auth_result=getattr(request.state, "auth_result", None),
+                auth_role=getattr(request.state, "auth_role", None),
+                rate_limit=getattr(request.state, "rate_limit", None),
+                rate_category=getattr(request.state, "rate_category", None),
                 duration_ms=elapsed_ms,
                 error_type=type(exc).__name__,
             )
@@ -196,6 +255,27 @@ def create_app() -> FastAPI:
 
 # Default app instance for uvicorn
 app = create_app()
+
+
+async def _check_streamed_body_size(request: Request, request_id: str) -> JSONResponse | None:
+    if request.method.upper() in {"GET", "HEAD", "OPTIONS"}:
+        return None
+    if request.headers.get("Content-Length"):
+        return None
+    body = await request.body()
+    limit = max_body_bytes()
+    if len(body) <= limit:
+        return None
+    return JSONResponse(
+        status_code=413,
+        content={
+            "ok": False,
+            "error": f"Request body too large; limit is {limit} bytes",
+            "type": "body_too_large",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
 
 
 def main():

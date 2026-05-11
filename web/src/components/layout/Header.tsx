@@ -19,6 +19,8 @@ export function Header() {
   const pathname = usePathname();
   const { sidebarOpen, toggleSidebar } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [headerHidden, setHeaderHidden] = useState(false);
+  const [headerFloating, setHeaderFloating] = useState(false);
   const { data: health } = useQuery({
     queryKey: queryKeys.health(),
     queryFn: ({ signal }) => api.health({ signal }),
@@ -27,7 +29,55 @@ export function Header() {
 
   useEffect(() => {
     setMobileMenuOpen(false);
+    setHeaderHidden(false);
   }, [pathname]);
+
+  useEffect(() => {
+    let lastScrollY = Math.max(0, window.scrollY);
+    let ticking = false;
+    const mobileQuery = window.matchMedia("(max-width: 767px)");
+
+    const syncHeader = () => {
+      const currentY = Math.max(0, window.scrollY);
+      const delta = currentY - lastScrollY;
+      setHeaderFloating(currentY > 8);
+
+      if (!mobileQuery.matches || mobileMenuOpen || currentY <= 2) {
+        setHeaderHidden(false);
+      } else if (delta < -4) {
+        setHeaderHidden(false);
+      } else if (delta > 8 && currentY > 72) {
+        setHeaderHidden(true);
+      }
+
+      lastScrollY = currentY;
+    };
+
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        syncHeader();
+        ticking = false;
+      });
+    };
+
+    syncHeader();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    if (mobileQuery.addEventListener) {
+      mobileQuery.addEventListener("change", syncHeader);
+    } else {
+      mobileQuery.addListener(syncHeader);
+    }
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (mobileQuery.removeEventListener) {
+        mobileQuery.removeEventListener("change", syncHeader);
+      } else {
+        mobileQuery.removeListener(syncHeader);
+      }
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -44,7 +94,9 @@ export function Header() {
   return (
     <>
       <header
-        className={`mobile-safe-top fixed left-0 right-0 top-0 z-40 border-b border-border bg-card/95 shadow-sm backdrop-blur-md transition-all duration-300 md:z-30 ${
+        className={`mobile-safe-top fixed left-0 right-0 top-0 z-40 border-b bg-card/95 backdrop-blur-md transition-[transform,box-shadow,border-color] duration-200 ease-out will-change-transform md:z-30 md:translate-y-0 md:transition-all ${
+          headerHidden ? "-translate-y-full" : "translate-y-0"
+        } ${headerFloating ? "border-border/80 shadow-lg" : "border-border shadow-sm"} ${
           sidebarOpen ? "md:left-60" : "md:left-16"
         }`}
       >

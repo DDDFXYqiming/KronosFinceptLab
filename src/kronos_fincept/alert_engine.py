@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from kronos_fincept.config import settings
+from kronos_fincept.security_utils import env_int, validate_webhook_url
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,10 @@ class AlertEngine:
 
     def register_rule(self, rule: AlertRule) -> None:
         """Register an alert rule."""
+        self._validate_rule(rule)
+        max_rules = max(1, env_int("KRONOS_ALERT_MAX_RULES", 100))
+        if rule.id not in self._rules and len(self._rules) >= max_rules:
+            raise ValueError(f"alert rule limit exceeded ({max_rules})")
         self._rules[rule.id] = rule
         self._save_rules()
         logger.info("Alert rule registered: %s (%s)", rule.id, rule.name)
@@ -194,6 +199,12 @@ class AlertEngine:
 
         if rule.channel == NotificationChannel.FEISHU:
             webhook = rule.webhook_url or self._default_feishu_webhook()
+            if webhook:
+                try:
+                    webhook = validate_webhook_url(webhook)
+                except ValueError as exc:
+                    logger.warning("Blocked unsafe alert webhook for rule %s: %s", rule.id, exc)
+                    return False
             return self._notify_feishu(event, webhook)
         elif rule.channel == NotificationChannel.EMAIL:
             email_to = rule.email_to or self._default_email_to()
@@ -675,6 +686,7 @@ class AlertEngine:
             for item in data:
                 try:
                     rule = AlertRule.from_dict(item)
+                    self._validate_rule(rule)
                     self._rules[rule.id] = rule
                 except Exception as exc:
                     logger.warning("Skipping invalid rule entry: %s", exc)
@@ -692,6 +704,23 @@ class AlertEngine:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as exc:
             logger.warning("Failed to save alert rules: %s", exc)
+
+    @staticmethod
+    def _validate_rule(rule: AlertRule) -> None:
+        if len(str(rule.id)) > 64:
+            raise ValueError("alert rule id is too long")
+        if not rule.name or len(str(rule.name)) > 80:
+            raise ValueError("alert rule name is invalid")
+        if not rule.symbol or len(str(rule.symbol)) > 32:
+            raise ValueError("alert rule symbol is invalid")
+        if len(str(rule.market)) > 16:
+            raise ValueError("alert rule market is invalid")
+        params = rule.params or {}
+        if len(params) > 10:
+            raise ValueError("too many alert params")
+        for key, item in params.items():
+            if len(str(key)) > 40 or len(str(item)) > 120:
+                raise ValueError("alert param is too large")
 
 
 # ---------------------------------------------------------------------------

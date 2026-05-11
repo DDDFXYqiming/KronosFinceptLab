@@ -25,6 +25,11 @@ def test_v93_layout_uses_mobile_shell_without_desktop_sidebar_flow():
     assert "role=\"dialog\"" in header
     assert "mobile-safe-top" in header
     assert "mobile-safe-bottom" in header
+    assert "headerHidden" in header
+    assert "window.matchMedia(\"(max-width: 767px)\")" in header
+    assert "delta < -4" in header
+    assert "delta > 8" in header
+    assert "md:translate-y-0" in header
 
 
 def test_v93_core_pages_use_mobile_safe_primitives():

@@ -57,6 +57,9 @@ def test_v97_git_and_docker_ignore_keep_secrets_models_caches_and_specs_out():
     required = [
         ".env",
         "SPEC.md",
+        "spc.md",
+        "docs/spec*.md",
+        "secrets",
         "docs/RUST_REFACTORING_ASSESSMENT.md",
         "external",
         "models",

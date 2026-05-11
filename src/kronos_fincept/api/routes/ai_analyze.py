@@ -19,12 +19,14 @@ router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
 
 # ── Pydantic models ──
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from kronos_fincept.security_utils import contains_prompt_injection, sanitize_client_context
 
 
 class AIAnalyzeRequest(BaseModel):
-    symbol: str = Field(..., description="Stock symbol, e.g. '600036', 'AAPL', '0700.HK'")
-    market: str = Field(default="cn", description="Market: cn=A股, hk=港股, us=美股, commodity=大宗商品")
+    symbol: str = Field(..., min_length=1, max_length=32, description="Stock symbol, e.g. '600036', 'AAPL', '0700.HK'")
+    market: str = Field(default="cn", min_length=1, max_length=16, description="Market: cn=A股, hk=港股, us=美股, commodity=大宗商品")
 
 
 class ForecastDataOut(BaseModel):
@@ -51,19 +53,51 @@ class AIAnalyzeResponse(BaseModel):
 
 
 class AgentAnalyzeRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Natural-language analysis question")
-    symbol: str | None = Field(default=None, description="Optional explicit symbol override")
-    market: str | None = Field(default=None, description="Optional market override")
+    question: str = Field(..., min_length=1, max_length=2000, description="Natural-language analysis question")
+    symbol: str | None = Field(default=None, max_length=32, description="Optional explicit symbol override")
+    market: str | None = Field(default=None, max_length=16, description="Optional market override")
     context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
     dry_run: bool = Field(default=False, description="Use deterministic Kronos dry-run for tests")
 
+    @field_validator("context")
+    @classmethod
+    def _sanitize_context(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return sanitize_client_context(value)
+
+    @field_validator("question")
+    @classmethod
+    def _reject_prompt_injection(cls, value: str) -> str:
+        if contains_prompt_injection(value):
+            raise ValueError("question contains unsafe prompt-injection content")
+        return value
+
 
 class MacroAnalyzeRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Macro or cross-market analysis question")
-    symbols: list[str] = Field(default_factory=list, description="Optional related symbols")
-    market: str | None = Field(default=None, description="Optional market hint")
-    provider_ids: list[str] | None = Field(default=None, description="Optional provider id override")
+    question: str = Field(..., min_length=1, max_length=2000, description="Macro or cross-market analysis question")
+    symbols: list[str] = Field(default_factory=list, max_length=20, description="Optional related symbols")
+    market: str | None = Field(default=None, max_length=16, description="Optional market hint")
+    provider_ids: list[str] | None = Field(default=None, max_length=20, description="Optional provider id override")
     context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
+
+    @field_validator("context")
+    @classmethod
+    def _sanitize_context(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return sanitize_client_context(value)
+
+    @field_validator("question")
+    @classmethod
+    def _reject_prompt_injection(cls, value: str) -> str:
+        if contains_prompt_injection(value):
+            raise ValueError("question contains unsafe prompt-injection content")
+        return value
+
+    @field_validator("symbols")
+    @classmethod
+    def _validate_symbols(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if len(str(value)) > 32:
+                raise ValueError("symbol is too long")
+        return values
 
 
 class AgentAnalyzeResponse(BaseModel):

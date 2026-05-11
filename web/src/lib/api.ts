@@ -55,6 +55,7 @@ export type {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 const DEFAULT_TIMEOUT_MS = 45000;
 const AGENT_ANALYZE_TIMEOUT_MS = 120000;
+export const KRONOS_API_KEY_STORAGE_KEY = "kronos-api-key";
 
 export interface ApiClientOptions {
   signal?: AbortSignal;
@@ -117,6 +118,31 @@ function getConfiguredTestRunId(): string | null {
     return window.sessionStorage.getItem("kronos-test-run-id");
   } catch {
     return null;
+  }
+}
+
+export function getConfiguredApiKey(): string | null {
+  const envValue = process.env.NEXT_PUBLIC_KRONOS_API_KEY?.trim();
+  if (envValue) return envValue;
+  if (typeof window === "undefined") return null;
+  try {
+    return (
+      window.localStorage.getItem(KRONOS_API_KEY_STORAGE_KEY) ||
+      window.sessionStorage.getItem(KRONOS_API_KEY_STORAGE_KEY)
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function saveConfiguredApiKey(value: string): void {
+  if (typeof window === "undefined") return;
+  const key = value.trim();
+  if (key) {
+    window.localStorage.setItem(KRONOS_API_KEY_STORAGE_KEY, key);
+  } else {
+    window.localStorage.removeItem(KRONOS_API_KEY_STORAGE_KEY);
+    window.sessionStorage.removeItem(KRONOS_API_KEY_STORAGE_KEY);
   }
 }
 
@@ -195,6 +221,10 @@ async function fetchApi<T>(
   const testRunId = getConfiguredTestRunId();
   if (testRunId && !headers.has("X-Test-Run-ID")) {
     headers.set("X-Test-Run-ID", testRunId);
+  }
+  const apiKey = getConfiguredApiKey();
+  if (apiKey && !headers.has("X-Kronos-Api-Key") && !headers.has("Authorization")) {
+    headers.set("X-Kronos-Api-Key", apiKey);
   }
 
   const { signal, cleanup } = createRequestSignal({ timeoutMs, signal: callerSignal });

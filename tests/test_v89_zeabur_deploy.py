@@ -34,6 +34,9 @@ def test_dockerfile_copies_existing_next_outputs_and_starts_both_services():
     assert "COPY --from=frontend-builder /app/web/public web/public" in dockerfile
     assert "FROM node:22-bookworm-slim AS backend" in dockerfile
     assert "scripts/zeabur_start.sh" in dockerfile
+    assert "EXPOSE 3000" in dockerfile
+    assert "EXPOSE 8000" not in dockerfile
+    assert "KRONOS_REPO_REF" in dockerfile
     assert 'CMD ["./scripts/zeabur_start.sh"]' in dockerfile
 
 
@@ -42,6 +45,7 @@ def test_zeabur_start_script_runs_api_and_next_standalone():
 
     assert "python -m uvicorn kronos_fincept.api.app:app" in script
     assert "node server.js" in script
+    assert 'API_HOST="${API_HOST:-127.0.0.1}"' in script
     assert 'WEB_PORT="${PORT:-3000}"' in script
     assert 'API_PORT="${API_PORT:-8000}"' in script
 
@@ -66,6 +70,7 @@ def test_docker_context_excludes_local_secrets_and_build_cache():
     assert "web/.next" in dockerignore
     assert "external" in dockerignore
     assert "logs" in dockerignore
+    assert "secrets" in dockerignore
 
 
 def test_zeabur_deployment_contract_survives_trimmed_readme():
