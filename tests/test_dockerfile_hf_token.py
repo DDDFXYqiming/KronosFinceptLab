@@ -21,9 +21,11 @@ def test_env_example_has_hf_token():
     assert "huggingface.co/settings/tokens" in content, ".env.example 缺少 HF_TOKEN 获取方式说明"
 
 
-def test_readme_has_hf_token_doc():
-    """测试 README.md 包含 HF_TOKEN 环境变量说明"""
+def test_readme_excludes_zeabur_and_hf_token_deploy_docs():
+    """README 不再承载 Zeabur/HF_TOKEN 部署说明。"""
     with open("README.md", "r", encoding="utf-8") as f:
         content = f.read()
-    assert "HF_TOKEN" in content, "README.md 缺少 HF_TOKEN 环境变量说明"
-    assert "huggingface.co/settings/tokens" in content, "README.md 缺少 HF_TOKEN 获取方式说明"
+    assert "Zeabur" not in content
+    assert "zeabur" not in content
+    assert "HF_TOKEN" not in content
+    assert "build:zeabur" not in content

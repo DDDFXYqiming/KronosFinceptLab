@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -90,6 +91,63 @@ def test_kronos_predictor_cache_reuses_loaded_model_across_wrappers(monkeypatch)
     assert second_result.model_cached is True
     assert first_result.cache_key == second_result.cache_key
     assert predictor.predictor_cache_stats()["size"] == 1
+
+
+def test_resolve_hf_cache_snapshot_dir_picks_latest_snapshot(monkeypatch, tmp_path):
+    from kronos_fincept import predictor
+
+    hub_root = tmp_path / "hf-hub-cache"
+    snapshots = hub_root / "models--NeoQuasar--Kronos-base" / "snapshots"
+    older = snapshots / "aaa111"
+    newer = snapshots / "bbb222"
+    older.mkdir(parents=True)
+    newer.mkdir(parents=True)
+    (older / "config.json").write_text("{}", encoding="utf-8")
+    (newer / "config.json").write_text("{}", encoding="utf-8")
+
+    # Ensure deterministic ordering by mtime.
+    older_ts = 1_700_000_000
+    newer_ts = 1_700_000_100
+    os.utime(older, (older_ts, older_ts))
+    os.utime(newer, (newer_ts, newer_ts))
+
+    monkeypatch.setenv("HF_HUB_CACHE", str(hub_root))
+    monkeypatch.delenv("HF_HOME", raising=False)
+
+    resolved = predictor._resolve_hf_cache_snapshot_dir("NeoQuasar/Kronos-base")
+
+    assert resolved == newer
+
+
+def test_resolve_pretrained_source_prefers_external_then_hf_cache_then_hub(monkeypatch, tmp_path):
+    from kronos_fincept import predictor
+
+    external_dir = tmp_path / "external-model"
+    cache_dir = tmp_path / "cache-model"
+    external_dir.mkdir(parents=True)
+    cache_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(predictor, "_resolve_external_artifact_dir", lambda repo_id: external_dir)
+    monkeypatch.setattr(
+        predictor,
+        "_resolve_hf_cache_snapshot_dir",
+        lambda repo_id: cache_dir if cache_dir.is_dir() else None,
+    )
+    path, source = predictor._resolve_pretrained_source("NeoQuasar/Kronos-base")
+    assert path == external_dir
+    assert source == "external"
+
+    # Remove external directory to force fallback to HF cache.
+    external_dir.rmdir()
+    path, source = predictor._resolve_pretrained_source("NeoQuasar/Kronos-base")
+    assert path == cache_dir
+    assert source == "hf_cache"
+
+    # Remove cache directory to force fallback to HF Hub id.
+    cache_dir.rmdir()
+    path, source = predictor._resolve_pretrained_source("NeoQuasar/Kronos-base")
+    assert path is None
+    assert source == "hub"
 
 
 def test_kronos_predictor_cache_serializes_concurrent_loads(monkeypatch):

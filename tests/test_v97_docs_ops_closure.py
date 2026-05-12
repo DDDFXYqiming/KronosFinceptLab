@@ -20,19 +20,12 @@ def test_v97_readme_has_compact_three_surface_capability_matrix():
     assert "kronos forecast" in readme
 
 
-def test_v97_readme_has_deploy_quality_and_ignore_boundaries():
+def test_v97_readme_has_quality_gates_without_zeabur_content():
     readme = read("README.md")
 
-    assert "## Zeabur 配置" in readme
-    for name in [
-        "DEEPSEEK_API_KEY",
-        "DEEPSEEK_BASE_URL",
-        "DEEPSEEK_MODEL",
-        "Digital Oracle",
-        "WEB_SEARCH_PROVIDER",
-        "WEB_SEARCH_API_KEY",
-    ]:
-        assert name in readme
+    assert "## Zeabur 配置" not in readme
+    assert "Zeabur" not in readme
+    assert "zeabur" not in readme
 
     assert "## 质量闸门" in readme
     for command in [
@@ -40,14 +33,12 @@ def test_v97_readme_has_deploy_quality_and_ignore_boundaries():
         "npm run typecheck",
         "npm run lint",
         "npm run test:frontend",
-        "npm run build:zeabur",
+        "npm run build",
         "npm run check:bundle",
         "npm run smoke:pages",
     ]:
         assert command in readme
-
-    for ignored in [".env", "SPEC.md", "external/", "models/", ".cache/", "logs/", "web/node_modules/", "web/.next/"]:
-        assert ignored in readme
+    assert "build:zeabur" not in readme
 
 
 def test_v97_git_and_docker_ignore_keep_secrets_models_caches_and_specs_out():
