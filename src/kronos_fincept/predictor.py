@@ -59,13 +59,57 @@ def _ensure_kronos_on_syspath() -> None:
 
 def _hf_cache_hint(model_id: str) -> str:
     """Return a hint about HuggingFace cache location."""
-    hf_home = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+    hf_home = _resolve_hf_hub_cache_root()
     return (
         f"HuggingFace model '{model_id}' not found or download failed. "
         f"Cache location: {hf_home}. "
         f"Only service-configured allowlisted Kronos model IDs are accepted in API mode. "
         f"For offline usage, set HF_HUB_OFFLINE=1 and ensure models are pre-downloaded."
     )
+
+
+def _resolve_hf_hub_cache_root() -> Path:
+    """Resolve the HuggingFace Hub cache root directory."""
+    env_hub_cache = os.environ.get("HF_HUB_CACHE")
+    if env_hub_cache:
+        return Path(env_hub_cache)
+    env_hf_home = os.environ.get("HF_HOME")
+    if env_hf_home:
+        return Path(env_hf_home) / "hub"
+    return Path(os.path.expanduser("~/.cache/huggingface/hub"))
+
+
+def _resolve_external_artifact_dir(repo_id: str) -> Path:
+    """Return project-local external artifact directory for a model/tokenizer ID."""
+    project_root = Path(__file__).resolve().parents[2]
+    return project_root / "external" / repo_id.split("/")[-1]
+
+
+def _resolve_hf_cache_snapshot_dir(repo_id: str) -> Path | None:
+    """Return latest local HF cache snapshot directory for a repo, if present."""
+    cache_repo_dir = _resolve_hf_hub_cache_root() / f"models--{repo_id.replace('/', '--')}"
+    snapshots_dir = cache_repo_dir / "snapshots"
+    if not snapshots_dir.is_dir():
+        return None
+    candidates = [entry for entry in snapshots_dir.iterdir() if entry.is_dir()]
+    if not candidates:
+        return None
+    try:
+        candidates.sort(key=lambda entry: (entry.stat().st_mtime, entry.name), reverse=True)
+    except OSError:
+        candidates.sort(key=lambda entry: entry.name, reverse=True)
+    return candidates[0]
+
+
+def _resolve_pretrained_source(repo_id: str) -> tuple[Path | None, str]:
+    """Resolve loading source in order: external directory, HF cache snapshot, HF Hub."""
+    external_dir = _resolve_external_artifact_dir(repo_id)
+    if external_dir.is_dir():
+        return external_dir, "external"
+    cache_snapshot_dir = _resolve_hf_cache_snapshot_dir(repo_id)
+    if cache_snapshot_dir is not None:
+        return cache_snapshot_dir, "hf_cache"
+    return None, "hub"
 
 
 @dataclass(frozen=True)
@@ -245,6 +289,8 @@ class KronosPredictorWrapper:
         self._predictor: Any | None = None
         self._resolved_device = device or "auto"
         self._model_cached = False
+        self._model_source = "unknown"
+        self._tokenizer_source = "unknown"
         self._load_wait_ms = 0
         self._cache_key = (
             self.model_id,
@@ -341,6 +387,8 @@ class KronosPredictorWrapper:
                 tokenizer_id=self.tokenizer_id,
                 cache_key=self.cache_key,
                 device=device,
+                model_source=self._model_source,
+                tokenizer_source=self._tokenizer_source,
                 duration_ms=int((time.perf_counter() - load_started) * 1000),
             )
             return self._predictor
@@ -371,30 +419,24 @@ class KronosPredictorWrapper:
             pass  # will fail at from_pretrained time with a clear error
 
         device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
-
-        # Try local model first (in external/ directory)
-        project_root = Path(__file__).resolve().parents[2]
-        local_model_dir = project_root / "external" / self.model_id.split("/")[-1]
-        local_tokenizer_dir = project_root / "external" / self.tokenizer_id.split("/")[-1]
+        tokenizer_path, tokenizer_source = _resolve_pretrained_source(self.tokenizer_id)
+        model_path, model_source = _resolve_pretrained_source(self.model_id)
+        self._tokenizer_source = tokenizer_source
+        self._model_source = model_source
 
         try:
-            if local_tokenizer_dir.is_dir():
-                tokenizer = KronosTokenizer.from_pretrained(str(local_tokenizer_dir))
+            if tokenizer_path is not None:
+                tokenizer = KronosTokenizer.from_pretrained(str(tokenizer_path))
             else:
-                tokenizer = KronosTokenizer.from_pretrained(
-                    self.tokenizer_id,
-                    resume_download=True,
-                )
+                tokenizer = KronosTokenizer.from_pretrained(self.tokenizer_id)
         except Exception as exc:
             raise RuntimeError(_hf_cache_hint(self.tokenizer_id)) from exc
 
         try:
-            if local_model_dir.is_dir():
-                model = Kronos.from_pretrained(str(local_model_dir))
+            if model_path is not None:
+                model = Kronos.from_pretrained(str(model_path))
             else:
-                model = Kronos.from_pretrained(
-                    self.model_id,
-                )
+                model = Kronos.from_pretrained(self.model_id)
         except Exception as exc:
             raise RuntimeError(_hf_cache_hint(self.model_id)) from exc
 
