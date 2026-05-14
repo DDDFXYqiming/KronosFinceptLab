@@ -8,14 +8,26 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
+from pathlib import Path
 from statistics import mean
 
 import numpy as np
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from kronos_fincept import native
+from kronos_fincept.api.routes.backtest import _calculate_metrics
+from kronos_fincept.financial.derivatives import DerivativesPricer
 from kronos_fincept.financial.indicators import TechnicalIndicators
+from kronos_fincept.financial.portfolio import PortfolioOptimizer
 from kronos_fincept.financial.risk import RiskCalculator
+from kronos_fincept.financial.strategies import QuantitativeStrategies
 
 
 def _sample_prices(size: int = 2000) -> list[float]:
@@ -39,9 +51,23 @@ def _bench_mode(mode: str, prices: list[float], returns: np.ndarray) -> dict[str
     native._load_native.cache_clear()
     indicators = TechnicalIndicators()
     risk = RiskCalculator()
+    pricer = DerivativesPricer(risk_free_rate=0.05)
+    portfolio = PortfolioOptimizer()
+    strategies = QuantitativeStrategies()
     highs = [price * 1.012 for price in prices]
     lows = [price * 0.991 for price in prices]
     volumes = [1_000_000.0 + (i % 17) * 25_000.0 for i in range(len(prices))]
+    portfolio_frame = pd.DataFrame(
+        {
+            "Asset1": prices,
+            "Asset2": [price * (1.0 + ((i % 11) - 5) * 0.0005) for i, price in enumerate(prices)],
+            "Asset3": [price * (1.0 + ((i % 13) - 6) * 0.0004) for i, price in enumerate(prices)],
+        }
+    )
+    equity_curve = [
+        {"equity": 100_000.0 * (1 + ((i % 9) - 4) * 0.0007)}
+        for i in range(1, 250)
+    ]
 
     # Warm up imports, caches, and extension dispatch.
     indicators.calculate_sma(prices, 20)
@@ -57,6 +83,18 @@ def _bench_mode(mode: str, prices: list[float], returns: np.ndarray) -> dict[str
     risk.calculate_sortino_ratio(returns)
     risk.calculate_max_drawdown(prices)
     risk.calculate_volatility(returns)
+    pricer.price_european_call(100.0, 100.0, 1.0, 0.2)
+    pricer.put_call_parity(10.0, 100.0, 100.0, 1.0)
+    portfolio_returns = portfolio.calculate_returns(portfolio_frame)
+    expected_returns = portfolio.calculate_expected_returns(portfolio_returns)
+    cov_matrix = portfolio.calculate_covariance_matrix(portfolio_returns)
+    portfolio.portfolio_performance(
+        np.array([1 / 3, 1 / 3, 1 / 3]),
+        expected_returns,
+        cov_matrix,
+    )
+    strategies.run_all_strategies(prices)
+    _calculate_metrics(equity_curve, 120, 64)
 
     return {
         "sma_ms": _time_call(lambda: indicators.calculate_sma(prices, 20), 200),
@@ -76,6 +114,33 @@ def _bench_mode(mode: str, prices: list[float], returns: np.ndarray) -> dict[str
         "sortino_ms": _time_call(lambda: risk.calculate_sortino_ratio(returns), 500),
         "max_drawdown_ms": _time_call(lambda: risk.calculate_max_drawdown(prices), 500),
         "volatility_ms": _time_call(lambda: risk.calculate_volatility(returns), 500),
+        "black_scholes_ms": _time_call(
+            lambda: pricer.price_european_call(100.0, 100.0, 1.0, 0.2), 500
+        ),
+        "put_call_parity_ms": _time_call(
+            lambda: pricer.put_call_parity(10.0, 100.0, 100.0, 1.0), 500
+        ),
+        "portfolio_returns_ms": _time_call(
+            lambda: portfolio.calculate_returns(portfolio_frame), 100
+        ),
+        "portfolio_covariance_ms": _time_call(
+            lambda: portfolio.calculate_covariance_matrix(
+                portfolio.calculate_returns(portfolio_frame)
+            ),
+            100,
+        ),
+        "portfolio_performance_ms": _time_call(
+            lambda: portfolio.portfolio_performance(
+                np.array([1 / 3, 1 / 3, 1 / 3]),
+                expected_returns,
+                cov_matrix,
+            ),
+            500,
+        ),
+        "strategy_snapshot_ms": _time_call(lambda: strategies.run_all_strategies(prices), 100),
+        "backtest_metrics_ms": _time_call(
+            lambda: _calculate_metrics(equity_curve, 120, 64), 500
+        ),
     }
 
 

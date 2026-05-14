@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # KRONOS_MODEL_ID options: NeoQuasar/Kronos-base (default), NeoQuasar/Kronos-mini (fastest)
-ENV PATH="/opt/venv/bin:$PATH" \
+ENV PATH="/opt/venv/bin:/root/.cargo/bin:$PATH" \
     PYTHONPATH=/app/src \
     NEXT_TELEMETRY_DISABLED=1 \
     INTERNAL_API_URL=http://127.0.0.1:8000 \
@@ -61,6 +61,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     KRONOS_PREWARM_ON_STARTUP=1 \
     KRONOS_LOG_FORMAT=json \
     KRONOS_LOG_ENABLE_FILE=0 \
+    USE_RUST_ENGINE=auto \
     MALLOC_ARENA_MAX=2 \
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
@@ -80,10 +81,18 @@ ENV KRONOS_APP_VERSION=$KRONOS_APP_VERSION \
     KRONOS_BUILD_REF=$KRONOS_BUILD_REF \
     KRONOS_BUILD_SOURCE=$KRONOS_BUILD_SOURCE
 
-# Install Python deps
-COPY pyproject.toml requirements.txt ./
+# Install Rust toolchain for the native acceleration wheel.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain stable
+
+# Install Python deps and the optional Rust native extension.
+COPY Cargo.toml Cargo.lock pyproject.toml requirements.txt ./
+COPY crates/ crates/
 COPY src/ src/
 RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir "maturin>=1.8,<2" \
+    && python -m maturin build --manifest-path crates/kronos-python/Cargo.toml --release --out /tmp/kronos-native \
+    && pip install --no-cache-dir /tmp/kronos-native/*.whl \
     && pip install --no-cache-dir -e ".[deploy]" \
     && if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then pip install --no-cache-dir -e ".[kronos]"; fi
 

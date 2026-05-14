@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
+from kronos_fincept import native
+
 
 @dataclass
 class PortfolioResult:
@@ -57,6 +59,16 @@ class PortfolioOptimizer:
         Returns:
             DataFrame of daily returns
         """
+        rust_returns = native.calculate_portfolio_returns(
+            prices.to_numpy(dtype=float).tolist()
+        )
+        if rust_returns is not None:
+            return pd.DataFrame(
+                rust_returns,
+                index=prices.index[1: 1 + len(rust_returns)],
+                columns=prices.columns,
+            ).dropna()
+
         return prices.pct_change().dropna()
     
     def calculate_expected_returns(self, returns: pd.DataFrame) -> np.ndarray:
@@ -69,6 +81,12 @@ class PortfolioOptimizer:
         Returns:
             Array of expected returns
         """
+        rust_expected = native.calculate_expected_returns(
+            returns.to_numpy(dtype=float).tolist()
+        )
+        if rust_expected is not None:
+            return np.array(rust_expected)
+
         return returns.mean().values
     
     def calculate_covariance_matrix(self, returns: pd.DataFrame) -> np.ndarray:
@@ -81,6 +99,12 @@ class PortfolioOptimizer:
         Returns:
             Covariance matrix
         """
+        rust_covariance = native.calculate_covariance_matrix(
+            returns.to_numpy(dtype=float).tolist()
+        )
+        if rust_covariance is not None:
+            return np.array(rust_covariance)
+
         return returns.cov().values
     
     def portfolio_performance(
@@ -100,6 +124,17 @@ class PortfolioOptimizer:
         Returns:
             Tuple of (return, volatility)
         """
+        rust_performance = native.calculate_portfolio_performance(
+            weights.tolist(),
+            expected_returns.tolist(),
+            cov_matrix.tolist(),
+        )
+        if rust_performance is not None:
+            return (
+                rust_performance["expected_return"],
+                rust_performance["volatility"],
+            )
+
         returns = np.dot(weights, expected_returns)
         volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
         

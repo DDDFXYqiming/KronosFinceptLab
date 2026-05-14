@@ -12,6 +12,7 @@ from typing import Any
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
+from kronos_fincept import native
 from kronos_fincept.api.models import (
     BacktestMetricsOut,
     BacktestRequestIn,
@@ -181,6 +182,22 @@ def _calculate_metrics(
             total_trades=total_trades,
             win_rate=0.0,
             avg_holding_days=0,
+        )
+
+    rust_metrics = native.calculate_backtest_metrics(
+        [float(entry["equity"]) for entry in equity_curve],
+        total_trades,
+        winning_trades,
+    )
+    if rust_metrics is not None:
+        return BacktestMetricsOut(
+            total_return=float(rust_metrics["total_return"]),
+            annualized_return=float(rust_metrics["annualized_return"]),
+            sharpe_ratio=float(rust_metrics["sharpe_ratio"]),
+            max_drawdown=float(rust_metrics["max_drawdown"]),
+            total_trades=int(rust_metrics["total_trades"]),
+            win_rate=float(rust_metrics["win_rate"]),
+            avg_holding_days=int(rust_metrics["avg_holding_days"]),
         )
 
     # Total return

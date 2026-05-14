@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 import numpy as np
 
+from kronos_fincept import native
+
 from .indicators import TechnicalIndicators, SMA, EMA, RSI, MACD, BollingerBands
 
 
@@ -53,6 +55,14 @@ class QuantitativeStrategies:
     
     def __init__(self):
         self.indicators = TechnicalIndicators()
+
+    def _native_result(self, payload: dict) -> StrategyResult:
+        return StrategyResult(
+            signal=Signal(str(payload.get("signal", "hold"))),
+            strength=float(payload.get("strength", 0.0)),
+            reason=str(payload.get("reason", "")),
+            indicators={},
+        )
     
     def ma_crossover_strategy(
         self,
@@ -398,6 +408,18 @@ class QuantitativeStrategies:
         Returns:
             Dictionary with all strategy results
         """
+        rust_snapshot = native.calculate_strategy_snapshot(closes)
+        if rust_snapshot is not None:
+            try:
+                return {
+                    "ma_crossover": self._native_result(rust_snapshot["ma_crossover"]),
+                    "rsi": self._native_result(rust_snapshot["rsi"]),
+                    "macd": self._native_result(rust_snapshot["macd"]),
+                    "bollinger": self._native_result(rust_snapshot["bollinger"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                pass
+
         result = {}
         
         # MA Crossover

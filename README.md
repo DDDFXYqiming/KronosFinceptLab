@@ -205,33 +205,60 @@ To clean old logs, delete outdated files under `logs/` directly; the directory i
 
 ### Rust Native Acceleration (optional)
 
+Current migration status:
+
+- Python remains the API/CLI/orchestration runtime for FastAPI, Pydantic
+  contracts, Kronos/PyTorch inference, LLM agent flows, and third-party market
+  data SDKs.
+- Rust is used as an optional PyO3 native acceleration engine for pure
+  computation kernels: technical indicators, risk metrics, Black-Scholes
+  pricing/Greeks, portfolio return/covariance/performance helpers, default
+  strategy snapshots, and backtest metrics.
+- `USE_RUST_ENGINE=auto` is the recommended runtime default. It attempts to use
+  `kronos_fincept_native` when installed and falls back to Python when the wheel
+  is unavailable.
+- Docker builds now compile and install the native wheel before installing the
+  application. Local Docker/Zeabur validation still requires a Docker-capable
+  environment and the normal Zeabur deployment pipeline.
+
 First-time Windows Rust setup:
 
 ```powershell
-# Install Rust toolchain
+# Install Rust toolchain. The MSVC target requires Visual Studio C++ Build Tools.
 Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile $env:TEMP\rustup-init.exe
-& $env:TEMP\rustup-init.exe -y --profile minimal --default-host x86_64-pc-windows-gnu --default-toolchain stable-x86_64-pc-windows-gnu
-
-# Install GNU linker (if gcc is not present)
-winget install --id BrechtSanders.WinLibs.POSIX.MSVCRT -e --accept-source-agreements --accept-package-agreements --silent
+& $env:TEMP\rustup-init.exe -y --profile minimal --default-host x86_64-pc-windows-msvc --default-toolchain stable-x86_64-pc-windows-msvc
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --accept-source-agreements --accept-package-agreements --silent --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 
 # Install Python build utilities
-python -m pip install maturin
+python -m pip install "maturin>=1.8,<2"
 ```
 
 Build and enable native extension:
 
 ```powershell
-$mingwBin = (Get-ChildItem -Path $env:LOCALAPPDATA\Microsoft\WinGet\Packages -Recurse -Filter gcc.exe | Select-Object -First 1).Directory.FullName
-$env:Path="$env:USERPROFILE\.cargo\bin;$mingwBin;$env:Path"
+$env:Path="$env:USERPROFILE\.cargo\bin;$env:Path"
 
 cargo test --workspace
 cargo clippy --workspace -- -D warnings
 python -m maturin build --manifest-path crates/kronos-python/Cargo.toml --release --out dist/native
 python -m pip install --force-reinstall (Get-ChildItem -LiteralPath dist\native -Filter *.whl | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 
-$env:USE_RUST_ENGINE="1"
+$env:USE_RUST_ENGINE="auto"
 python -m pytest tests/test_rust_native_bridge.py -v
+python scripts/benchmark_rust_native.py
+```
+
+If `cargo` reports missing `kernel32.lib` or `msvcrt.lib`, run the commands
+from the Visual Studio Developer Command Prompt, or ensure the VC and Windows
+SDK `Lib` paths are present in `LIB`.
+
+This repository has been verified locally with:
+
+```powershell
+cargo test --workspace
+cargo clippy --workspace -- -D warnings
+python -m maturin build --manifest-path crates/kronos-python/Cargo.toml --release --out dist/native
+python -m pytest tests/test_rust_native_bridge.py tests/test_derivatives.py tests/test_portfolio.py tests/test_indicators_strategies.py tests/test_risk.py tests/test_api.py tests/test_cli.py -q
 python scripts/benchmark_rust_native.py
 ```
 

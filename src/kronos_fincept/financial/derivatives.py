@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.stats import norm
 
+from kronos_fincept import native
+
 
 @dataclass
 class OptionResult:
@@ -73,6 +75,30 @@ class DerivativesPricer:
         Returns:
             OptionResult with price and Greeks
         """
+        rust_result = native.price_black_scholes(
+            underlying_price,
+            strike_price,
+            time_to_expiration,
+            volatility,
+            self.risk_free_rate,
+            option_type,
+        )
+        if rust_result is not None:
+            return OptionResult(
+                option_type=str(rust_result["option_type"]),
+                underlying_price=float(rust_result["underlying_price"]),
+                strike_price=float(rust_result["strike_price"]),
+                time_to_expiration=float(rust_result["time_to_expiration"]),
+                risk_free_rate=float(rust_result["risk_free_rate"]),
+                volatility=float(rust_result["volatility"]),
+                option_price=float(rust_result["option_price"]),
+                delta=float(rust_result["delta"]),
+                gamma=float(rust_result["gamma"]),
+                theta=float(rust_result["theta"]),
+                vega=float(rust_result["vega"]),
+                rho=float(rust_result["rho"]),
+            )
+
         # Handle edge cases
         if time_to_expiration <= 0:
             # Option expired
@@ -271,6 +297,16 @@ class DerivativesPricer:
         Returns:
             Implied put price
         """
+        rust_price = native.calculate_put_call_parity(
+            call_price,
+            underlying_price,
+            strike_price,
+            time_to_expiration,
+            self.risk_free_rate,
+        )
+        if rust_price is not None:
+            return rust_price
+
         return call_price - underlying_price + strike_price * np.exp(-self.risk_free_rate * time_to_expiration)
     
     def implied_volatility(
