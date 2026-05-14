@@ -84,8 +84,11 @@ ENV KRONOS_APP_VERSION=$KRONOS_APP_VERSION \
 COPY pyproject.toml requirements.txt ./
 COPY src/ src/
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e ".[deploy]" \
-    && if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then pip install --no-cache-dir -e ".[kronos]"; fi
+    && if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then \
+        pip install --no-cache-dir -e ".[deploy,kronos]"; \
+    else \
+        pip install --no-cache-dir -e ".[deploy]"; \
+    fi
 
 # Fetch upstream Kronos source code for real inference. Model weights stay out of git/image.
 RUN mkdir -p external/Kronos \
