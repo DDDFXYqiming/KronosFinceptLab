@@ -371,8 +371,18 @@ def _call_structured_llm_json(
     timeout: int,
     purpose: str,
     provider_timeouts: dict[str, int] | None = None,
+    provider_order: tuple[str, ...] | None = None,
 ) -> tuple[dict[str, Any], LLMChatProvider] | None:
     providers = _llm_provider_chain()
+    if provider_order:
+        priority = {name: index for index, name in enumerate(provider_order)}
+        providers = [
+            provider
+            for _, provider in sorted(
+                enumerate(providers),
+                key=lambda item: (priority.get(item[1].name, len(priority)), item[0]),
+            )
+        ]
     if not providers:
         return None
     try:

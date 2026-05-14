@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -21,7 +22,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from kronos_fincept.logging_config import log_event
-from kronos_fincept.security_utils import env_bool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["suggestions"])
@@ -53,6 +53,7 @@ _ANALYSIS_SYSTEM = """\
 - 问题必须是金融投资相关：股票分析、行情预测、风险评估、标的比较等
 - 问题应多样化，覆盖 A 股、港股、美股、加密货币、大宗商品等不同领域
 - 问题应自然口语化，模拟真实用户提问
+- 每个问题必须简短精悍，建议 6-36 个中文字符
 - 包含至少一个带有具体股票名称或代码的问题
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
@@ -68,6 +69,7 @@ _MACRO_SYSTEM = """\
 - 问题必须是宏观经济或跨市场相关：黄金、利率、通胀、地缘风险、加密货币、市场泡沫、
   行业周期、全球市场位置、风险偏好、大类资产配置等
 - 问题应自然口语化，模拟真实用户提问
+- 每个问题必须简短精悍，建议 6-36 个中文字符
 - 覆盖不同宏观维度（利率、商品、地缘、加密、市场情绪等）
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
@@ -154,17 +156,17 @@ PROMPT_INJECTION_PATTERNS = [
     r"执行(系统)?命令|shell|powershell|cmd\.exe|rm\s+-rf|删除文件",
 ]
 
-import re
-
 
 def _validate_questions(questions: list[str], question_type: str) -> list[str]:
     """Filter out any question that fails scope/injection checks."""
     patterns = ALLOWED_SCOPE_PATTERNS if question_type == "analysis" else MACRO_ALLOWED_PATTERNS
     clean: list[str] = []
+    seen: set[str] = set()
 
     for q in questions:
-        q = q.strip()
-        if not q or len(q) < 3 or len(q) > 120:
+        q = " ".join(str(q).strip().split())
+        normalized = _normalize_question(q)
+        if not q or len(q) < 6 or len(q) > 36 or normalized in seen:
             continue
 
         # Reject prompt injection
@@ -178,19 +180,24 @@ def _validate_questions(questions: list[str], question_type: str) -> list[str]:
             logger.warning("Suggestion rejected (out of scope): %r", q[:80])
             continue
 
+        seen.add(normalized)
         clean.append(q)
 
     return clean
+
+
+def _normalize_question(question: str) -> str:
+    return re.sub(r"[\s，。！？、,.!?；;：:\"'“”‘’（）()【】\[\]<>《》-]+", "", question.lower())
 
 
 def _overlap_ratio(new_questions: list[str], history: deque[list[str]]) -> float:
     """Return the fraction of new questions that match any historical question."""
     if not history or not new_questions:
         return 0.0
-    new_set = set(q.lower() for q in new_questions)
+    new_set = {_normalize_question(q) for q in new_questions}
     old_set = set()
     for past in history:
-        old_set.update(q.lower() for q in past)
+        old_set.update(_normalize_question(q) for q in past)
     if not old_set:
         return 0.0
     return len(new_set & old_set) / len(new_set)
@@ -241,6 +248,7 @@ def _call_llm_for_suggestions(
                 max_tokens=300,
                 timeout=15,
                 purpose="suggestions",
+                provider_order=("deepseek", "openrouter"),
             )
 
             if result is None:
@@ -321,32 +329,24 @@ async def get_suggestions(
             "source": "cache",
         }
 
-    # Generate new suggestions. Keep LLM generation opt-in to avoid anonymous or
-    # accidental provider spend; endpoint auth/rate limits still apply.
     if type == "analysis":
-        if env_bool("KRONOS_ENABLE_LLM_SUGGESTIONS", False):
-            questions = await asyncio.to_thread(
-                _call_llm_for_suggestions,
-                _ANALYSIS_SYSTEM,
-                "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
-                _ANALYSIS_FLAVORS,
-                3,
-                "analysis",
-            )
-        else:
-            questions = _ANALYSIS_FALLBACKS
+        questions = await asyncio.to_thread(
+            _call_llm_for_suggestions,
+            _ANALYSIS_SYSTEM,
+            "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
+            _ANALYSIS_FLAVORS,
+            3,
+            "analysis",
+        )
     else:
-        if env_bool("KRONOS_ENABLE_LLM_SUGGESTIONS", False):
-            questions = await asyncio.to_thread(
-                _call_llm_for_suggestions,
-                _MACRO_SYSTEM,
-                "请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。",
-                _MACRO_FLAVORS,
-                4,
-                "macro",
-            )
-        else:
-            questions = _MACRO_FALLBACKS
+        questions = await asyncio.to_thread(
+            _call_llm_for_suggestions,
+            _MACRO_SYSTEM,
+            "请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。",
+            _MACRO_FLAVORS,
+            4,
+            "macro",
+        )
 
     # Store in cache
     result = SuggestionResult(questions=questions, generated_at=now)
