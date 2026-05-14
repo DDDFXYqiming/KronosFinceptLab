@@ -73,14 +73,33 @@ function isFinishedStepStatus(status: string): boolean {
   return ["completed", "fallback", "skipped"].includes(status);
 }
 
+const TECHNICAL_DETAIL_PATTERN = /(?:^|\s)(?:[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=$|[\s,.;，。；])/gi;
+const TECHNICAL_LABEL_PATTERN = /\b(?:request[_-]?id|trace[_-]?id|session[_-]?id|correlation[_-]?id)\s*[=:：]\s*[^\s,;，；。]+/gi;
+const TECHNICAL_NAME_PATTERN = /\b[A-Za-z]+(?:_[A-Za-z0-9]+){1,}\b/g;
+
+function cleanUserVisibleText(value?: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(TECHNICAL_LABEL_PATTERN, "")
+    .replace(TECHNICAL_DETAIL_PATTERN, "")
+    .replace(TECHNICAL_NAME_PATTERN, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([，。；：:,.])/g, "$1")
+    .replace(/^[\s:：,，;；。-]+|[\s:：,，;；。-]+$/g, "")
+    .trim();
+}
+
 function buildEvidenceSummary(result: AgentAnalyzeResponse): string {
   const completed = result.tool_calls
     .filter((call) => ["completed", "fallback", "skipped"].includes(call.status))
-    .map((call) => {
-      const symbol = call.metadata?.symbol ? ` ${call.metadata.symbol}` : "";
-      const requestId = call.metadata?.request_id ? ` request_id=${call.metadata.request_id}` : "";
-      return `${call.name}${symbol}：${call.summary}${requestId}`;
-    });
+    .map((call, index) => {
+      const summary = cleanUserVisibleText(call.summary);
+      if (!summary) return "";
+      const symbol = cleanUserVisibleText(call.metadata?.symbol);
+      const scope = symbol ? `（${symbol}）` : "";
+      return `${index + 1}. ${scope}${summary}`;
+    })
+    .filter(Boolean);
   return completed.length
     ? completed.join("\n")
     : "本轮没有可用工具依据；请查看执行状态和错误信息。";
@@ -239,41 +258,34 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
 function ToolCallList({ result }: { result: AgentAnalyzeResponse }) {
   return (
     <div className="space-y-3">
-      {result.tool_calls.map((call) => {
-        const symbol = call.metadata?.symbol ? String(call.metadata.symbol) : "";
-        const market = call.metadata?.market ? String(call.metadata.market) : "";
-        const requestId = call.metadata?.request_id ? String(call.metadata.request_id) : "";
+      {result.tool_calls.map((call, index) => {
+        const symbol = cleanUserVisibleText(call.metadata?.symbol);
+        const market = cleanUserVisibleText(call.metadata?.market);
+        const summary = cleanUserVisibleText(call.summary) || "该步骤已完成，暂无补充说明。";
         return (
           <details
-            key={`${call.name}-${call.status}-${call.elapsed_ms}-${call.summary.slice(0, 24)}`}
+            key={`${index}-${call.status}-${call.elapsed_ms}-${summary.slice(0, 24)}`}
             className="rounded-lg border border-border bg-muted px-3 py-2"
           >
             <summary className="cursor-pointer list-none">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="break-all font-mono text-sm font-semibold text-foreground">{call.name}</span>
+                    <span className="text-sm font-semibold text-foreground">工具步骤 {index + 1}</span>
                     <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground">{statusLabel(call.status)}</span>
-                    {symbol && <span className="rounded bg-background px-2 py-0.5 font-mono text-xs text-muted-foreground">{symbol}</span>}
+                    {symbol && <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground">{symbol}</span>}
                     {market && <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground">{market}</span>}
                   </div>
-                  <p className="mt-1 break-words text-sm text-muted-foreground">{call.summary}</p>
+                  <p className="mt-1 break-words text-sm text-muted-foreground">{summary}</p>
                 </div>
                 <div className="shrink-0 text-xs text-muted-foreground">
-                  <span className="font-mono">{formatElapsedMs(call.elapsed_ms)}</span>
+                  <span>{formatElapsedMs(call.elapsed_ms)}</span>
                 </div>
               </div>
             </summary>
-            <div className="mt-3 rounded-md border border-border bg-background p-3">
-              <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground md:grid-cols-2">
-                <p><span className="font-semibold text-foreground">symbol：</span>{symbol || "-"}</p>
-                <p><span className="font-semibold text-foreground">market：</span>{market || "-"}</p>
-                <p><span className="font-semibold text-foreground">request_id：</span><span className="font-mono">{requestId || "-"}</span></p>
-                <p><span className="font-semibold text-foreground">elapsed：</span>{formatElapsedMs(call.elapsed_ms)}</p>
-              </div>
-              <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-raised p-3 text-xs text-muted-foreground">
-                {JSON.stringify(call.metadata || {}, null, 2)}
-              </pre>
+            <div className="mt-3 rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
+              <p className="font-semibold text-foreground">展示说明</p>
+              <p className="mt-1 break-words">这里只展示面向研究结论的摘要、标的和市场信息；内部函数、变量和追踪编号不会展示在页面中。</p>
             </div>
           </details>
         );
@@ -987,7 +999,6 @@ function AnalysisContent() {
           <Card>
             <CardTitle>汇总研究报告</CardTitle>
             <ReportSection title="结论" value={report?.conclusion} />
-            <ReportSection title="依据" value={buildEvidenceSummary(result)} />
             <ReportSection title="短期预测" value={report?.short_term_prediction} />
             <ReportSection title="技术面" value={report?.technical} />
             <ReportSection title="基本面" value={report?.fundamentals} />
@@ -1006,12 +1017,15 @@ function AnalysisContent() {
             </div>
           )}
 
-          {result.tool_calls.length > 0 && (
-            <Card>
-              <CardTitle>工具调用</CardTitle>
-              <ToolCallList result={result} />
-            </Card>
-          )}
+          <Card>
+            <CardTitle>依据与工具调用</CardTitle>
+            <ReportSection title="依据" value={buildEvidenceSummary(result)} />
+            {result.tool_calls.length > 0 && (
+              <div className="pt-4">
+                <ToolCallList result={result} />
+              </div>
+            )}
+          </Card>
         </>
       )}
 
