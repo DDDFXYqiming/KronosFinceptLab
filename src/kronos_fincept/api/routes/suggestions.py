@@ -45,16 +45,19 @@ MAX_RETRIES = 3
 # ── Prompt templates ──
 
 _ANALYSIS_SYSTEM = """\
-你是 KronosFinceptLab 的金融问题生成器。
+你是 KronosFinceptLab 的个股分析问题生成器。
 输出必须是纯 JSON，格式：{"questions": ["问题1", "问题2", "问题3"]}
 
 要求：
-- 生成 3 个中文金融投资分析建议问题
-- 问题必须是金融投资相关：股票分析、行情预测、风险评估、标的比较等
-- 问题应多样化，覆盖 A 股、港股、美股、加密货币、大宗商品等不同领域
+- 生成 3 个中文个股分析建议问题
+- **所有问题都必须是针对具体个股的**（分析单只或比较多只股票）
+- 支持的个股市场：A 股（6 位代码或中文名称）、港股（6 位代码或中文名称）、美股（1-5 位字母代码或中文名称）
+- 每个问题必须包含具体的股票名称或股票代码
+- 问题分析维度：行情走势、技术面、财务估值、风险评估、标的比较等
+- 问题应多样化，覆盖不同市场和个股
 - 问题应自然口语化，模拟真实用户提问
 - 每个问题必须简短精悍，建议 6-36 个中文字符
-- 包含至少一个带有具体股票名称或代码的问题
+- 禁止：宽泛的板块/行业/指数/宏观经济问题，禁止加密货币/黄金/大宗商品
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
 - 必须与先前给出的建议完全不同，刻意探索新角度、新标的、新问法
@@ -78,18 +81,18 @@ _MACRO_SYSTEM = """\
 
 # Random "flavor" phrases injected into user prompt to steer diversity
 _ANALYSIS_FLAVORS = [
-    "侧重科技股和半导体板块",
-    "侧重消费和医药板块",
-    "侧重银行和金融板块",
-    "侧重能源和资源板块",
-    "侧重港股和跨境标的",
-    "侧重加密货币和数字资产",
-    "侧重 ETF 和指数基金",
-    "侧重技术面和量化因子",
-    "侧重财报和基本面估值",
-    "侧重宏观经济对个股的影响",
-    "侧重新兴市场和中小盘",
-    "侧重避险资产和防御策略",
+    "侧重A股科技龙头股",
+    "侧重A股消费白马股",
+    "侧重A股医药生物股",
+    "侧重A股银行金融股",
+    "侧重A股新能源股",
+    "侧重A股制造龙头股",
+    "侧重港股蓝筹股",
+    "侧重港股中概科技股",
+    "侧重美股科技七巨头",
+    "侧重美股生物科技股",
+    "侧重美股消费零售股",
+    "侧重港股美股跨境比较",
 ]
 
 _MACRO_FLAVORS = [
@@ -124,14 +127,13 @@ _MACRO_FALLBACKS = [
 
 # ── Validation ──
 
-ALLOWED_SCOPE_PATTERNS = [
-    r"\b[A-Z]{1,5}\b",
-    r"\b\d{6}\b",
-    r"股票|股价|证券|A股|美股|港股|行情|走势|趋势|上涨|下跌|涨幅|跌幅|买|卖|持有|风险|预测|回测|量化|投资|资产|组合",
-    r"估值|目标价|财报|业绩|短期|中期|长期|看好|看空",
-    r"能买吗|能不能买|可以买|适合买|该不该买|值不值|见底|到顶|抄底|追高",
-    r"Kronos|DeepSeek|模型|财务|技术面|基本面|指标|VaR|Sharpe|波动|回撤",
-    r"\b[A-Z]{2,6}\b",
+# Analysis stock-only patterns: must reference a specific individual stock
+_ANALYSIS_STOCK_PATTERNS = [
+    r"(?<![a-zA-Z])[A-Z]{2,5}(?![a-zA-Z])",              # US ticker ≥2 chars (avoids "A股" false positive)
+    r"(?<!\d)0\d{4}(?!\d)|(?<!\d)\d{6}(?!\d)",           # HK 5-digit (0xxxx) or CN 6-digit
+    r"招商银行|贵州茅台|茅台|宁德时代|比亚迪|腾讯|阿里巴巴|拼多多|京东|百度",
+    r"小米|美团|快手|网易|中国平安|万科|美的|格力|工商银行|农业银行|中国银行",
+    r"[\u4e00-\u9fff]{2,6}(?:股份|集团|银行|证券|保险)",  # Company name + suffix (conservative)
 ]
 
 MACRO_ALLOWED_PATTERNS = [
@@ -142,7 +144,7 @@ MACRO_ALLOWED_PATTERNS = [
     r"泡沫|AI|半导体|行业周期|估值|买入时机|该不该买|能不能买",
     r"A股|港股|美股|大盘|指数|上证|深证|沪深|创业板|科创|恒生|国企指数|纳指|标普|道指|罗素",
     r"市场位置|现在位置|位置怎么样|适合.*(买|配置|入场)|风险偏好|资金面|流动性|估值区间",
-    r"\b[A-Z]{1,5}\b|\b\d{6}\b",
+    r"(?<![a-zA-Z])[A-Z]{1,5}(?![a-zA-Z])|(?<!\d)\d{6}(?!\d)",
 ]
 
 PROMPT_INJECTION_PATTERNS = [
@@ -159,7 +161,7 @@ PROMPT_INJECTION_PATTERNS = [
 
 def _validate_questions(questions: list[str], question_type: str) -> list[str]:
     """Filter out any question that fails scope/injection checks."""
-    patterns = ALLOWED_SCOPE_PATTERNS if question_type == "analysis" else MACRO_ALLOWED_PATTERNS
+    patterns = _ANALYSIS_STOCK_PATTERNS if question_type == "analysis" else MACRO_ALLOWED_PATTERNS
     clean: list[str] = []
     seen: set[str] = set()
 
