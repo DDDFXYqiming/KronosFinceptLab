@@ -22,6 +22,7 @@ An independent Python + Rust + Web quantitative finance analytics platform integ
 | | OKX | Crypto assets (China) |
 | **Web Search** | Tavily/Brave/Serper/custom | Optional public information retrieval for the agent |
 | **Official Disclosures** | CNINFO (Juchao) | A-share announcements, periodic reports, interim forecasts, buybacks/dividends, etc. |
+| **LLM Endpoint** | DeepSeek Chat Completions | `https://api.deepseek.com/chat/completions` |
 | **Forecast Models** | NeoQuasar/Kronos-base | Default candlestick forecast model (CPU inference) |
 | | NeoQuasar/Kronos-mini/base | Optional model |
 | | NeoQuasar/Kronos-Tokenizer-base | Tokenizer |
