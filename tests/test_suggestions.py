@@ -118,6 +118,57 @@ def test_suggestions_falls_back_when_llm_output_is_invalid(monkeypatch: pytest.M
     assert len(calls) == suggestions.MAX_RETRIES
 
 
+def test_analysis_validates_stock_only_rejects_broad_questions(monkeypatch: pytest.MonkeyPatch):
+    """Analysis suggestions must reference specific individual stocks; broad non-stock
+    questions like sector/macro topics should be filtered out, falling back."""
+    # All three are broad non-stock questions
+    broad_questions = [
+        "A股科技股短期走势",
+        "新能源板块还能买吗",
+        "消费医药长期看好",
+    ]
+    # None match _ANALYSIS_STOCK_PATTERNS → all filtered → fallback
+    payloads = [{"questions": broad_questions}] + [None] * (suggestions.MAX_RETRIES - 1)
+    calls = _patch_structured_llm(monkeypatch, payloads)
+
+    response = asyncio.run(suggestions.get_suggestions("analysis"))
+    assert response["questions"] == suggestions._ANALYSIS_FALLBACKS
+    assert len(calls) == suggestions.MAX_RETRIES
+
+
+def test_analysis_partial_stock_filtering(monkeypatch: pytest.MonkeyPatch):
+    """When LLM returns a mix of stock and non-stock questions, only stock questions pass.
+    With 3 valid stock questions out of 3, no retry needed."""
+    mixed = {
+        "questions": [
+            "招商银行能不能买",          # known stock, should pass
+            "看看宁德时代和比亚迪",      # known stocks, should pass
+            "600036近期走势如何",        # stock code, should pass
+        ]
+    }
+    calls = _patch_structured_llm(monkeypatch, [mixed])
+
+    response = asyncio.run(suggestions.get_suggestions("analysis"))
+    assert response["questions"] == mixed["questions"]
+    assert len(calls) == 1
+
+
+def test_analysis_accepts_stock_code_questions(monkeypatch: pytest.MonkeyPatch):
+    """Questions with US tickers or CN stock codes should pass."""
+    code_questions = {
+        "questions": [
+            "600036现在能买吗",
+            "AAPL和NVDA谁更值得持有",
+            "00700腾讯反弹到顶了吗",
+        ]
+    }
+    calls = _patch_structured_llm(monkeypatch, [code_questions])
+
+    response = asyncio.run(suggestions.get_suggestions("analysis"))
+    assert len(response["questions"]) == 3
+    assert response["source"] == "fresh"
+
+
 def test_frontend_pages_keep_cached_dynamic_suggestions_with_fallbacks():
     analysis = (ROOT / "web/src/app/analysis/page.tsx").read_text(encoding="utf-8")
     macro = (ROOT / "web/src/app/macro/page.tsx").read_text(encoding="utf-8")
