@@ -103,9 +103,13 @@ def test_v95_web_analysis_page_has_agent_workspace_controls():
     assert "Agent 执行进度" in page or "Agent 执行时间线" in page
     assert "ToolCallList" in page
     assert "<details" in page
-    assert "request_id" in page
+    assert "cleanUserVisibleText" in page
+    assert "依据与工具调用" in page
     assert "buildEvidenceSummary" in page
     assert 'ReportSection title="依据"' in page
+    assert page.index("汇总研究报告") < page.index("依据与工具调用")
+    assert "request_id" not in page
+    assert "JSON.stringify(call.metadata" not in page
     assert "queryClient.removeQueries" in page
 
 

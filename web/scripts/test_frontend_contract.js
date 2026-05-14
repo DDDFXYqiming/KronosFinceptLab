@@ -95,10 +95,15 @@ for (const needle of [
   "Kronos 预测（未来",
   "KronosMiniKline",
   "ToolCallList",
-  "request_id",
+  "cleanUserVisibleText",
+  "依据与工具调用",
   "auto-cols-[minmax(9.5rem,1fr)]",
 ]) {
   assertIncludes(analysis, needle, "analysis workspace contract");
+}
+assertBefore(analysis, "汇总研究报告", "依据与工具调用", "analysis evidence placement");
+for (const forbidden of ["request_id", "JSON.stringify(call.metadata", "{call.name}"]) {
+  assertNotIncludes(analysis, forbidden, "analysis public tool details");
 }
 
 const macro = read("src/app/macro/page.tsx");
