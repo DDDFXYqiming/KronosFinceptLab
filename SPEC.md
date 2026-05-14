@@ -3,6 +3,7 @@
 > 当前定位：独立的 Python + Rust + Web 金融量化分析平台，围绕 Kronos K 线基础模型、市场数据适配、量化分析、AI 投资顾问、宏观信号和 Web/CLI/MCP 多入口提供本地或云端分析能力。
 
 **项目路径**：`/mnt/e/AI_Projects/KronosFinceptLab`
+**最近同步时间**：2026-05-13（本地 `main` = `origin/main`，HEAD: `ac0e333`）
 
 ---
 
@@ -49,14 +50,16 @@
 |---|---|
 | `src/kronos_fincept/` | Python 核心包，承载 schema、数据源、分析服务、API/CLI 共享逻辑 |
 | `src/kronos_fincept/api/` | FastAPI 路由、请求响应模型、健康检查和 Web 后端接口 |
+| `src/kronos_fincept/api/security.py` | API 认证、Body 大小限制、分类限流、公开路径白名单与 docs 开关 |
 | `src/kronos_fincept/cli/` | Click CLI 命令入口 |
-| `src/kronos_fincept/data/` | 行情数据适配器、缓存和 provider 降级 |
-| `src/kronos_fincept/kronos/` | Kronos 模型加载、预测、tokenizer 与推理封装 |
-| `src/kronos_fincept/analysis/` | 技术指标、策略、风险、估值、组合、衍生品等分析逻辑 |
-| `src/kronos_fincept/llm/` | LLM provider、上下文预算、fallback、报告解释和 Agent 问答 |
+| `src/kronos_fincept/predictor.py` | Kronos 模型加载/缓存与推理封装（含本地 artifact 与 HF Hub 解析顺序） |
+| `src/kronos_fincept/security_utils.py` | Prompt 注入检测、context 白名单裁剪、模型 ID allowlist、Webhook SSRF 防护 |
+| `src/kronos_fincept/data_sources/` | 行情 provider 适配器与降级策略 |
+| `src/kronos_fincept/financial/` | 技术指标、风险、估值、组合、衍生品、AI 投顾等分析逻辑 |
 | `src/kronos_fincept/macro/` | 宏观 provider、统一信号、MacroDataManager 和缓存 |
 | `kronos_mcp/` | MCP server 与工具暴露 |
 | `web/` | Next.js 前端应用 |
+| `web/src/app/api/[...path]/route.ts` | Web 侧 API 代理（鉴权、Body 限制、内部 key 注入、超时控制） |
 | `crates/kronos-kernel/` | Rust 核心计算库 |
 | `crates/kronos-python/` | PyO3/maturin Python 扩展 |
 | `docs/` | API、CLI、部署、集成和架构文档 |
@@ -119,10 +122,36 @@
 
 ### 4.8 动态建议按钮
 
-- 分析和宏观洞察页面的示例问题按钮不再硬编码，改为通过 `GET /api/v1/suggestions?type=analysis|macro` 每 8 小时自动调用 LLM 生成。
+- 分析和宏观洞察页面通过 `GET /api/v1/suggestions?type=analysis|macro` 获取建议问题；服务端缓存 8 小时，前端 `sessionStorage` 也缓存 8 小时。
+- 缓存过期后后端优先调用 DeepSeek 生成新问题，OpenRouter 可作为兼容兜底；LLM 不可用时返回内置 fallback 问题。
 - 三层多样性保障：随机风味注入（12 种分析方向 + 12 种宏观方向）、历史去重（最近 3 次生成，重叠 >50% 重试）、最多 3 次重试循环。
 - 生成结果经 scope 正则校验（`ALLOWED_SCOPE_PATTERNS` / `MACRO_ALLOWED_PATTERNS`）+ prompt 注入检测，不合格直接丢弃。
-- 服务端内存缓存 8h + 客户端 sessionStorage 缓存 8h，LLM 调用失败自动回退硬编码默认值。
+- LLM 调用失败自动回退硬编码默认值。
+
+### 4.9 API 安全加固（公开部署基线）
+
+- 默认开启 API Key 认证：`/api/health` 公开，其它 `/api/*` 需 key（除非显式设置 `KRONOS_AUTH_DISABLED=1`）。
+- 角色分级：`KRONOS_API_KEYS` 为 user，`KRONOS_ADMIN_API_KEYS` / `KRONOS_INTERNAL_API_KEY(S)` 为 admin；`/api/alert*` 仅 admin 可访问。
+- docs 默认关闭：`KRONOS_ENABLE_API_DOCS=1` 才开放 `/docs`、`/redoc`、`/openapi.json`。
+- 请求体大小双层限制：`Content-Length` 与流式读取都受 `KRONOS_MAX_BODY_BYTES` 控制，超限返回 413。
+- 分类限流：按 `forecast/batch/backtest/llm/suggestions/data/alert/default` 分类，支持 `KRONOS_RATE_LIMIT_<CATEGORY>=count/window` 覆盖，`KRONOS_RATE_LIMIT_DISABLED=1` 可禁用。
+- Web API 代理不透传用户 `Cookie`/`Authorization`，改为注入内部 key 访问后端，降低前后端同容器部署的泄露面。
+- 输入安全：分析问题与 context 进行 prompt 注入检测；context 仅保留白名单字段并受 `KRONOS_MAX_CONTEXT_BYTES` 限制。
+- 模型安全：`model_id` 仅允许 `NeoQuasar/Kronos-mini|small|base`。
+- 告警安全：自定义 webhook/email 默认关闭（`KRONOS_ALLOW_CUSTOM_ALERT_CONTACTS`）；webhook 强制 `https` + host allowlist + DNS/IP SSRF 防护。
+
+### 4.10 Web 交互与移动端行为
+
+- Analysis/Macro 页面核心状态（问题、结果、历史、active run）持久化到 `sessionStorage`，切换路由后可恢复长任务结果与进度。
+- Header 新增移动端滚动隐藏/上滑唤出（`headerHidden`），并处理安全区（`mobile-safe-top/bottom`）与抽屉菜单 body 锁滚动。
+- `AppShell` 统一桌面侧栏偏移（`md:ml-60 / md:ml-16`）与移动端可视区域高度计算。
+- 图表容器在移动端启用 `touch-action: pan-y`，避免图表拖拽阻断页面纵向滚动。
+
+### 4.11 Kronos 权重加载路径策略
+
+- `predictor` 预训练资源解析顺序更新为：`external/<repo-suffix>` 本地工件目录 > HuggingFace 本地 cache snapshot > 远端 Hub 下载。
+- HuggingFace cache 根目录解析顺序：`HF_HUB_CACHE` > `HF_HOME/hub` > `~/.cache/huggingface/hub`。
+- 在 Zeabur/容器冷启动场景，优先命中本地卷/缓存，减少首请求拉取与超时风险。
 
 ---
 
@@ -131,7 +160,7 @@
 安装 Python 依赖：
 
 ```bash
-cd /mnt/e/AI_Projects/KronosFinceptLab
+cd <project-root>
 python -m venv .venv
 .venv/bin/python -m pip install -e .[dev,api,cli,deploy]
 ```
@@ -139,14 +168,14 @@ python -m venv .venv
 启动后端 API：
 
 ```bash
-cd /mnt/e/AI_Projects/KronosFinceptLab
-.venv/bin/python -m uvicorn kronos_fincept.api.main:app --host 0.0.0.0 --port 8000
+cd <project-root>
+.venv/bin/python -m uvicorn kronos_fincept.api.app:app --host 0.0.0.0 --port 8000
 ```
 
 启动前端：
 
 ```bash
-cd /mnt/e/AI_Projects/KronosFinceptLab/web
+cd <project-root>/web
 npm install
 npm run dev
 ```
@@ -154,10 +183,10 @@ npm run dev
 常用验证：
 
 ```bash
-cd /mnt/e/AI_Projects/KronosFinceptLab
+cd <project-root>
 .venv/bin/python -m pytest -q
 
-cd /mnt/e/AI_Projects/KronosFinceptLab/web
+cd <project-root>/web
 npm run lint
 npm run build
 ```
@@ -165,7 +194,7 @@ npm run build
 Docker：
 
 ```bash
-cd /mnt/e/AI_Projects/KronosFinceptLab
+cd <project-root>
 docker compose up --build
 ```
 
@@ -180,8 +209,15 @@ docker compose up --build
 | `.env` | 本地 API Key、模型、数据源、LLM provider 配置 |
 | `.env.example` | 示例配置模板 |
 | `config.toml` | 项目默认配置 |
-| `KRONOS_MODEL_ID` | Kronos 模型 ID |
-| `KRONOS_DEVICE` | 推理设备，默认可为 CPU |
+| `KRONOS_MODEL_ID` | Kronos 模型 ID（仅允许 mini/small/base） |
+| `KRONOS_REPO_PATH` | 上游 Kronos 代码路径（可选，未设置时回退 `external/Kronos`） |
+| `HF_HOME` / `HF_HUB_CACHE` / `HF_TOKEN` | HuggingFace 缓存与下载凭据 |
+| `KRONOS_AUTH_DISABLED` | 是否关闭 API 认证（公开部署不建议关闭） |
+| `KRONOS_API_KEYS` / `KRONOS_ADMIN_API_KEYS` / `KRONOS_INTERNAL_API_KEY(S)` | API 鉴权 key 与角色分级 |
+| `KRONOS_MAX_BODY_BYTES` | API 请求体大小限制 |
+| `KRONOS_RATE_LIMIT_*` | 各类 API 限流策略 |
+| `KRONOS_ENABLE_API_DOCS` | 是否开放 Swagger/OpenAPI 文档 |
+| `WEB_SEARCH_PROVIDER` / `WEB_SEARCH_API_KEY` / `WEB_SEARCH_ENDPOINT` | 网页检索 provider 配置（`custom` 需 endpoint） |
 | `PORT` / `API_PORT` | Web/API 端口 |
 | `INTERNAL_API_URL` | 前端服务访问后端的内部地址 |
 
@@ -194,9 +230,19 @@ docker compose up --build
 推荐验证顺序：
 
 1. `git status --short --branch` 检查本地改动和高风险未跟踪目录。
-2. Python focused tests 或全量 `pytest`。
-3. Web lint/build。
-4. API 健康检查。
+2. Python focused tests 或全量 `pytest`，至少包含 `tests/test_security_hardening.py`。
+3. Web `typecheck/lint/build`，并执行前端契约/冒烟测试。
+4. API 健康检查 + 受保护接口鉴权检查（401/403/429/413 场景）。
 5. 如启用真实模型，单独跑可选 Kronos smoke test，并把模型/torch 导入失败归类为环境问题。
 
 WSL/Windows 挂载目录中出现大量 Git 修改时，先用 `git diff --ignore-space-at-eol` 判断是否只是 CRLF/LF 噪声，不要直接重置用户改动。
+
+---
+
+## 8. 最近代码变更同步（截至 2026-05-13）
+
+- `ac0e333`：Kronos 预训练资源优先命中本地 `external/<artifact>`，再回退 HF cache/Hub，降低云端冷启动拉取风险。
+- `632db57`：引入统一 API 安全层（认证、限流、Body 限制、docs 默认关闭、alert 管理员权限、输入注入防护）并收敛 Web 代理头部策略。
+- `51e6e16`：优化 `AppShell/Header` 导航体验，移动端滚动隐藏头部与抽屉导航交互更稳定。
+- `0378cad`：Analysis/Macro 页面状态落盘到 `sessionStorage`，路由切换后可恢复报告与长任务状态。
+- `dd0e72f`：移动端图表容器增加 `touch-action: pan-y`，修复纵向滚动被图表手势劫持的问题。
