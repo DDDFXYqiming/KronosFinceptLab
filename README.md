@@ -2,52 +2,52 @@
 
 Version: v10.8.7
 
-独立的 Python + Rust + Web 金融量化分析平台，集成 Kronos K 线基础模型。
+An independent Python + Rust + Web quantitative finance analytics platform integrated with the Kronos candlestick foundation model.
 
-## 技术栈
+## Tech Stack
 
-- **后端**: FastAPI (Python 3.11+)
-- **Rust 加速**: Cargo workspace + PyO3/maturin（可选 native extension）
-- **前端**: Next.js + Tailwind CSS + Framer Motion + TradingView Lightweight Charts
-- **CLI**: Click（支持 Hermes Agent 远程调用）
+- **Backend**: FastAPI (Python 3.11+)
+- **Rust acceleration**: Cargo workspace + PyO3/maturin (optional native extension)
+- **Frontend**: Next.js + Tailwind CSS + Framer Motion + TradingView Lightweight Charts
+- **CLI**: Click (supports Hermes Agent remote invocation)
 
-## 数据源与模型
+## Data Sources and Models
 
-| 组件 | 名称 | 用途 |
+| Component | Name | Purpose |
 |---|---|---|
-| **数据源** | BaoStock | A 股日线数据（主数据源） |
-| | AkShare | A 股数据（被反爬，自动降级） |
-| | Yahoo Finance | 全球股票市场 |
-| | Binance | 加密货币（国际） |
-| | OKX | 加密货币（中国） |
-| **网页检索** | Tavily/Brave/Serper/custom | Agent 可选公开信息检索 |
-| **官方披露** | 巨潮资讯网 | A 股公告、定期报告、业绩预告、回购/分红等一手披露 |
-| **预测模型** | NeoQuasar/Kronos-base | 默认 K 线预测模型（CPU 推理） |
-| | NeoQuasar/Kronos-mini/base | 可选模型 |
+| **Market Data** | BaoStock | A-share daily data (primary source) |
+| | AkShare | A-share data (automatically degraded when anti-crawling is triggered) |
+| | Yahoo Finance | Global stock markets |
+| | Binance | Crypto assets (global) |
+| | OKX | Crypto assets (China) |
+| **Web Search** | Tavily/Brave/Serper/custom | Optional public information retrieval for the agent |
+| **Official Disclosures** | CNINFO (Juchao) | A-share announcements, periodic reports, interim forecasts, buybacks/dividends, etc. |
+| **Forecast Models** | NeoQuasar/Kronos-base | Default candlestick forecast model (CPU inference) |
+| | NeoQuasar/Kronos-mini/base | Optional model |
 | | NeoQuasar/Kronos-Tokenizer-base | Tokenizer |
-| **数据格式** | OHLCV | 开/高/低/收/量/额 |
+| **Data Format** | OHLCV | Open/High/Low/Close/Volume/Amount |
 
-## 上游项目
+## Upstream Projects
 
-- **Kronos**: https://github.com/shiyu-coder/Kronos — 金融 K 线基础模型
-- **FinceptTerminal**: https://github.com/Fincept-Corporation/FinceptTerminal — 金融终端（参考设计，不直接依赖）
-- **Digital Oracle**: https://github.com/komako-workshop/digital-oracle — 宏观金融信号与 provider 方法论（v10.1 起参考集成）
+- **Kronos**: https://github.com/shiyu-coder/Kronos — financial candlestick foundation model
+- **FinceptTerminal**: https://github.com/Fincept-Corporation/FinceptTerminal — financial terminal reference design, not directly depended on
+- **Digital Oracle**: https://github.com/komako-workshop/digital-oracle — macro signal and provider methodology (reference integration starting v10.1)
 
-宏观分析由 `MacroDataManager` 统一调度 Digital Oracle 风格 provider，当前覆盖预测市场、利率曲线、CFTC COT、链上/加密、SEC/EDGAR、BIS、WorldBank、Yahoo/期权、恐贪指数、FedWatch、网页检索、汇率、DBnomics 与 Stooq 等 17 类信号源。
+Macroeconomic analysis is coordinated by `MacroDataManager` in a Digital-Oracle-style provider flow, currently covering 17 signal types such as predicted market conditions, yield curves, CFTC COT, on-chain/crypto, SEC/EDGAR, BIS, WorldBank, Yahoo/options, fear & greed, FedWatch, web search, FX, DBnomics, Stooq, and more.
 
-## 三端能力对照
+## Capabilities Matrix
 
-| 能力 | Web | API | CLI |
+| Capability | Web | API | CLI |
 |---|---|---|---|
-| 行情获取 | `/data`, `/forecast` | `GET /api/data/*` | `kronos data fetch` |
-| Kronos 预测 | `/forecast`, `/batch` | `POST /api/forecast`, `POST /api/batch` | `kronos forecast`, `kronos batch` |
-| Agent 分析 | `/analysis` | `POST /api/v1/analyze/agent` | `kronos analyze agent` |
-| 宏观分析 | `/macro` + `/analysis` 按需融合 | `POST /api/v1/analyze/macro` | `kronos analyze macro` |
-| 风险/估值/组合 | `/analysis` 汇总展示 | `POST /api/v1/analyze/*` | `kronos analyze risk/dcf/portfolio` |
-| 回测 | `/backtest` | `POST /api/backtest/ranking` | `kronos backtest ranking` |
-| 健康检查 | Header 状态 | `GET /api/health` | `kronos serve` 后访问 health |
+| Market Data | `/data`, `/forecast` | `GET /api/data/*` | `kronos data fetch` |
+| Kronos Forecast | `/forecast`, `/batch` | `POST /api/forecast`, `POST /api/batch` | `kronos forecast`, `kronos batch` |
+| Agent Analysis | `/analysis` | `POST /api/v1/analyze/agent` | `kronos analyze agent` |
+| Macroeconomic Analysis | `/macro` with `/analysis` as needed | `POST /api/v1/analyze/macro` | `kronos analyze macro` |
+| Risk/Valuation/Portfolio | `/analysis` summarized view | `POST /api/v1/analyze/*` | `kronos analyze risk/dcf/portfolio` |
+| Backtest | `/backtest` | `POST /api/backtest/ranking` | `kronos backtest ranking` |
+| Health Check | Header status | `GET /api/health` | Access `health` after `kronos serve` |
 
-## 质量闸门
+## Quality Gates
 
 ```bash
 python -m pytest tests -q
@@ -59,19 +59,19 @@ npm run test:frontend
 npm run build
 npm run check:bundle
 
-# 本地 Web 已启动时执行
+# Run when local web is already started
 npm run smoke:pages
 ```
 
-## 快速开始
+## Quick Start
 
-### Windows（推荐）
+### Windows (recommended)
 
 ```bash
-# 使用 bat 脚本（自动配置环境）
+# Use the batch script (environment auto-configured)
 kronos.bat forecast --symbol 600036 --pred-len 5
 
-# 或手动配置（如需）
+# Or configure manually if needed
 set PYTHONPATH=src;external\Kronos
 set KRONOS_REPO_PATH=external\Kronos
 python scripts\win_launcher.py forecast --symbol 600036 --pred-len 5
@@ -80,96 +80,96 @@ python scripts\win_launcher.py forecast --symbol 600036 --pred-len 5
 ### WSL/Linux
 
 ```bash
-# 方式 1：一键安装（推荐，纯 WSL）
+# Option 1: one-click install (recommended for pure WSL)
 bash scripts/install_torch.sh
 source .venv/bin/activate
 
-# 方式 2：使用 Windows Python（推荐，无需安装 PyTorch）
+# Option 2: use Windows Python from WSL (recommended if no PyTorch installation needed)
 chmod +x kronos.sh
 ./kronos.sh forecast --symbol 600036 --pred-len 5 --sample-count 10
 
-# 手动指定 Python 路径（如自动检测失败）
-WIN_PYTHON=/mnt/c/Users/你的用户名/AppData/Local/Programs/Python/Python313/python.exe ./kronos.sh forecast ...
+# Manually specify Python path if auto-detection fails
+WIN_PYTHON=/mnt/c/Users/your-username/AppData/Local/Programs/Python/Python313/python.exe ./kronos.sh forecast ...
 ```
 
-**WSL 工作原理**：
-- `kronos.sh` 自动检测 Windows Python 路径
-- 将 WSL 路径转换为 Windows 路径（`/mnt/e/...` → `E:\...`）
-- 调用 `win_launcher.py` 配置环境变量后执行 CLI
-- 数据源（BaoStock/Yahoo）从 WSL 网络获取
+**How WSL works**:
+- `kronos.sh` auto-detects the Windows Python path
+- Converts WSL paths to Windows paths (`/mnt/e/...` -> `E:\...`)
+- Calls `win_launcher.py` to configure environment variables and execute CLI
+- Market data (BaoStock/Yahoo) is fetched over WSL network access
 
-### CLI（通用）
+### CLI (common)
 
 ```bash
-# 安装
+# Install
 pip install -e .
 
-# 单资产预测（dry-run）
+# Single-asset forecast (dry-run)
 kronos forecast --symbol 600036 --pred-len 5 --dry-run
 
-# 单资产预测（真实推理）
+# Single-asset forecast (real inference)
 kronos forecast --symbol 600036 --pred-len 5
 
-# 概率预测（Monte Carlo 采样）
+# Probabilistic forecast (Monte Carlo sampling)
 kronos forecast --symbol 600036 --pred-len 5 --sample-count 10
 
-# 批量预测
+# Batch forecast
 kronos batch --symbols 600036,000858,000001 --pred-len 5
 
-# 获取数据
+# Fetch data
 kronos data fetch --symbol 600036 --start 20240101 --end 20260429
 
-# 策略回测
+# Strategy backtest
 kronos backtest ranking --symbols 600036,000858 --start 20240101 --end 20260429
 
-# 策略回测并生成 HTML 报告
+# Strategy backtest with HTML report
 kronos backtest ranking --symbols 600036,000858 --start 20240101 --end 20260429 --report
 
-# AI 分析（A股）
+# AI analysis (A-shares)
 kronos analyze ai-analyze --symbol 600036 --market cn
 
-# 自然语言 Agent 分析
-kronos analyze agent --question "帮我看看招商银行现在能不能买"
+# Natural-language agent analysis
+kronos analyze agent --question "Can you tell me if China Merchants Bank is a good buy now?"
 
-# AI 分析（美股）
+# AI analysis (US stocks)
 kronos analyze ai-analyze --symbol AAPL --market us
 
-# 添加告警规则
+# Add alert rule
 kronos alert add --type price_change --symbol 600036 --threshold 3.0
 
-# 查看告警规则
+# List alert rules
 kronos alert list
 
-# 检查所有告警
+# Run alert check
 kronos alert check
 
-# 启动持续监控
+# Start continuous monitoring
 kronos alert monitor --interval 5
 
-# 启动 API 服务
+# Start API service
 kronos serve --port 8000
 ```
 
-### API 服务
+### API Service
 
 ```bash
-# 启动
+# Start
 kronos serve --host 0.0.0.0 --port 8000
 
-# 访问 Swagger UI
+# Open Swagger UI
 open http://localhost:8000/docs
 ```
 
-### Web 前端
+### Web Frontend
 
 ```bash
 cd web
 npm install
 npm run dev
-# 访问 http://localhost:3000
+# Open http://localhost:3000
 ```
 
-## 测试
+## Testing
 
 ```bash
 python -m pytest tests -q
@@ -177,9 +177,9 @@ cd web && npm run typecheck && npm run lint && npm run test:frontend
 cd web && npm run build && npm run check:bundle
 ```
 
-## 日志与运维
+## Logging and Operations
 
-本地默认日志写入 `logs/kronos-YYYYMMDD.log`，同时输出到 stderr；容器化部署建议使用 JSON stdout 并禁用容器内文件日志。常用配置：
+By default, logs are written to `logs/kronos-YYYYMMDD.log` and also emitted to stderr. For containerized deployments, JSON stdout is recommended and in-container file logging should be disabled. Common settings:
 
 ```bash
 KRONOS_LOG_LEVEL=DEBUG
@@ -190,35 +190,35 @@ KRONOS_LOG_RETENTION_DAYS=14
 KRONOS_LOG_MAX_BYTES=10485760
 ```
 
-查看日志：
+Check logs:
 
 ```bash
 # PowerShell
 Get-Content logs\kronos-*.log -Tail 100
 
-# JSON Lines 模式下每一行都是独立 JSON
+# With JSON Lines format, each line is an independent JSON object
 Get-Content logs\kronos-*.log -Tail 10
 ```
 
-清理历史日志可直接删除 `logs/` 下旧文件；目录已被 git 忽略。API 错误响应会返回 `request_id`，可用该 ID 在日志里定位完整异常栈。前端会自动发送 `X-Request-ID`；需要串联一次全功能测试时，可在浏览器 sessionStorage 写入 `kronos-test-run-id`，或构建时配置 `NEXT_PUBLIC_TEST_RUN_ID`，后端日志会输出对应 `test_run_id`。
+To clean old logs, delete outdated files under `logs/` directly; the directory is already ignored by git. API error responses include `request_id`, which can be used to locate the full exception stack in logs. The frontend automatically sends `X-Request-ID`; for full end-to-end validation runs, write `kronos-test-run-id` to browser sessionStorage or set `NEXT_PUBLIC_TEST_RUN_ID` at build time so backend logs will include the matching `test_run_id`.
 
-### Rust native 加速（可选）
+### Rust Native Acceleration (optional)
 
-首次配置 Windows Rust 环境：
+First-time Windows Rust setup:
 
 ```powershell
-# 安装 Rust 工具链
+# Install Rust toolchain
 Invoke-WebRequest -Uri https://win.rustup.rs/x86_64 -OutFile $env:TEMP\rustup-init.exe
 & $env:TEMP\rustup-init.exe -y --profile minimal --default-host x86_64-pc-windows-gnu --default-toolchain stable-x86_64-pc-windows-gnu
 
-# 安装 GNU linker（如系统没有 gcc）
+# Install GNU linker (if gcc is not present)
 winget install --id BrechtSanders.WinLibs.POSIX.MSVCRT -e --accept-source-agreements --accept-package-agreements --silent
 
-# 安装 Python 构建工具
+# Install Python build utilities
 python -m pip install maturin
 ```
 
-构建并启用 native extension：
+Build and enable native extension:
 
 ```powershell
 $mingwBin = (Get-ChildItem -Path $env:LOCALAPPDATA\Microsoft\WinGet\Packages -Recurse -Filter gcc.exe | Select-Object -First 1).Directory.FullName
@@ -234,22 +234,22 @@ python -m pytest tests/test_rust_native_bridge.py -v
 python scripts/benchmark_rust_native.py
 ```
 
-## CLI JSON 字段
+## CLI JSON Parameters
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| symbol | string | required | 资产代码 |
-| timeframe | string | "1d" | K 线周期 |
-| pred_len | int | required | 预测 K 线数 |
-| dry_run | bool | false | 使用 dry-run 预测器 |
-| model_id | string | NeoQuasar/Kronos-base | 模型 ID |
-| temperature | float | 1.0 | 采样温度 |
-| top_k | int | 0 | Top-k 过滤 |
-| top_p | float | 0.9 | 核采样阈值 |
-| sample_count | int | 1 | 并行采样数 |
+| Field | Type | Default | Description |
+|------|------|--------|-------------|
+| symbol | string | required | Asset symbol |
+| timeframe | string | "1d" | K-line timeframe |
+| pred_len | int | required | Number of predicted K-lines |
+| dry_run | bool | false | Use dry-run predictor |
+| model_id | string | NeoQuasar/Kronos-base | Model ID |
+| temperature | float | 1.0 | Sampling temperature |
+| top_k | int | 0 | Top-k filtering |
+| top_p | float | 0.9 | Nucleus sampling threshold |
+| sample_count | int | 1 | Parallel sample count |
 
-## 输出格式
+## Output Format
 
-成功响应：`ok`, `symbol`, `timeframe`, `model_id`, `pred_len`, `forecast`, `metadata`
+Successful response: `ok`, `symbol`, `timeframe`, `model_id`, `pred_len`, `forecast`, `metadata`
 
-所有预测结果仅为研究用途，不构成投资建议。
+All prediction outputs are for research purposes only and do not constitute investment advice.
