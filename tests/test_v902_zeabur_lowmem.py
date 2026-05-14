@@ -24,7 +24,8 @@ def test_dockerfile_defaults_to_single_kronos_base_runtime_with_light_health():
     assert "KRONOS_PREWARM_ON_STARTUP=1" in dockerfile
     assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
     assert 'pip install --no-cache-dir -e ".[deploy]"' in dockerfile
-    assert 'pip install --no-cache-dir -e ".[kronos]"' in dockerfile
+    assert 'pip install --no-cache-dir -e ".[deploy,kronos]"' in dockerfile
+    assert "pip install --no-cache-dir -e ." not in dockerfile.replace(".[deploy,kronos]", "").replace(".[deploy]", "")
 
     for env_name in [
         "MALLOC_ARENA_MAX=2",

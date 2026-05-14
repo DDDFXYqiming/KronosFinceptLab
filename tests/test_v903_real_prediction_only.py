@@ -18,7 +18,7 @@ def test_zeabur_production_disables_dry_run_and_installs_real_kronos_runtime():
     assert "KRONOS_ENABLE_REAL_MODEL=1" in dockerfile
     assert "KRONOS_ALLOW_DRY_RUN=0" in dockerfile
     assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
-    assert 'pip install --no-cache-dir -e ".[kronos]"' in dockerfile
+    assert 'pip install --no-cache-dir -e ".[deploy,kronos]"' in dockerfile
 
 
 def test_web_forecast_and_backtest_do_not_request_dry_run():
