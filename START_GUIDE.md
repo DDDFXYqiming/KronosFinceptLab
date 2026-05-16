@@ -1,25 +1,25 @@
-# KronosFinceptLab 启动指南
+# KronosFinceptLab Startup Guide
 
-## Windows 双击启动（推荐）
+## Windows (Double-click)
 
-直接双击 `start.bat` 文件即可一键启动：
+Simply double-click `start.bat` to launch both services:
 
-1. **API 后端** — 在新窗口中运行于 http://localhost:8000
-2. **Web 前端** — 在新窗口中运行于 http://localhost:3000
+1. **API Backend** — Runs at http://localhost:8000 (new window)
+2. **Web Frontend** — Runs at http://localhost:3000 (new window)
 
-启动完成后会自动打开浏览器。
+A browser will open automatically once started.
 
-## WSL/Linux 命令行启动
+## WSL/Linux
 
 ```bash
 ./start.sh
 ```
 
-按 `Ctrl+C` 停止所有服务。
+Press `Ctrl+C` to stop all services.
 
-## 手动启动
+## Manual Startup
 
-### 启动 API 后端
+### Start API Backend
 
 ```bash
 # Windows
@@ -30,45 +30,45 @@ python -m kronos_fincept.api.app
 PYTHONPATH=src python3 -m kronos_fincept.api.app
 ```
 
-### 启动 Web 前端
+### Start Web Frontend
 
 ```bash
 cd web
-npm install  # 首次运行需要
+npm install  # first time only
 npm run dev
 ```
 
-## 访问地址
+## Access URLs
 
-| 服务 | 地址 |
-|------|------|
-| Web 前端 | http://localhost:3000 |
-| API 后端 | http://localhost:8000 |
-| API 文档 | http://localhost:8000/docs |
+| Service | URL |
+|---------|-----|
+| Web Frontend | http://localhost:3000 |
+| API Backend | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
 
-## 停止服务
+## Stopping Services
 
 ### Windows
-- 关闭 "KronosFinceptLab API" 和 "KronosFinceptLab Web" 两个命令行窗口
+- Close the "KronosFinceptLab API" and "KronosFinceptLab Web" command windows
 
 ### WSL/Linux
-- 在运行 `start.sh` 的终端按 `Ctrl+C`
+- Press `Ctrl+C` in the terminal running `start.sh`
 
-## 常见问题
+## Troubleshooting
 
-### 端口被占用
-如果端口 8000 或 3000 被占用，可以：
-- 关闭占用端口的程序
-- 或修改启动脚本中的端口号
+### Port Already in Use
+If ports 8000 or 3000 are occupied:
+- Close the program using the port
+- Or modify the port numbers in the startup script
 
-### Python 找不到
-确保 Python 3.11+ 已安装并添加到 PATH 环境变量。
+### Python Not Found
+Ensure Python 3.11+ is installed and added to PATH.
 
-### Node.js 找不到
-确保 Node.js 18+ 已安装并添加到 PATH 环境变量。
+### Node.js Not Found
+Ensure Node.js 18+ is installed and added to PATH.
 
-### npm install 失败
-尝试清除缓存：
+### npm install Fails
+Try clearing the cache:
 ```bash
 cd web
 rm -rf node_modules package-lock.json
