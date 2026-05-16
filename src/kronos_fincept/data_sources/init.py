@@ -37,8 +37,8 @@ def init_data_sources(cache_dir: str = ".cache",
     """
     manager = get_manager(cache_dir)
 
-    # 按优先级注册数据源
-    # 优先级数字越小，优先级越高
+    # Register data sources by priority
+    # Lower priority number = higher priority
 
     if enable_akshare:
         try:
@@ -103,7 +103,7 @@ def get_stock_history(symbol: str, period: str = "daily",
     """
     manager = get_manager()
 
-    # 默认日期
+    # Default dates
     if not end_date:
         from datetime import datetime
         end_date = datetime.now().strftime('%Y%m%d')
@@ -159,6 +159,6 @@ def get_data_source_status() -> dict:
 
 
 def reset_data_sources():
-    """重置所有数据源状态"""
+    """Reset all data source status"""
     manager = get_manager()
     manager.reset_all()

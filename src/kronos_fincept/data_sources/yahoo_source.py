@@ -1,6 +1,6 @@
 """
-Yahoo Finance 数据源适配器
-支持全球股票市场数据
+Yahoo Finance data source adapter
+Supports global stock market data
 """
 
 import time
@@ -11,7 +11,7 @@ from . import DataSource, DataSourceConfig, DataSourceStatus
 
 
 class YahooFinanceSource(DataSource):
-    """Yahoo Finance 数据源"""
+    """Yahoo Finance data source"""
 
     supported_endpoints = {
         "stock_zh_a_hist",
@@ -33,7 +33,7 @@ class YahooFinanceSource(DataSource):
         self._yf = None
 
     def _get_yf(self):
-        """懒加载 yfinance"""
+        """Lazy-load yfinance"""
         if self._yf is None:
             try:
                 import yfinance as yf
@@ -44,20 +44,20 @@ class YahooFinanceSource(DataSource):
 
     def _normalize_symbol(self, symbol: str, market: str = "auto") -> str:
         """
-        标准化股票代码为 Yahoo Finance 格式
+        Normalize stock symbol to Yahoo Finance format
 
         Args:
-            symbol: 股票代码（如 '601398'）
-            market: 市场（'auto', 'cn', 'hk', 'us'）
+            symbol: Stock symbol (e.g. '601398')
+            market: Market ('auto', 'cn', 'hk', 'us')
 
         Returns:
-            Yahoo Finance 格式的代码
+            Yahoo Finance formatted symbol
         """
-        # 如果已经包含后缀，直接返回
+        # If already has a suffix, return as-is
         if '.' in symbol or '-' in symbol:
             return symbol
 
-        # 自动检测市场
+        # Auto-detect market
         if market == "auto":
             if symbol.startswith('6'):
                 market = 'cn_sh'
@@ -68,23 +68,23 @@ class YahooFinanceSource(DataSource):
             else:
                 market = 'us'
 
-        # 根据市场添加后缀
+        # Add suffix based on market
         if market == 'cn_sh':
-            return f"{symbol}.SS"  # 上海
+            return f"{symbol}.SS"  # Shanghai
         elif market == 'cn_sz':
-            return f"{symbol}.SZ"  # 深圳
+            return f"{symbol}.SZ"  # Shenzhen
         elif market == 'hk':
-            return f"{symbol}.HK"  # 香港
+            return f"{symbol}.HK"  # Hong Kong
         else:
-            return symbol  # 美股不需要后缀
+            return symbol  # US stocks need no suffix
 
     def fetch(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """
-        获取数据
+        Fetch data
 
         Args:
-            endpoint: 数据端点
-            **kwargs: 传递给 yfinance 的参数
+            endpoint: Data endpoint
+            **kwargs: Parameters passed to yfinance
 
         Returns:
             {
@@ -101,20 +101,20 @@ class YahooFinanceSource(DataSource):
             data = None
 
             if endpoint == "stock_zh_a_hist":
-                # 获取历史 K 线数据
+                # Fetch historical K-line data
                 symbol = kwargs.get("symbol", "")
                 yahoo_symbol = self._normalize_symbol(symbol)
 
                 start_date = kwargs.get("start_date", "2020-01-01")
                 end_date = kwargs.get("end_date", datetime.now().strftime('%Y-%m-%d'))
 
-                # 转换日期格式
+                # Convert date format
                 if len(start_date) == 8:
                     start_date = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
                 if len(end_date) == 8:
                     end_date = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
 
-                # 获取数据
+                # Fetch data
                 ticker = yf.Ticker(yahoo_symbol)
                 hist = ticker.history(start=start_date, end=end_date)
 
@@ -127,7 +127,7 @@ class YahooFinanceSource(DataSource):
                         "timestamp": int(datetime.now().timestamp())
                     }
 
-                # 转换为与 AkShare 兼容的格式
+                # Convert to AkShare-compatible format
                 data = []
                 for index, row in hist.iterrows():
                     data.append({
@@ -142,11 +142,11 @@ class YahooFinanceSource(DataSource):
                         "振幅": round((row['High'] - row['Low']) / row['Open'] * 100, 2),
                         "涨跌幅": round(row.get('Change', 0), 2),
                         "涨跌额": round(row['Close'] - row['Open'], 2),
-                        "换手率": 0  # Yahoo Finance 不提供
+                        "换手率": 0  # Not provided by Yahoo Finance
                     })
 
             elif endpoint == "stock_info_a_code_name":
-                # Yahoo Finance 不支持获取 A 股列表
+                # Yahoo Finance does not support fetching A-share list
                 return {
                     "success": False,
                     "data": None,
@@ -156,7 +156,7 @@ class YahooFinanceSource(DataSource):
                 }
 
             elif endpoint == "stock_individual_info_em":
-                # 获取单个股票信息
+                # Fetch individual stock info
                 symbol = kwargs.get("symbol", "")
                 yahoo_symbol = self._normalize_symbol(symbol)
 

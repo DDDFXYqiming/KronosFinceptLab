@@ -57,18 +57,18 @@ class BaoStockFinancialSource(FinancialDataSource):
         try:
             bs_symbol = self._convert_symbol(symbol)
             
-            # 直接调用 baostock 库查询盈利数据
+            # Query profit data directly via baostock API
             bs = self.baostock._get_bs()
             self.baostock._login()
             
-            # 查询盈利能力数据
+            # Query profitability data
             rs = bs.query_profit_data(code=bs_symbol, year=2025, quarter=4)
             rows = []
             while rs.next():
                 rows.append(rs.get_row_data())
             
             if not rows:
-                # 尝试 2024 年数据
+                # Try 2024 data
                 rs = bs.query_profit_data(code=bs_symbol, year=2024, quarter=4)
                 while rs.next():
                     rows.append(rs.get_row_data())
@@ -76,10 +76,10 @@ class BaoStockFinancialSource(FinancialDataSource):
             if not rows:
                 return []
             
-            # 取最新的数据
+            # Take the most recent data
             row = rows[-1]
             
-            # 字段映射：
+            # Field mapping:
             # row[0] = code, row[1] = pubDate, row[2] = statDate
             # row[3] = roeAvg, row[4] = npMargin, row[5] = gpMargin
             # row[6] = netProfit, row[7] = epsTTM, row[8] = MBRevenue

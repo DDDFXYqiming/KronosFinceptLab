@@ -198,7 +198,7 @@ class TestData:
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
-        # "招商银行" should match
+        # "China Merchants Bank" should match
         assert len(data["results"]) >= 1
         assert any(r["code"] == "600036" for r in data["results"])
 

@@ -14,7 +14,7 @@ def test_dockerfile_does_not_persist_hf_token_env():
 
 
 def test_env_example_has_hf_token():
-    """测试 .env.example 包含 HF_TOKEN 配置项"""
+    """.env.example must contain HF_TOKEN config item"""
     with open(".env.example", "r", encoding="utf-8") as f:
         content = f.read()
     assert "HF_TOKEN" in content, ".env.example 缺少 HF_TOKEN 配置项"
@@ -22,7 +22,7 @@ def test_env_example_has_hf_token():
 
 
 def test_readme_excludes_zeabur_and_hf_token_deploy_docs():
-    """README 不再承载 Zeabur/HF_TOKEN 部署说明。"""
+    """README no longer carries Zeabur/HF_TOKEN deployment instructions."""
     with open("README.md", "r", encoding="utf-8") as f:
         content = f.read()
     assert "Zeabur" not in content

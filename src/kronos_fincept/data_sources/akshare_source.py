@@ -1,6 +1,6 @@
 """
-AkShare 数据源适配器
-支持 A 股、港股、美股等市场数据
+AkShare data source adapter
+Supports A-shares, Hong Kong stocks, US stocks and other market data
 """
 
 import time
@@ -11,7 +11,7 @@ from . import DataSource, DataSourceConfig, DataSourceStatus
 
 
 class AkShareSource(DataSource):
-    """AkShare 数据源"""
+    """AkShare data source"""
 
     supported_endpoints = {
         "stock_zh_a_hist",
@@ -35,7 +35,7 @@ class AkShareSource(DataSource):
         self._ak = None
 
     def _get_ak(self):
-        """懒加载 AkShare"""
+        """Lazy-load AkShare"""
         if self._ak is None:
             try:
                 import akshare as ak
@@ -46,11 +46,11 @@ class AkShareSource(DataSource):
 
     def fetch(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """
-        获取数据
+        Fetch data
 
         Args:
-            endpoint: 数据端点（如 'stock_zh_a_hist'）
-            **kwargs: 传递给 AkShare 函数的参数
+            endpoint: Data endpoint (e.g. 'stock_zh_a_hist')
+            **kwargs: Parameters passed to the AkShare function
 
         Returns:
             {
@@ -64,7 +64,7 @@ class AkShareSource(DataSource):
         try:
             ak = self._get_ak()
 
-            # 获取 AkShare 函数
+            # Get the AkShare function
             func = getattr(ak, endpoint, None)
             if func is None:
                 return {
@@ -75,12 +75,12 @@ class AkShareSource(DataSource):
                     "timestamp": int(datetime.now().timestamp())
                 }
 
-            # 调用函数
+            # Call the function
             start_time = time.time()
             result = func(**kwargs)
             elapsed = time.time() - start_time
 
-            # 处理结果
+            # Process the result
             if result is None:
                 return {
                     "success": False,
@@ -90,11 +90,11 @@ class AkShareSource(DataSource):
                     "timestamp": int(datetime.now().timestamp())
                 }
 
-            # 转换 DataFrame 为字典
+            # Convert DataFrame to dict
             if hasattr(result, 'to_dict'):
-                # 处理 DataFrame
+                # Handle DataFrame
                 import pandas as pd
-                # 替换 NaN/Infinity 为 None
+                # Replace NaN/Infinity with None
                 result = result.replace([float("inf"), float("-inf")], None)
                 result = result.where(pd.notna(result), None)
                 data = result.to_dict(orient='records')
@@ -122,26 +122,26 @@ class AkShareSource(DataSource):
             }
 
 
-# 便捷函数
+# Convenience functions
 def get_stock_history(symbol: str, period: str = "daily",
                       start_date: str = None, end_date: str = None,
                       adjust: str = "") -> Dict[str, Any]:
     """
-    获取股票历史数据
+    Get stock historical data
 
     Args:
-        symbol: 股票代码（如 '601398'）
-        period: 周期（'daily', 'weekly', 'monthly'）
-        start_date: 开始日期（'YYYYMMDD'）
-        end_date: 结束日期（'YYYYMMDD'）
-        adjust: 复权方式（'qfq', 'hfq', ''）
+        symbol: Stock code (e.g. '601398')
+        period: Period ('daily', 'weekly', 'monthly')
+        start_date: Start date ('YYYYMMDD')
+        end_date: End date ('YYYYMMDD')
+        adjust: Adjustment method ('qfq', 'hfq', '')
 
     Returns:
-        数据源管理器返回的结果
+        Result from the data source manager
     """
     from . import get_manager
 
-    # 默认日期
+    # Default dates
     if not end_date:
         end_date = datetime.now().strftime('%Y%m%d')
     if not start_date:
@@ -160,25 +160,25 @@ def get_stock_history(symbol: str, period: str = "daily",
 
 def get_stock_realtime(symbol: str = None) -> Dict[str, Any]:
     """
-    获取股票实时数据
+    Get stock real-time data
 
     Args:
-        symbol: 股票代码（可选，不传则获取所有）
+        symbol: Stock code (optional, gets all if omitted)
 
     Returns:
-        数据源管理器返回的结果
+        Result from the data source manager
     """
     from . import get_manager
 
     manager = get_manager()
 
     if symbol:
-        # 获取单个股票
+        # Get single stock
         return manager.fetch(
             endpoint='stock_zh_a_spot_em'
         )
     else:
-        # 获取所有股票
+        # Get all stocks
         return manager.fetch(
             endpoint='stock_zh_a_spot_em'
         )
@@ -186,13 +186,13 @@ def get_stock_realtime(symbol: str = None) -> Dict[str, Any]:
 
 def get_stock_info(symbol: str) -> Dict[str, Any]:
     """
-    获取股票基本信息
+    Get stock basic information
 
     Args:
-        symbol: 股票代码
+        symbol: Stock code
 
     Returns:
-        数据源管理器返回的结果
+        Result from the data source manager
     """
     from . import get_manager
 

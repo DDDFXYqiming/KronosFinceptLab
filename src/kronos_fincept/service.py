@@ -38,10 +38,10 @@ def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
         normalized: dict[str, Any] = {}
         for key, value in record.items():
             if key == "timestamp":
-                # 预测结果使用 D1~D5 格式，不输出具体日期
+                # Prediction results use D1~D5 format, don't output specific dates
                 normalized[key] = f"D{idx}"
             elif key == "index":
-                # 跳过原始日期索引，不输出
+                # Skip original date index, don't output
                 continue
             else:
                 try:

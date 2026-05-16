@@ -1,83 +1,83 @@
-# Kronos 模型服务 - Windows 使用指南
+# Kronos Model Service - Windows Guide
 
-## 概述
+## Overview
 
-Kronos 模型服务已部署到 Windows 系统，可以通过以下方式使用：
+The Kronos model service is deployed on Windows and can be used via:
 
-1. **FinceptTerminal PythonRunner** - 直接在 FinceptTerminal 中调用
-2. **命令行工具** - 通过批处理脚本调用
-3. **MCP 服务器** - 供 AI Agent 调用
+1. **FinceptTerminal PythonRunner** - Call directly from FinceptTerminal
+2. **Command-line tools** - Via batch scripts
+3. **MCP Server** - For AI Agent integration
 
-## 环境要求
+## Requirements
 
-- **操作系统**: Windows 10/11
-- **Python**: 3.13.6 (已安装)
-- **PyTorch**: 2.11.0 (已安装)
-- **存储空间**: 约 500MB (模型文件)
+- **OS**: Windows 10/11
+- **Python**: 3.13.6 (pre-installed)
+- **PyTorch**: 2.11.0 (pre-installed)
+- **Storage**: ~500MB (model files)
 
-## 模型位置
+## Model Location
 
 ```
 E:\AI_Projects\KronosFinceptLab\external\
-├── Kronos\                    # Kronos 上游代码
-├── Kronos-base\              # Kronos-base 模型 (98MB)
-├── Kronos-Tokenizer-base\     # 分词器 (15MB)
-├── hub\                       # HuggingFace Hub 缓存
-└── xet\                       # 其他缓存
+├── Kronos\                    # Kronos upstream source
+├── Kronos-base\              # Kronos-base model (98MB)
+├── Kronos-Tokenizer-base\     # Tokenizer (15MB)
+├── hub\                       # HuggingFace Hub cache
+└── xet\                       # Other caches
 ```
 
-## 快速开始
+## Quick Start
 
-### 方法 1: 使用批处理脚本 (推荐)
+### Method 1: Using Batch Scripts (Recommended)
 
 ```batch
-# 进入 FinceptTerminal 脚本目录
+# Enter FinceptTerminal scripts directory
 cd E:\FinceptTerminal\scripts
 
-# 运行测试预测
+# Run test forecast
 run_kronos_forecast.bat --test
 
-# 从文件输入
+# Input from file
 run_kronos_forecast.bat --input request.json
 
-# 从标准输入
+# Input from stdin
 echo {"symbol":"600036",...} | run_kronos_forecast.bat --stdin
 ```
 
-### 方法 2: 使用主项目脚本
+### Method 2: Using Project Scripts
 
 ```batch
-# 进入项目目录
+# Enter project directory
 cd E:\AI_Projects\KronosFinceptLab
 
-# 运行测试
+# Run test
 kronos_forecast.bat --test
 
-# 运行批量预测
+# Run batch forecast
 kronos_forecast.bat --batch
 
-# 启动 MCP 服务器
+# Start MCP server
 kronos_forecast.bat --mcp
 ```
 
-### 方法 3: 手动设置环境变量
+### Method 3: Manual Environment Setup
 
 ```batch
-# 设置环境变量
+# Set environment variables
 set KRONOS_REPO_PATH=E:\AI_Projects\KronosFinceptLab\external\Kronos
 set HF_HOME=E:\AI_Projects\KronosFinceptLab\external
 set PYTHONPATH=E:\AI_Projects\KronosFinceptLab\src
 
-# 进入脚本目录
+# Enter scripts directory
 cd E:\FinceptTerminal\scripts
 
-# 运行预测
+# Run forecast
 python kronos_forecast.py --input request.json
 ```
 
-## 输入格式
+## Input Format
 
-### 单资产预测
+### Single-Asset Forecast
 
 ```json
 {
@@ -100,7 +100,7 @@ python kronos_forecast.py --input request.json
 }
 ```
 
-### 批量预测
+### Batch Forecast
 
 ```json
 {
@@ -119,7 +119,7 @@ python kronos_forecast.py --input request.json
 }
 ```
 
-## 输出格式
+## Output Format
 
 ```json
 {
@@ -149,27 +149,27 @@ python kronos_forecast.py --input request.json
 }
 ```
 
-## 在 FinceptTerminal 中使用
+## Usage in FinceptTerminal
 
-### 1. PythonRunner 调用
+### 1. Via PythonRunner
 
-FinceptTerminal 的 PythonRunner 可以直接调用 `kronos_forecast.py`:
+FinceptTerminal's PythonRunner can call `kronos_forecast.py` directly:
 
 ```python
-# 在 FinceptTerminal 的 Python 脚本中
+# Inside a FinceptTerminal Python script
 import subprocess
 import json
 
-# 准备输入数据
+# Prepare input data
 input_data = {
     "symbol": "600036",
     "timeframe": "1d",
     "pred_len": 5,
     "dry_run": False,
-    "rows": [...]  # 历史 K 线数据
+    "rows": [...]  # Historical K-line data
 }
 
-# 调用 Kronos 预测
+# Call Kronos forecast
 result = subprocess.run(
     ["python", "kronos_forecast.py"],
     input=json.dumps(input_data),
@@ -178,17 +178,17 @@ result = subprocess.run(
     cwd="E:\\FinceptTerminal\\scripts"
 )
 
-# 解析输出
+# Parse output
 if result.returncode == 0:
     forecast = json.loads(result.stdout)
-    print(f"预测结果: {forecast}")
+    print(f"Forecast result: {forecast}")
 else:
-    print(f"错误: {result.stderr}")
+    print(f"Error: {result.stderr}")
 ```
 
-### 2. Agent 调用
+### 2. Via Agent
 
-FinceptTerminal 的 Agent 可以通过 MCP 协议调用 Kronos:
+FinceptTerminal's Agent can invoke Kronos through the MCP protocol:
 
 ```json
 {
@@ -201,93 +201,93 @@ FinceptTerminal 的 Agent 可以通过 MCP 协议调用 Kronos:
 }
 ```
 
-## 故障排除
+## Troubleshooting
 
-### 1. Python 未找到
-
-```
-错误: 未找到 Python
-```
-
-**解决方案**: 确保 Python 3.13.6 已安装并添加到 PATH。
-
-### 2. PyTorch 未找到
+### 1. Python Not Found
 
 ```
-错误: 未找到 PyTorch
+Error: Python not found
 ```
 
-**解决方案**: 安装 PyTorch:
+**Solution**: Ensure Python 3.13.6 is installed and added to PATH.
+
+### 2. PyTorch Not Found
+
+```
+Error: PyTorch not found
+```
+
+**Solution**: Install PyTorch:
 ```batch
 pip install torch torchvision torchaudio
 ```
 
-### 3. kronos_fincept 包未找到
+### 3. kronos_fincept Package Not Found
 
 ```
-错误: 未找到 kronos_fincept 包
+Error: kronos_fincept package not found
 ```
 
-**解决方案**: 安装包:
+**Solution**: Install the package:
 ```batch
 cd E:\AI_Projects\KronosFinceptLab
 pip install -e .
 ```
 
-### 4. 模型加载失败
+### 4. Model Loading Failed
 
 ```
-错误: 无法加载模型
+Error: Unable to load model
 ```
 
-**解决方案**: 
-1. 检查模型文件是否存在
-2. 检查 `KRONOS_REPO_PATH` 环境变量
-3. 检查网络连接 (首次运行需要下载模型)
+**Solution**:
+1. Check if model files exist
+2. Check the `KRONOS_REPO_PATH` environment variable
+3. Check network connectivity (first run requires model download)
 
-### 5. 内存不足
+### 5. Out of Memory
 
 ```
-错误: 内存不足
+Error: Out of memory
 ```
 
-**解决方案**:
-1. 使用 `Kronos-mini` 模型 (更小)
-2. 减少 `pred_len` 参数
-3. 增加系统内存
+**Solution**:
+1. Use the `Kronos-mini` model (smaller footprint)
+2. Reduce the `pred_len` parameter
+3. Increase system memory
 
-## 性能优化
+## Performance Optimization
 
-### 1. 使用 GPU (如果可用)
+### 1. Use GPU (If Available)
 
 ```batch
-# 检查 CUDA 是否可用
+# Check CUDA availability
 python -c "import torch; print(torch.cuda.is_available())"
 ```
 
-如果 CUDA 可用，PyTorch 会自动使用 GPU。
+If CUDA is available, PyTorch will automatically use the GPU.
 
-### 2. 缓存模型
+### 2. Model Caching
 
-首次运行会下载模型，后续运行会使用缓存。
+The model is downloaded on first run; subsequent runs use the cached version.
 
-### 3. 批量处理
+### 3. Batch Processing
 
-使用 `batch_forecast_ohlcv` 可以批量处理多个资产，效率更高。
+Use `batch_forecast_ohlcv` for multi-asset batch processing — significantly more efficient.
 
-## 安全注意事项
+## Security Notes
 
-1. **仅用于研究**: 所有预测结果仅用于研究/回测/纸交易
-2. **不用于实盘**: 不要将预测结果用于真实交易
-3. **风险自担**: 使用 Kronos 预测的风险由用户自行承担
+1. **Research only**: All forecasts are for research, backtesting, and paper trading only
+2. **Not for live trading**: Do not use predictions for real trading decisions
+3. **Use at your own risk**: All risks from using Kronos forecasts are borne by the user
 
-## 更新日志
+## Changelog
 
-- **v0.5** (2026-04-29): 初始部署
-  - Kronos-base 模型部署完成
-  - FinceptTerminal 桥接脚本部署完成
-  - Windows 批处理脚本创建完成
+- **v0.5** (2026-04-29): Initial deployment
+  - Kronos-base model deployed
+  - FinceptTerminal bridge script deployed
+  - Windows batch scripts created
 
-## 联系方式
+## Contact
 
-如有问题，请联系项目维护者。
+For issues, please contact the project maintainer.
