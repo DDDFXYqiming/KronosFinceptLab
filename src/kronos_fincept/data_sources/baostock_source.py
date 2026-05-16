@@ -1,6 +1,6 @@
 """
-BaoStock 数据源适配器
-支持 A 股历史数据、财务数据等
+BaoStock Data Source Adapter
+Supports A-share historical data, financial data, etc.
 """
 
 import time
@@ -11,7 +11,7 @@ from . import DataSource, DataSourceConfig, DataSourceStatus
 
 
 class BaoStockSource(DataSource):
-    """BaoStock 数据源"""
+    """BaoStock Data Source"""
 
     supported_endpoints = {
         "stock_zh_a_hist",
@@ -35,7 +35,7 @@ class BaoStockSource(DataSource):
         self._logged_in = False
 
     def _get_bs(self):
-        """懒加载 BaoStock"""
+        """Lazy-load BaoStock"""
         if self._bs is None:
             try:
                 import baostock as bs
@@ -45,7 +45,7 @@ class BaoStockSource(DataSource):
         return self._bs
 
     def _login(self):
-        """登录 BaoStock"""
+        """Log in to BaoStock"""
         if not self._logged_in:
             bs = self._get_bs()
             lg = bs.login()
@@ -54,7 +54,7 @@ class BaoStockSource(DataSource):
             self._logged_in = True
 
     def _logout(self):
-        """登出 BaoStock"""
+        """Log out of BaoStock"""
         if self._logged_in:
             bs = self._get_bs()
             try:
@@ -63,7 +63,7 @@ class BaoStockSource(DataSource):
                 self._logged_in = False
 
     def _query_to_list(self, rs) -> list:
-        """将查询结果转换为列表"""
+        """Convert query results to a list"""
         if rs.error_code != "0":
             raise RuntimeError(rs.error_msg)
 
@@ -74,19 +74,19 @@ class BaoStockSource(DataSource):
 
     def _normalize_code(self, symbol: str) -> str:
         """
-        标准化股票代码
+        Normalize stock code
 
         Args:
-            symbol: 股票代码（如 '601398'）
+            symbol: Stock code (e.g., '601398')
 
         Returns:
-            BaoStock 格式的代码（如 'sh.601398'）
+            BaoStock-format code (e.g., 'sh.601398')
         """
-        # 如果已经包含市场前缀，直接返回
+        # If it already has a market prefix, return directly
         if '.' in symbol:
             return symbol
 
-        # 根据代码判断市场
+        # Determine market based on code prefix
         if symbol.startswith('6'):
             return f"sh.{symbol}"
         elif symbol.startswith('0') or symbol.startswith('3'):
@@ -94,16 +94,16 @@ class BaoStockSource(DataSource):
         elif symbol.startswith('4') or symbol.startswith('8'):
             return f"bj.{symbol}"
         else:
-            # 默认上海
+            # Default to Shanghai
             return f"sh.{symbol}"
 
     def fetch(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """
-        获取数据
+        Fetch data
 
         Args:
-            endpoint: 数据端点
-            **kwargs: 传递给 BaoStock 函数的参数
+            endpoint: Data endpoint
+            **kwargs: Parameters passed to BaoStock functions
 
         Returns:
             {
@@ -121,17 +121,17 @@ class BaoStockSource(DataSource):
             start_time = time.time()
             data = None
 
-            # 根据端点调用相应的函数
+            # Call the corresponding function based on the endpoint
             if endpoint == "stock_zh_a_hist":
-                # 获取历史 K 线数据
+                # Fetch historical K-line data
                 symbol = kwargs.get("symbol", "")
                 code = self._normalize_code(symbol)
                 start_date = kwargs.get("start_date", "2020-01-01")
                 end_date = kwargs.get("end_date", datetime.now().strftime('%Y-%m-%d'))
-                frequency = kwargs.get("frequency", "d")  # d=日, w=周, m=月
-                adjustflag = kwargs.get("adjustflag", "3")  # 1=后复权, 2=前复权, 3=不复权
+                frequency = kwargs.get("frequency", "d")  # d=daily, w=weekly, m=monthly
+                adjustflag = kwargs.get("adjustflag", "3")  # 1=backward adjusted, 2=forward adjusted, 3=unadjusted
 
-                # 转换日期格式（从 YYYYMMDD 到 YYYY-MM-DD）
+                # Convert date format (from YYYYMMDD to YYYY-MM-DD)
                 if len(start_date) == 8:
                     start_date = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
                 if len(end_date) == 8:
@@ -148,7 +148,7 @@ class BaoStockSource(DataSource):
                 )
                 rows = self._query_to_list(rs)
 
-                # 转换为与 AkShare 兼容的格式
+                # Convert to a format compatible with AkShare
                 data = []
                 for row in rows:
                     if len(row) >= 14:
@@ -161,14 +161,14 @@ class BaoStockSource(DataSource):
                             "收盘": float(row[5]) if row[5] else 0,
                             "成交量": int(float(row[7])) if row[7] else 0,
                             "成交额": float(row[8]) if row[8] else 0,
-                            "振幅": 0,  # BaoStock 不提供
+                            "振幅": 0,  # Not provided by BaoStock
                             "涨跌幅": float(row[12]) if row[12] else 0,
-                            "涨跌额": 0,  # BaoStock 不提供
+                            "涨跌额": 0,  # Not provided by BaoStock
                             "换手率": float(row[10]) if row[10] else 0
                         })
 
             elif endpoint == "stock_info_a_code_name":
-                # 获取股票列表
+                # Fetch stock list
                 rs = bs.query_stock_basic()
                 rows = self._query_to_list(rs)
                 data = []
@@ -176,7 +176,7 @@ class BaoStockSource(DataSource):
                     if len(row) >= 7:
                         data.append({
                             "code": row[0],
-                            "code_name": row[1],  # 使用 code_name 字段名
+                            "code_name": row[1],  # Use code_name field name
                             "ipoDate": row[3],
                             "outDate": row[4],
                             "type": row[5],
@@ -184,7 +184,7 @@ class BaoStockSource(DataSource):
                         })
 
             elif endpoint == "stock_individual_info_em":
-                # 获取单个股票信息
+                # Fetch individual stock info
                 symbol = kwargs.get("symbol", "")
                 code = self._normalize_code(symbol)
                 rs = bs.query_stock_basic(code=code)
@@ -232,7 +232,7 @@ class BaoStockSource(DataSource):
             }
 
         except Exception as e:
-            # 登出以清理连接
+            # Log out to clean up connections
             self._logout()
             return {
                 "success": False,
@@ -243,5 +243,5 @@ class BaoStockSource(DataSource):
             }
 
     def __del__(self):
-        """析构时登出"""
+        """Log out during destruction"""
         self._logout()

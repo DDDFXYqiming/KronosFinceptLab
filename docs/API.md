@@ -44,7 +44,7 @@ Content-Type: application/json
 ### Data
 ```
 GET /api/data/a-stock/{symbol}?start_date=20250101&end_date=20260430
-GET /api/data/search?q=招商银行
+GET /api/data/search?q=China+Merchants+Bank
 ```
 
 ### Backtest

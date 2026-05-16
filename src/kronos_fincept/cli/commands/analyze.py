@@ -670,22 +670,22 @@ def macro(ctx, question, symbols, market, providers, output_format):
 @click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
 @click.pass_context
 def ai_analyze(ctx, symbol, market, output_format):
-    """AI-powered stock analysis using DeepSeek + Kronos (支持A股/港股/美股/大宗商品)."""
+    """AI-powered stock analysis using DeepSeek + Kronos (Supports A-shares/H-shares/U.S. stocks/Commodities)."""
     try:
         from kronos_fincept.financial import AIInvestmentAdvisor
         from kronos_fincept.financial import RiskCalculator, TechnicalIndicators
         from kronos_fincept.schemas import ForecastRequest, ForecastRow
         from kronos_fincept.service import forecast_from_request
         
-        # ── 根据 market 选择数据源 ──
+        # ── Select data source based on market ──
         price_data = None
         click.echo(f"Fetching data for {symbol} (market={market})...", err=True)
         
-        # 检查是否有预获取的全球市场数据文件（使用 Windows 路径）
+        # Check for pre-fetched global market data file (using Windows paths)
         import os
         global_data_file = None
         
-        # 尝试常见的 Windows 临时文件位置
+        # Try common Windows temp file locations
         possible_paths = [
             f"C:\\Users\\39795\\AppData\\Local\\Temp\\kronos_{symbol.replace('.', '_')}.json",
             f"C:\\Users\\39795\\AppData\\Local\\Temp\\kronos_{symbol.replace('/', '_')}.json",
@@ -699,7 +699,7 @@ def ai_analyze(ctx, symbol, market, output_format):
                 break
         
         if market == 'cn' or not global_data_file:
-            # A股 或 无预获取数据：使用现有数据源
+            # A-share market or no pre-fetched data: use existing data source
             from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
             price_data = fetch_a_stock_ohlcv(
                 symbol=symbol,
@@ -707,7 +707,7 @@ def ai_analyze(ctx, symbol, market, output_format):
                 end_date="20260430"
             )
         else:
-            # 港股/美股/大宗商品：使用预获取的 Yahoo Finance 数据
+            # HK stocks / US stocks / Commodities: use pre-fetched Yahoo Finance data
             from datetime import datetime
             
             try:
@@ -735,7 +735,7 @@ def ai_analyze(ctx, symbol, market, output_format):
                     company_name = chart_data.get('meta', {}).get('longName', symbol)
                     click.echo(f"Got data from Yahoo Finance: {company_name}, {len(price_data)} days", err=True)
                     
-                    # 清理临时文件
+                    # Clean up temp file
                     os.remove(global_data_file)
             except Exception as e:
                 click.echo(f"Failed to read pre-fetched data: {e}", err=True)
@@ -757,7 +757,7 @@ def ai_analyze(ctx, symbol, market, output_format):
             'volume': latest.get('volume', 0)
         }
         
-        # ── 获取最新财务数据（用于 AI 分析）──
+        # ── Fetch latest financial data (for AI analysis)──
         financial_data = None
         try:
             click.echo("Fetching financial data...", err=True)
@@ -766,7 +766,7 @@ def ai_analyze(ctx, symbol, market, output_format):
             financial_data = fin_manager.get_financial_data(symbol)
             if financial_data:
                 click.echo(f"Got financial data: {financial_data.symbol}", err=True)
-                # 将财务数据添加到 market_data
+                # Add financial data to market_data
                 market_data['financial'] = {
                     'revenue': financial_data.income_statements[0].revenue if financial_data.income_statements else None,
                     'net_income': financial_data.income_statements[0].net_income if financial_data.income_statements else None,

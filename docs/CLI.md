@@ -23,7 +23,7 @@ kronos --output table batch --symbols 600036,000858
 ### Data
 ```bash
 kronos data fetch --symbol 600036 --start 20240101 --end 20260430
-kronos data search --q 招商银行
+kronos data search --q "China Merchants Bank"
 ```
 
 ### Backtest

@@ -1,6 +1,6 @@
 """
-DataSourceManager - 统一数据源管理器
-支持多数据源自动降级、重试、健康检查和缓存
+DataSourceManager - Unified Data Source Manager
+Supports multi-source auto-degradation, retry, health checks, and caching
 """
 
 import time
@@ -20,28 +20,28 @@ logger = logging.getLogger(__name__)
 
 
 class DataSourceStatus(Enum):
-    """数据源状态"""
-    HEALTHY = "healthy"           # 健康
-    DEGRADED = "degraded"         # 降级（部分失败）
-    UNHEALTHY = "unhealthy"       # 不健康（连续失败）
-    DISABLED = "disabled"         # 禁用（手动或熔断）
+    """Data source status"""
+    HEALTHY = "healthy"           # Healthy
+    DEGRADED = "degraded"         # Degraded (partial failure)
+    UNHEALTHY = "unhealthy"       # Unhealthy (consecutive failures)
+    DISABLED = "disabled"         # Disabled (manual or circuit break)
 
 
 @dataclass
 class DataSourceConfig:
-    """数据源配置"""
-    name: str                          # 数据源名称
-    priority: int                      # 优先级（数字越小优先级越高）
-    max_retries: int = 3               # 最大重试次数
-    retry_delay: float = 1.0           # 初始重试延迟（秒）
-    timeout: float = 30.0              # 超时时间（秒）
-    circuit_break_threshold: int = 5   # 熔断阈值（连续失败次数）
-    circuit_break_duration: int = 300  # 熔断持续时间（秒）
-    health_check_interval: int = 60    # 健康检查间隔（秒）
+    """Data source configuration"""
+    name: str                          # Data source name
+    priority: int                      # Priority (lower number = higher priority)
+    max_retries: int = 3               # Maximum retry count
+    retry_delay: float = 1.0           # Initial retry delay (seconds)
+    timeout: float = 30.0              # Timeout (seconds)
+    circuit_break_threshold: int = 5   # Circuit break threshold (consecutive failures)
+    circuit_break_duration: int = 300  # Circuit break duration (seconds)
+    health_check_interval: int = 60    # Health check interval (seconds)
 
 
 class DataSource:
-    """数据源基类"""
+    """Base class for data sources"""
 
     supported_endpoints: set[str] | None = None
 
@@ -59,37 +59,37 @@ class DataSource:
         return self.supported_endpoints is None or endpoint in self.supported_endpoints
 
     def is_available(self) -> bool:
-        """检查数据源是否可用"""
-        # 检查是否被手动禁用
+        """Check whether the data source is available"""
+        # Check if manually disabled
         if self.status == DataSourceStatus.DISABLED:
             return False
 
-        # 检查是否在熔断期
+        # Check if in circuit break period
         if self.circuit_break_until and datetime.now() < self.circuit_break_until:
             return False
 
-        # 检查是否需要健康检查
+        # Check if health check is needed
         if self.last_health_check:
             elapsed = (datetime.now() - self.last_health_check).total_seconds()
             if elapsed > self.config.health_check_interval:
-                # 需要健康检查，但仍然允许使用
+                # Health check needed, but still allow usage
                 pass
 
         return True
 
     def record_success(self):
-        """记录成功"""
+        """Record a successful request"""
         self.consecutive_failures = 0
         self.last_success_time = datetime.now()
         self.status = DataSourceStatus.HEALTHY
         self.circuit_break_until = None
 
     def record_failure(self):
-        """记录失败"""
+        """Record a failed request"""
         self.consecutive_failures += 1
         self.last_failure_time = datetime.now()
 
-        # 检查是否需要熔断
+        # Check if circuit break is needed
         if self.consecutive_failures >= self.config.circuit_break_threshold:
             self.status = DataSourceStatus.UNHEALTHY
             self.circuit_break_until = datetime.now() + timedelta(
@@ -99,12 +99,12 @@ class DataSource:
                   f"将在 {self.config.circuit_break_duration} 秒后恢复")
 
     def get_retry_delay(self, attempt: int) -> float:
-        """获取重试延迟（指数退避）"""
+        """Get retry delay (exponential backoff)"""
         return self.config.retry_delay * (2 ** attempt)
 
     def fetch(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """
-        获取数据（子类实现）
+        Fetch data (subclass implementation)
 
         Returns:
             {
@@ -119,13 +119,13 @@ class DataSource:
 
 
 class DataSourceManager:
-    """数据源管理器"""
+    """Data source manager"""
 
     def __init__(self, cache_dir: str = ".cache"):
         self.data_sources: Dict[str, DataSource] = {}
         self.cache_dir = cache_dir
         self.memory_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
-        self.memory_cache_ttl = 300  # 5分钟
+        self.memory_cache_ttl = 300  # 5 minutes
         try:
             self.memory_cache_max_size = max(
                 1,
@@ -134,35 +134,35 @@ class DataSourceManager:
         except ValueError:
             self.memory_cache_max_size = 256
 
-        # 创建缓存目录
+        # Create cache directory
         os.makedirs(cache_dir, exist_ok=True)
 
     def register(self, source: DataSource):
-        """注册数据源"""
+        """Register a data source"""
         self.data_sources[source.config.name] = source
         logger.debug(f" 注册数据源: {source.config.name} "
               f"(优先级: {source.config.priority})")
 
     def unregister(self, name: str):
-        """注销数据源"""
+        """Unregister a data source"""
         if name in self.data_sources:
             del self.data_sources[name]
             logger.debug(f" 注销数据源: {name}")
 
     def get_sorted_sources(self) -> List[DataSource]:
-        """获取按优先级排序的数据源列表"""
+        """Get data sources sorted by priority"""
         return sorted(
             self.data_sources.values(),
             key=lambda s: s.config.priority
         )
 
     def _get_cache_key(self, endpoint: str, **kwargs) -> str:
-        """生成缓存键"""
+        """Generate a cache key"""
         key_data = f"{endpoint}:{json.dumps(kwargs, sort_keys=True)}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
     def _set_memory_cache(self, cache_key: str, cache_entry: Dict[str, Any]) -> None:
-        """写入内存缓存并按 LRU 淘汰旧条目。"""
+        """Write to memory cache and evict old entries via LRU."""
         self.memory_cache[cache_key] = cache_entry
         self.memory_cache.move_to_end(cache_key)
 
@@ -171,8 +171,8 @@ class DataSourceManager:
             logger.debug(f" 内存缓存 LRU 淘汰: {evicted_key}")
 
     def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """从缓存获取数据"""
-        # 先检查内存缓存
+        """Get data from cache"""
+        # Check memory cache first
         if cache_key in self.memory_cache:
             cache_entry = self.memory_cache[cache_key]
             if datetime.now().timestamp() < cache_entry["expire_at"]:
@@ -188,14 +188,14 @@ class DataSourceManager:
             else:
                 del self.memory_cache[cache_key]
 
-        # 再检查文件缓存
+        # Then check file cache
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
         if os.path.exists(cache_file):
             try:
                 with open(cache_file, "r", encoding="utf-8") as f:
                     cache_entry = json.load(f)
                 if datetime.now().timestamp() < cache_entry["expire_at"]:
-                    # 加载到内存缓存
+                    # Load into memory cache
                     self._set_memory_cache(cache_key, cache_entry)
                     log_event(
                         logger,
@@ -214,17 +214,17 @@ class DataSourceManager:
 
     def _save_to_cache(self, cache_key: str, data: Dict[str, Any],
                        ttl: int = 86400):
-        """保存数据到缓存"""
+        """Save data to cache"""
         cache_entry = {
             "data": data,
             "expire_at": datetime.now().timestamp() + ttl,
             "created_at": datetime.now().isoformat()
         }
 
-        # 保存到内存缓存
+        # Save to memory cache
         self._set_memory_cache(cache_key, cache_entry)
 
-        # 保存到文件缓存
+        # Save to file cache
         cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
         try:
             with open(cache_file, "w", encoding="utf-8") as f:
@@ -235,13 +235,13 @@ class DataSourceManager:
     def fetch(self, endpoint: str, use_cache: bool = True,
               cache_ttl: int = 86400, **kwargs) -> Dict[str, Any]:
         """
-        获取数据（带自动降级）
+        Fetch data (with auto-degradation)
 
         Args:
-            endpoint: 数据端点
-            use_cache: 是否使用缓存
-            cache_ttl: 缓存 TTL（秒）
-            **kwargs: 传递给数据源的参数
+            endpoint: Data endpoint
+            use_cache: Whether to use cache
+            cache_ttl: Cache TTL (seconds)
+            **kwargs: Arguments to pass to data sources
 
         Returns:
             {
@@ -252,7 +252,7 @@ class DataSourceManager:
                 "from_cache": bool
             }
         """
-        # 检查缓存
+        # Check cache
         if use_cache:
             cache_key = self._get_cache_key(endpoint, **kwargs)
             cached_data = self._get_from_cache(cache_key)
@@ -260,7 +260,7 @@ class DataSourceManager:
                 cached_data["from_cache"] = True
                 return cached_data
 
-        # 按优先级尝试数据源
+        # Try data sources by priority
         last_error = None
         errors_by_source: Dict[str, str] = {}
         for source in self.get_sorted_sources():
@@ -294,18 +294,18 @@ class DataSourceManager:
                 endpoint=endpoint,
             )
 
-            # 带重试的请求
+            # Request with retry
             for attempt in range(source.config.max_retries):
                 try:
                     started = time.perf_counter()
                     result = source.fetch(endpoint, **kwargs)
 
                     if result.get("success"):
-                        # 成功
+                        # Success
                         source.record_success()
                         result["from_cache"] = False
 
-                        # 保存到缓存
+                        # Save to cache
                         if use_cache:
                             self._save_to_cache(cache_key, result, cache_ttl)
 
@@ -320,7 +320,7 @@ class DataSourceManager:
                         )
                         return result
                     else:
-                        # 失败
+                        # Failure
                         last_error = result.get("error", "Unknown error")
                         errors_by_source[source.config.name] = str(last_error)
                         source.record_failure()
@@ -335,7 +335,7 @@ class DataSourceManager:
                             error=last_error,
                         )
 
-                        # 等待重试
+                        # Wait for retry
                         if attempt < source.config.max_retries - 1:
                             delay = source.get_retry_delay(attempt)
                             logger.debug(f" 重试 {attempt + 1}/"
@@ -358,7 +358,7 @@ class DataSourceManager:
                         error=str(e),
                     )
 
-                    # 等待重试
+                    # Wait for retry
                     if attempt < source.config.max_retries - 1:
                         delay = source.get_retry_delay(attempt)
                         logger.debug(f" 重试 {attempt + 1}/"
@@ -368,7 +368,7 @@ class DataSourceManager:
             logger.debug(f" 数据源 {source.config.name} 失败，"
                   f"尝试下一个...")
 
-        # 所有支持该 endpoint 的数据源都失败
+        # All sources supporting this endpoint failed
         if errors_by_source:
             error_detail = "; ".join(
                 f"{source}={error}" for source, error in errors_by_source.items()
@@ -385,7 +385,7 @@ class DataSourceManager:
         }
 
     def get_status(self) -> Dict[str, Any]:
-        """获取所有数据源状态"""
+        """Get status of all data sources"""
         status = {}
         for name, source in self.data_sources.items():
             status[name] = {
@@ -403,7 +403,7 @@ class DataSourceManager:
         return status
 
     def reset_all(self):
-        """重置所有数据源状态"""
+        """Reset all data source states"""
         for source in self.data_sources.values():
             source.status = DataSourceStatus.HEALTHY
             source.consecutive_failures = 0
@@ -411,12 +411,12 @@ class DataSourceManager:
         logger.debug(" 已重置所有数据源状态")
 
 
-# 全局数据源管理器实例
+# Global data source manager instance
 _manager: Optional[DataSourceManager] = None
 
 
 def get_manager(cache_dir: str = ".cache") -> DataSourceManager:
-    """获取全局数据源管理器实例"""
+    """Get the global data source manager instance"""
     global _manager
     if _manager is None:
         _manager = DataSourceManager(cache_dir)
