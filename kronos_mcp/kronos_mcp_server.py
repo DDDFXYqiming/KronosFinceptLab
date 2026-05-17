@@ -39,11 +39,15 @@ _service = None
 _akshare_adapter = None
 
 
+def _ensure_src_path() -> None:
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "src"))
+
+
 def _get_service():
     global _service
     if _service is None:
         # Ensure kronos_fincept is importable
-        sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "src"))
+        _ensure_src_path()
         from kronos_fincept.service import batch_forecast_from_requests, forecast_from_request
         from kronos_fincept.schemas import ForecastRequest
 
@@ -58,7 +62,7 @@ def _get_service():
 def _get_akshare_adapter():
     global _akshare_adapter
     if _akshare_adapter is None:
-        sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "src"))
+        _ensure_src_path()
         from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
 
         _akshare_adapter = {"fetch": fetch_a_stock_ohlcv}
@@ -214,6 +218,97 @@ async def list_tools() -> list[Tool]:
                 "required": ["symbol", "start_date", "end_date"],
             },
         ),
+        Tool(
+            name="search_stocks",
+            description="Search A-share stocks by code or Chinese name, aligned with GET /api/data/search.",
+            inputSchema={
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Stock code or name keyword"}},
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="calculate_indicators",
+            description="Calculate technical indicators for a stock, aligned with GET /api/data/indicator/{symbol}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string"},
+                    "market": {"type": "string", "default": "cn"},
+                    "start_date": {"type": "string", "default": "20250101"},
+                    "end_date": {"type": "string", "default": "20260430"},
+                },
+                "required": ["symbol"],
+            },
+        ),
+        Tool(
+            name="run_ranking_backtest",
+            description="Run ranking strategy backtest, aligned with POST /api/backtest/ranking.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                    "top_k": {"type": "integer", "default": 3},
+                    "pred_len": {"type": "integer", "default": 5},
+                    "window_size": {"type": "integer", "default": 60},
+                    "step": {"type": "integer", "default": 5},
+                    "dry_run": {"type": "boolean", "default": True},
+                },
+                "required": ["symbols", "start_date", "end_date"],
+            },
+        ),
+        Tool(
+            name="generate_backtest_report",
+            description="Generate HTML backtest report, aligned with POST /api/backtest/report.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                    "strategy_name": {"type": "string", "default": "Ranking Strategy"},
+                    "top_k": {"type": "integer", "default": 3},
+                    "dry_run": {"type": "boolean", "default": True},
+                },
+                "required": ["symbols", "start_date", "end_date"],
+            },
+        ),
+        Tool(
+            name="analyze_agent",
+            description="Run agent-style stock analysis, aligned with POST /api/v1/analyze/agent.",
+            inputSchema={
+                "type": "object",
+                "properties": {"query": {"type": "string"}, "language": {"type": "string", "default": "zh"}},
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="analyze_macro",
+            description="Run macro/cross-market analysis, aligned with POST /api/v1/analyze/macro.",
+            inputSchema={
+                "type": "object",
+                "properties": {"query": {"type": "string"}, "language": {"type": "string", "default": "zh"}},
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="generate_suggestions",
+            description="Generate analysis or macro question suggestions, aligned with GET /api/v1/suggestions.",
+            inputSchema={
+                "type": "object",
+                "properties": {"type": {"type": "string", "enum": ["analysis", "macro"], "default": "analysis"}},
+            },
+        ),
+        Tool(
+            name="health_check",
+            description="Return service health diagnostics, aligned with GET /api/health.",
+            inputSchema={
+                "type": "object",
+                "properties": {"deep": {"type": "boolean", "default": False}},
+            },
+        ),
     ]
 
 
@@ -226,16 +321,35 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return _handle_batch_forecast(arguments)
         elif name == "fetch_a_stock":
             return _handle_fetch_a_stock(arguments)
+        elif name == "search_stocks":
+            return _handle_search_stocks(arguments)
+        elif name == "calculate_indicators":
+            return _handle_calculate_indicators(arguments)
+        elif name == "run_ranking_backtest":
+            return await _handle_run_ranking_backtest(arguments)
+        elif name == "generate_backtest_report":
+            return await _handle_generate_backtest_report(arguments)
+        elif name == "analyze_agent":
+            return await _handle_analyze_agent(arguments)
+        elif name == "analyze_macro":
+            return await _handle_analyze_macro(arguments)
+        elif name == "generate_suggestions":
+            return await _handle_generate_suggestions(arguments)
+        elif name == "health_check":
+            return _handle_health_check(arguments)
         else:
-            return [TextContent(type="text", text=json.dumps({"ok": False, "error": f"Unknown tool: {name}"}))]
+            return _json_text({"ok": False, "error": f"Unknown tool: {name}"})
     except Exception as e:
         logger.exception("Tool %s failed", name)
-        return [TextContent(type="text", text=json.dumps({"ok": False, "error": str(e)}))]
+        return _json_text({"ok": False, "error": str(e)})
 
 
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
+def _json_text(result: Any) -> list[TextContent]:
+    return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2, default=str))]
 
 def _handle_forecast(args: dict[str, Any]) -> list[TextContent]:
     svc = _get_service()
@@ -248,7 +362,7 @@ def _handle_forecast(args: dict[str, Any]) -> list[TextContent]:
         "model_id": args.get("model_id", "NeoQuasar/Kronos-base"),
     })
     result = svc["forecast"](req)
-    return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+    return _json_text(result)
 
 
 def _handle_batch_forecast(args: dict[str, Any]) -> list[TextContent]:
@@ -288,7 +402,7 @@ def _handle_batch_forecast(args: dict[str, Any]) -> list[TextContent]:
         ],
         "metadata": {"warning": "Research forecast only; not trading advice."},
     }
-    return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+    return _json_text(result)
 
 
 def _handle_fetch_a_stock(args: dict[str, Any]) -> list[TextContent]:
@@ -304,7 +418,160 @@ def _handle_fetch_a_stock(args: dict[str, Any]) -> list[TextContent]:
         "count": len(rows),
         "rows": rows,
     }
-    return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+    return _json_text(result)
+
+
+
+def _model_to_dict(value: Any) -> dict[str, Any]:
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "dict"):
+        return value.dict()
+    return dict(value)
+
+
+def _handle_search_stocks(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.akshare_adapter import search_stocks
+
+    results = search_stocks(args["query"])
+    return _json_text({"ok": True, "results": results})
+
+
+def _handle_calculate_indicators(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.cli.commands.data import _fetch_market_rows
+    from kronos_fincept.financial import TechnicalIndicators
+
+    symbol = args["symbol"]
+    market = args.get("market", "cn")
+    start_date = args.get("start_date", "20250101")
+    end_date = args.get("end_date", "20260430")
+    rows = _fetch_market_rows(symbol, market, start_date, end_date, "qfq")
+    if len(rows) < 30:
+        raise ValueError(f"Insufficient data for indicators: {len(rows)} rows")
+    closes = [row["close"] for row in rows]
+    highs = [row["high"] for row in rows]
+    lows = [row["low"] for row in rows]
+    volumes = [row.get("volume", 0) for row in rows]
+    indicators = TechnicalIndicators().calculate_all_indicators(closes, highs, lows, volumes)
+    return _json_text({
+        "ok": True,
+        "symbol": symbol,
+        "market": market,
+        "current_price": rows[-1]["close"],
+        "indicators": {name: obj.__dict__ if hasattr(obj, "__dict__") else obj for name, obj in indicators.items()},
+        "data_points": len(rows),
+    })
+
+
+async def _handle_run_ranking_backtest(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.models import BacktestRequestIn
+    from kronos_fincept.api.routes.backtest import backtest_ranking
+
+    req = BacktestRequestIn(**{
+        "symbols": args["symbols"],
+        "start_date": args["start_date"],
+        "end_date": args["end_date"],
+        "top_k": args.get("top_k", 3),
+        "pred_len": args.get("pred_len", 5),
+        "window_size": args.get("window_size", 60),
+        "step": args.get("step", 5),
+        "initial_equity": args.get("initial_equity", 100000.0),
+        "benchmark": args.get("benchmark"),
+        "fee_bps": args.get("fee_bps", 0.0),
+        "slippage_bps": args.get("slippage_bps", 0.0),
+        "dry_run": args.get("dry_run", True),
+    })
+    return _json_text(_model_to_dict(await backtest_ranking(req)))
+
+
+async def _handle_generate_backtest_report(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.models import BacktestReportRequestIn
+    from kronos_fincept.api.routes.backtest import backtest_report
+
+    req = BacktestReportRequestIn(**{
+        "symbols": args["symbols"],
+        "start_date": args["start_date"],
+        "end_date": args["end_date"],
+        "top_k": args.get("top_k", 3),
+        "pred_len": args.get("pred_len", 5),
+        "window_size": args.get("window_size", 60),
+        "step": args.get("step", 5),
+        "initial_equity": args.get("initial_equity", 100000.0),
+        "fee_bps": args.get("fee_bps", 0.0),
+        "slippage_bps": args.get("slippage_bps", 0.0),
+        "dry_run": args.get("dry_run", True),
+        "benchmark": args.get("benchmark"),
+        "strategy_name": args.get("strategy_name", "Ranking Strategy"),
+    })
+    return _json_text(_model_to_dict(await backtest_report(req)))
+
+
+async def _handle_analyze_agent(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.ai_analyze import AgentAnalyzeRequest, agent_analyze
+
+    req = AgentAnalyzeRequest(
+        question=args["query"],
+        symbol=args.get("symbol"),
+        market=args.get("market"),
+        context=args.get("context"),
+        dry_run=args.get("dry_run", False),
+    )
+    return _json_text(_model_to_dict(await agent_analyze(req)))
+
+
+async def _handle_analyze_macro(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.ai_analyze import MacroAnalyzeRequest, macro_analyze
+
+    req = MacroAnalyzeRequest(
+        question=args["query"],
+        symbols=args.get("symbols", []),
+        market=args.get("market"),
+        provider_ids=args.get("provider_ids"),
+        context=args.get("context"),
+    )
+    return _json_text(_model_to_dict(await macro_analyze(req)))
+
+
+async def _handle_generate_suggestions(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.suggestions import get_suggestions
+
+    suggestion_type = args.get("type", "analysis")
+    result = await get_suggestions(type=suggestion_type)
+    return _json_text({"ok": True, "type": suggestion_type, **result})
+
+
+def _handle_health_check(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.deps import get_model_info
+    from kronos_fincept.build_info import get_build_info
+
+    model_info = get_model_info(deep=args.get("deep", False))
+    build_info = get_build_info()
+    return _json_text({
+        "status": model_info["status"],
+        "version": "2.0.0",
+        "app_version": build_info.app_version,
+        "build_commit": build_info.build_commit,
+        "build_ref": build_info.build_ref,
+        "build_source": build_info.build_source,
+        "model_loaded": model_info["model_loaded"],
+        "model_id": model_info["model_id"],
+        "tokenizer_id": model_info["tokenizer_id"],
+        "device": model_info["device"],
+        "uptime_seconds": 0.0,
+        "runtime_mode": model_info["runtime_mode"],
+        "model_enabled": model_info["model_enabled"],
+        "deep_check": model_info["deep_check"],
+        "capabilities": model_info["capabilities"],
+        "model_error": model_info["model_error"],
+    })
 
 
 # ---------------------------------------------------------------------------

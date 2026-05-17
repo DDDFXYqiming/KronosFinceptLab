@@ -359,7 +359,7 @@ async def get_suggestions(
         logging.INFO,
         "suggestions.generated",
         f"Generated {len(questions)} {type} suggestions",
-        type=type,
+        suggestion_type=type,
         count=len(questions),
     )
 
