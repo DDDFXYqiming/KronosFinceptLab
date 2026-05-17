@@ -26,6 +26,8 @@ COMMANDS = {
     "serve": ("kronos_fincept.cli.commands.serve", "serve_cmd"),
     "analyze": ("kronos_fincept.cli.commands.analyze", "analyze_group"),
     "alert": ("kronos_fincept.cli.commands.alert", "alert_group"),
+    "health": ("kronos_fincept.cli.commands.health", "health_cmd"),
+    "suggestions": ("kronos_fincept.cli.commands.suggestions", "suggestions_cmd"),
 }
 
 
