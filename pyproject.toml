@@ -45,9 +45,6 @@ dev = [
     "pytest-asyncio>=0.21",
     "httpx>=0.24",
 ]
-rust = [
-    "maturin>=1.8,<2",
-]
 deploy = [
     "fastapi>=0.100",
     "uvicorn[standard]>=0.22",

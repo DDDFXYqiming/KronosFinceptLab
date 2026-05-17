@@ -156,26 +156,12 @@ Key environment variables (see `.env.example` for full reference):
 
 ---
 
-## Rust Native Acceleration (Optional)
-
-```bash
-cargo test --workspace
-python -m maturin build --manifest-path crates/kronos-python/Cargo.toml --release --out dist/native
-
-# Enable
-$env:USE_RUST_ENGINE="1"
-python -m pytest tests/test_rust_native_bridge.py -v
-```
-
----
-
 ## Requirements
 
 | Component | Requirement |
 |-----------|-------------|
 | Python | >= 3.11 |
 | Node.js | >= 18 (frontend) |
-| Rust | Optional (native acceleration) |
 
 **Upstream projects**: [Kronos](https://github.com/shiyu-coder/Kronos) · [FinceptTerminal](https://github.com/Fincept-Corporation/FinceptTerminal) · [Digital Oracle](https://github.com/komako-workshop/digital-oracle)
 
