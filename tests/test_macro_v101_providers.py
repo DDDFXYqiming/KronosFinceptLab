@@ -171,6 +171,27 @@ def test_v101_optional_providers_degrade_without_configuration_or_dependency():
     assert YahooPriceProvider(yfinance_loader=lambda: None).fetch_signals(MacroQuery("SPY", symbols=("SPY",))) == []
 
 
+def test_v101_generic_macro_theme_symbol_is_not_used_as_market_ticker(monkeypatch):
+    from kronos_fincept.macro import MacroQuery
+    from kronos_fincept.macro.providers import digital_oracle as providers
+
+    assert providers._infer_yahoo_symbol(MacroQuery("AI硬件泡沫了吗", symbols=("AI硬件",))) == ("SPY", "SPY")
+
+    captured: dict[str, str] = {}
+
+    def fake_get_text(url: str, *, params=None, timeout=8, accept="application/json") -> str:
+        captured["url"] = url
+        return "Symbol,Date,Time,Open,High,Low,Close,Volume\n^SPX,2026-05-15,22:00:00,100,101,99,100.5,1000\n"
+
+    monkeypatch.setattr(providers, "_get_text", fake_get_text)
+
+    signals = providers.StooqProvider().fetch_signals(MacroQuery("AI硬件泡沫了吗", symbols=("AI硬件",)))
+
+    assert signals
+    assert "AI" not in captured["url"]
+    assert "%5ESPX" in captured["url"] or "^SPX" in captured["url"]
+
+
 def test_v101_readme_and_version_labels_are_current():
     assert "Version: v10." in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")
