@@ -305,8 +305,8 @@ def _llm_provider_chain() -> list[LLMChatProvider]:
                 api_key=str(getattr(openrouter, "api_key", "") or ""),
                 base_url=str(getattr(openrouter, "base_url", "https://openrouter.ai/api/v1/chat/completions") or ""),
                 model=str(
-                    getattr(openrouter, "model", "openrouter/free")
-                    or "openrouter/free"
+                    getattr(openrouter, "model", "deepseek/deepseek-v4-flash:free")
+                    or "deepseek/deepseek-v4-flash:free"
                 ),
             )
         )
@@ -783,7 +783,8 @@ def analyze_investment_question(
 
     search_query_limit = 1 if len(resolved) > 1 else 3
     defer_kronos_predictions = len(resolved) > 1
-    for item in resolved:
+
+    def _build_one_asset(item: ResolvedSymbol) -> tuple[ResolvedSymbol, dict[str, Any], list[AgentToolCall]]:
         asset_context, calls = _build_asset_context(
             item,
             question=clean_question,
@@ -791,6 +792,18 @@ def analyze_investment_question(
             search_query_limit=search_query_limit,
             include_prediction=not defer_kronos_predictions,
         )
+        return item, asset_context, calls
+
+    if len(resolved) > 1:
+        import concurrent.futures
+
+        max_workers = min(5, len(resolved))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="kronos-agent-asset") as executor:
+            asset_build_results = list(executor.map(_build_one_asset, resolved))
+    else:
+        asset_build_results = [_build_one_asset(resolved[0])]
+
+    for item, asset_context, calls in asset_build_results:
         asset_contexts.append(asset_context)
         tool_calls.extend(calls)
         for call in calls:

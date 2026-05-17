@@ -250,7 +250,7 @@ def _call_llm_for_suggestions(
                 max_tokens=300,
                 timeout=15,
                 purpose="suggestions",
-                provider_order=("deepseek", "openrouter"),
+                provider_order=("openrouter", "deepseek"),
             )
 
             if result is None:

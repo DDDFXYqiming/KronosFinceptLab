@@ -57,7 +57,7 @@ def test_suggestions_fetches_llm_once_then_uses_cache(monkeypatch: pytest.Monkey
     assert second["questions"] == questions
     assert second["source"] == "cache"
     assert len(calls) == 1
-    assert calls[0]["provider_order"] == ("deepseek", "openrouter")
+    assert calls[0]["provider_order"] == ("openrouter", "deepseek")
 
 
 def test_macro_suggestions_returns_four_short_questions(monkeypatch: pytest.MonkeyPatch):
