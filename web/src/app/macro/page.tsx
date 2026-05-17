@@ -94,6 +94,26 @@ function RecommendationBadge({ rec }: { rec: string }) {
   return <span className={`rounded-full border px-3 py-1 text-sm font-semibold ${bg}`}>{rec}</span>;
 }
 
+function macroActionCopy(rec: string, evidence?: MacroEvidenceCoverage): string {
+  const lower = rec.toLowerCase();
+  if (lower.includes("buy") || rec.includes("买") || rec.includes("增持")) {
+    return "偏积极：可继续研究买入，但仍需结合仓位、估值和监控阈值分批执行。";
+  }
+  if (lower.includes("sell") || rec.includes("卖") || rec.includes("减持")) {
+    return "偏防守：不建议加仓，优先降低风险暴露或等待信号修复。";
+  }
+  if (evidence && !evidence.sufficient_evidence) {
+    return "暂不下强结论：证据维度不足，只能观察，等待更多独立信号确认。";
+  }
+  if (rec.includes("观察") || rec.includes("需更多证据")) {
+    return "观察为主：不建议无条件追买，等待价格、盈利和宏观信号进一步确认。";
+  }
+  if (lower.includes("hold") || rec.includes("持")) {
+    return "持有/观望：已有仓位可继续跟踪，新增仓位需要更明确触发条件。";
+  }
+  return "先看结论再看证据：以下判断只基于本轮宏观信号，不构成投资建议。";
+}
+
 function RiskBadge({ level }: { level: string }) {
   const lower = level.toLowerCase();
   let bg = "bg-muted text-muted-foreground";
@@ -784,6 +804,7 @@ export default function MacroPage() {
   const monitoring = normalizeMonitoring(report?.monitoring_signals);
   const providerRows = getMacroProviderRows(result);
   const evidence = result?.macro_dimension_coverage || report?.macro_evidence;
+  const macroAction = result ? macroActionCopy(result.recommendation, evidence) : "";
 
   return (
     <div className="page-shell space-y-6">
@@ -906,13 +927,17 @@ export default function MacroPage() {
                 ))}
               </div>
             )}
-            <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm text-muted-foreground">
-                  {report?.macro_analysis || report?.conclusion || "暂无结论。"}
-                </p>
+            <div className="mb-4 rounded-2xl border border-accent/20 bg-accent/5 p-4">
+              <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">操作结论</p>
+                  <p className="mt-1 text-xl font-semibold leading-snug text-foreground">{macroAction}</p>
+                </div>
+                <RecommendationBadge rec={result.recommendation} />
               </div>
-              <RecommendationBadge rec={result.recommendation} />
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {report?.macro_analysis || report?.conclusion || "暂无结论。"}
+              </p>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>

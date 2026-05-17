@@ -60,6 +60,23 @@ def test_v1083_fallback_report_caps_confidence_when_dimensions_are_insufficient(
     assert "证据不足" in report["conclusion"] or "证据不足" in report["cross_validation"]
 
 
+def test_v1083_fallback_macro_conclusion_answers_buy_timing_directly() -> None:
+    result = _gather(
+        [
+            _signal("web_search", "news_sentiment"),
+            _signal("us_treasury", "yield_curve"),
+            _signal("cftc_cot", "cot_positioning"),
+        ]
+    )
+    context = _macro_context_from_gather("全球AI硬件相关股票现在还能买入吗", ["web_search", "us_treasury", "cftc_cot"], result)
+
+    report = _fallback_macro_report(context)
+
+    assert report["conclusion"].startswith("结论：")
+    assert "不支持无条件追买" in report["conclusion"]
+    assert report["macro_analysis"] == report["conclusion"]
+
+
 def test_v1083_llm_macro_report_is_guarded_when_evidence_is_insufficient() -> None:
     result = _gather([_signal("yahoo_price", "price_trend_1m")])
     context = _macro_context_from_gather("A股现在位置怎么样", ["yahoo_price"], result)
