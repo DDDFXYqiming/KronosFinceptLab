@@ -1,6 +1,10 @@
 .git
 .cache
 .hermes
+.trae
+.onboarded
+plan_*
+skills
 .pytest_cache
 .venv
 __pycache__
@@ -20,6 +24,7 @@ spc.md
 docs/spec*.md
 docs/spc*.md
 docs/RUST_REFACTORING_ASSESSMENT.md
+uv.lock
 web/node_modules
 web/.next
 web/tsconfig.tsbuildinfo
