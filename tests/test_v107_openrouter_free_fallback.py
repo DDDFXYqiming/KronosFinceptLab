@@ -393,7 +393,91 @@ def test_v107_web_macro_uses_llm_route_and_fast_provider_manager(monkeypatch):
     assert result.steps[0].summary.startswith("已通过 openrouter_macro_router")
     assert captured["router_called"] is True
     assert captured["fast_mode"] is True
-    assert captured["provider_ids"] == ["fear_greed", "us_treasury", "web_search"]
+    assert captured["provider_ids"] == ["fear_greed", "us_treasury", "web_search", "cftc_cot"]
+
+
+def test_v107_web_macro_expands_duplicate_dimension_route(monkeypatch):
+    from kronos_fincept import agent
+    from kronos_fincept.macro import MacroGatherResult, MacroProviderResult, MacroSignal
+
+    captured: dict[str, object] = {}
+
+    def fake_llm_router(*args, **kwargs):
+        return agent.MacroRouteDecision(
+            allowed=True,
+            symbols=["AI硬件"],
+            market="us",
+            provider_ids=["web_search", "fear_greed", "stooq", "yahoo_price"],
+            source="deepseek_macro_router",
+        )
+
+    class FakeMacroManager:
+        def gather(self, query, *, provider_ids=None):
+            captured["provider_ids"] = list(provider_ids or [])
+            signals = [
+                MacroSignal(
+                    source="web_search",
+                    signal_type="news",
+                    value="AI hardware news",
+                    interpretation="新闻信号。",
+                    time_horizon="short",
+                    confidence=0.6,
+                ),
+                MacroSignal(
+                    source="fear_greed",
+                    signal_type="market_sentiment",
+                    value=52,
+                    interpretation="情绪信号。",
+                    time_horizon="short",
+                    confidence=0.6,
+                ),
+                MacroSignal(
+                    source="stooq",
+                    signal_type="price_update",
+                    value=0.01,
+                    interpretation="价格信号。",
+                    time_horizon="short",
+                    confidence=0.6,
+                ),
+                MacroSignal(
+                    source="yahoo_price",
+                    signal_type="price_update",
+                    value=0.02,
+                    interpretation="价格信号。",
+                    time_horizon="short",
+                    confidence=0.6,
+                ),
+                MacroSignal(
+                    source="us_treasury",
+                    signal_type="yield_curve",
+                    value=4.2,
+                    interpretation="利率信号。",
+                    time_horizon="medium",
+                    confidence=0.7,
+                ),
+            ]
+            return MacroGatherResult(
+                signals=signals,
+                provider_results={
+                    provider_id: MacroProviderResult(
+                        provider_id=provider_id,
+                        status="completed",
+                        signals=[signal for signal in signals if signal.source == provider_id],
+                    )
+                    for provider_id in provider_ids or []
+                },
+            )
+
+    monkeypatch.setattr(agent, "_call_deepseek_macro_router", fake_llm_router)
+    monkeypatch.setattr(agent, "_create_macro_data_manager", lambda *, fast_mode=False: FakeMacroManager())
+    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
+
+    result = agent.analyze_macro_question("AI硬件泡沫了吗", context={"entry": "web-macro"})
+
+    assert result.ok is True
+    assert captured["provider_ids"] == ["web_search", "fear_greed", "stooq", "yahoo_price", "us_treasury"]
+    assert result.macro_dimension_coverage["sufficient_evidence"] is True
+    assert result.macro_evidence_insufficiency["insufficient"] is False
 
 
 def test_v107_web_analysis_uses_llm_route_before_local_fallback(monkeypatch):

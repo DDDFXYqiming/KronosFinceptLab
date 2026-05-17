@@ -1044,6 +1044,13 @@ def analyze_macro_question(
         question=clean_question,
         symbols=effective_symbols,
     )
+    if provider_ids is None:
+        selected_provider_ids = _ensure_macro_provider_dimension_floor(
+            selected_provider_ids,
+            question=clean_question,
+            symbols=effective_symbols,
+        )
+
     steps.append(
         AgentStep(
             name="选择宏观数据源",
@@ -2176,6 +2183,62 @@ def _sanitize_macro_provider_ids(
         return filtered
     fallback = select_macro_provider_ids(question, symbols=symbols)
     return _filter_macro_provider_ids(fallback) or ["web_search", "fear_greed", "us_treasury"]
+
+
+def _provider_dimension_count(provider_ids: list[str]) -> int:
+    return len({MACRO_PROVIDER_DIMENSIONS.get(provider_id, "official_macro") for provider_id in provider_ids})
+
+
+def _ensure_macro_provider_dimension_floor(
+    provider_ids: list[str],
+    *,
+    question: str,
+    symbols: list[str] | None = None,
+    max_providers: int = 5,
+) -> list[str]:
+    """Expand auto-routed provider choices so web macro has enough independent dimensions."""
+    selected = _filter_macro_provider_ids(provider_ids)
+    candidates = [
+        "us_treasury",
+        "cftc_cot",
+        "dbnomics",
+        "currency",
+        *select_macro_provider_ids(question, symbols=symbols),
+        *MACRO_ROUTE_PROVIDER_IDS["default"],
+        "stooq",
+        "yahoo_price",
+    ]
+
+    for provider_id in candidates:
+        if _provider_dimension_count(selected) >= MACRO_REQUIRED_DIMENSION_COUNT:
+            break
+        if provider_id in selected or provider_id not in ALLOWED_MACRO_PROVIDER_IDS:
+            continue
+        selected.append(provider_id)
+        if len(selected) >= max_providers:
+            break
+
+    if _provider_dimension_count(selected) >= MACRO_REQUIRED_DIMENSION_COUNT or len(selected) < max_providers:
+        return selected
+
+    seen_dimensions: set[str] = set()
+    duplicate_indexes: list[int] = []
+    for index, provider_id in enumerate(selected):
+        dimension = MACRO_PROVIDER_DIMENSIONS.get(provider_id, "official_macro")
+        if dimension in seen_dimensions:
+            duplicate_indexes.append(index)
+        else:
+            seen_dimensions.add(dimension)
+
+    for provider_id in candidates:
+        dimension = MACRO_PROVIDER_DIMENSIONS.get(provider_id, "official_macro")
+        if provider_id in selected or dimension in seen_dimensions or not duplicate_indexes:
+            continue
+        selected[duplicate_indexes.pop()] = provider_id
+        seen_dimensions.add(dimension)
+        if _provider_dimension_count(selected) >= MACRO_REQUIRED_DIMENSION_COUNT:
+            break
+    return selected
 
 
 def _is_macro_question(text: str, *, symbols: list[str] | None = None) -> bool:

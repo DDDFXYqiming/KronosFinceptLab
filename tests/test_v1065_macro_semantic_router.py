@@ -79,7 +79,7 @@ def test_v1065_macro_deepseek_router_allows_broad_a_share_question(monkeypatch):
     assert result.ok is True
     assert result.symbols == ["A股"]
     assert result.market == "cn"
-    assert manager.last_provider_ids == ["fear_greed", "us_treasury", "web_search"]
+    assert manager.last_provider_ids == ["fear_greed", "us_treasury", "web_search", "cftc_cot"]
     assert "deepseek_macro_router" in result.steps[0].summary
 
 
@@ -100,7 +100,7 @@ def test_v1065_macro_router_filters_untrusted_provider_ids(monkeypatch):
     result = agent.analyze_macro_question("港股风险偏好怎么样")
 
     assert result.ok is True
-    assert manager.last_provider_ids == ["web_search", "us_treasury"]
+    assert manager.last_provider_ids == ["web_search", "us_treasury", "cftc_cot"]
 
 
 def test_v1065_macro_local_fallback_allows_market_position_question(monkeypatch):
