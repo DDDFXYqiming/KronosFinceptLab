@@ -1,5 +1,7 @@
 # KronosFinceptLab
 
+Version: v10.8 — research-only quantitative finance cockpit.
+
 > Your local-first quantitative finance cockpit.
 
 An integrated quantitative finance analytics platform combining **market data, AI-powered forecasting, technical analysis, macroeconomic signals, and an AI investment advisor** — all running locally on your machine with automatic data source fallback. Accessible via CLI, API, Web UI, and MCP.
@@ -18,6 +20,18 @@ An integrated quantitative finance analytics platform combining **market data, A
 | Strategy Backtest | Multi-symbol ranking backtest with HTML report generation |
 | Valuation & Portfolio | DCF valuation, risk analysis, portfolio optimization, derivatives pricing |
 | Smart Alerts | Rule-based monitoring for price changes, indicator triggers, with webhook/email delivery |
+
+## Capabilities Matrix
+
+| Capability | Web | API | CLI |
+|------------|-----|-----|-----|
+| Natural-language agent analysis | Analysis page | `POST /api/v1/analyze/agent` | `kronos analyze agent` |
+| Forecasting | Forecast page | `POST /api/forecast` | `kronos forecast` |
+| Macro signals | Macro page | `POST /api/v1/analyze/macro` | `kronos analyze macro` |
+| Batch ranking | Batch page | `POST /api/batch` | `kronos batch` |
+
+The macro layer is orchestrated by `MacroDataManager`, with optional Digital Oracle integration: https://github.com/komako-workshop/digital-oracle.
+LLM synthesis uses OpenRouter first, then DeepSeek-compatible `https://api.deepseek.com/chat/completions` fallback when configured.
 
 ## What Makes It Unique
 
@@ -108,15 +122,19 @@ npm run dev
 
 ---
 
-## Testing
+## Quality Gates
 
 ```bash
 # Backend tests
 python -m pytest tests -q
 
 # Frontend quality gates
-cd web && npm run typecheck && npm run lint && npm run test:frontend
-cd web && npm run build && npm run check:bundle
+cd web && npm run typecheck
+cd web && npm run lint
+cd web && npm run test:frontend
+cd web && npm run build
+cd web && npm run check:bundle
+cd web && npm run smoke:pages
 ```
 
 ---
@@ -129,7 +147,7 @@ Key environment variables (see `.env.example` for full reference):
 |----------|---------|
 | `KRONOS_MODEL_ID` | Kronos model ID |
 | `KRONOS_REPO_PATH` | Kronos repo path |
-| `HF_HUB_CACHE` / `HF_TOKEN` | HuggingFace cache & credentials |
+| `HF_HUB_CACHE` | HuggingFace cache directory |
 | `KRONOS_API_KEYS` | API authentication keys |
 | `KRONOS_AUTH_DISABLED` | Disable API auth (default: enabled) |
 | `KRONOS_RATE_LIMIT_*` | Per-category rate limiting |

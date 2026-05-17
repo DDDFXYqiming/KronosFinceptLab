@@ -54,9 +54,6 @@ _EXPORTS = {
     # Global market
     "GlobalMarketSource": ".global_market",
 
-    # AI Advisor
-    "AIInvestmentAdvisor": ".ai_advisor",
-    "AIAnalysisResult": ".ai_advisor",
 }
 
 
@@ -100,6 +97,4 @@ __all__ = [
     "StrategyResult",
     "Signal",
     "GlobalMarketSource",
-    "AIInvestmentAdvisor",
-    "AIAnalysisResult",
 ]

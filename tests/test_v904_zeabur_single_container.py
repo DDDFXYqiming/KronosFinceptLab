@@ -299,11 +299,13 @@ def test_web_api_client_adds_zeabur_gateway_diagnostics():
     assert "内存压力" in api_client
 
 
-def test_legacy_ai_analyze_no_longer_uses_high_sample_count():
+def test_legacy_ai_analyze_uses_shared_agent_chain():
     legacy_route = read("src/kronos_fincept/api/routes/ai_analyze.py")
 
     assert "sample_count=100" not in legacy_route
-    assert "sample_count=1" in legacy_route
+    assert "sample_count=1" not in legacy_route
+    assert "AIInvestmentAdvisor" not in legacy_route
+    assert "analyze_investment_question" in legacy_route
 
 
 def test_v904_version_labels_are_updated():

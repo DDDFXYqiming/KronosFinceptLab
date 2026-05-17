@@ -670,198 +670,33 @@ def macro(ctx, question, symbols, market, providers, output_format):
 @click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
 @click.pass_context
 def ai_analyze(ctx, symbol, market, output_format):
-    """AI-powered stock analysis using DeepSeek + Kronos (Supports A-shares/H-shares/U.S. stocks/Commodities)."""
+    """AI-powered stock analysis through the shared OpenRouter→DeepSeek agent chain."""
     try:
-        from kronos_fincept.financial import AIInvestmentAdvisor
-        from kronos_fincept.financial import RiskCalculator, TechnicalIndicators
-        from kronos_fincept.schemas import ForecastRequest, ForecastRow
-        from kronos_fincept.service import forecast_from_request
-        
-        # ── Select data source based on market ──
-        price_data = None
-        click.echo(f"Fetching data for {symbol} (market={market})...", err=True)
-        
-        # Check for pre-fetched global market data file (using Windows paths)
-        import os
-        global_data_file = None
-        
-        # Try common Windows temp file locations
-        possible_paths = [
-            f"C:\\Users\\39795\\AppData\\Local\\Temp\\kronos_{symbol.replace('.', '_')}.json",
-            f"C:\\Users\\39795\\AppData\\Local\\Temp\\kronos_{symbol.replace('/', '_')}.json",
-            f"E:\\tmp\\kronos_{symbol.replace('.', '_')}.json"
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                global_data_file = path
-                click.echo(f"Found pre-fetched data at: {path}", err=True)
-                break
-        
-        if market == 'cn' or not global_data_file:
-            # A-share market or no pre-fetched data: use existing data source
-            from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
-            price_data = fetch_a_stock_ohlcv(
-                symbol=symbol,
-                start_date="20250101",
-                end_date="20260430"
-            )
-        else:
-            # HK stocks / US stocks / Commodities: use pre-fetched Yahoo Finance data
-            from datetime import datetime
-            
-            try:
-                with open(global_data_file, 'r') as f:
-                    data = json.load(f)
-                
-                chart_data = data.get('chart', {}).get('result', [{}])[0]
-                timestamps = chart_data.get('timestamp', [])
-                quotes = chart_data.get('indicators', {}).get('quote', [{}])[0]
-                
-                if timestamps and quotes:
-                    price_data = []
-                    for i, ts in enumerate(timestamps):
-                        dt = datetime.utcfromtimestamp(ts)
-                        price_data.append({
-                            'timestamp': dt.strftime('%Y-%m-%d'),
-                            'open': float(quotes['open'][i]) if quotes['open'][i] else 0,
-                            'high': float(quotes['high'][i]) if quotes['high'][i] else 0,
-                            'low': float(quotes['low'][i]) if quotes['low'][i] else 0,
-                            'close': float(quotes['close'][i]) if quotes['close'][i] else 0,
-                            'volume': float(quotes['volume'][i]) if quotes['volume'][i] else 0,
-                            'amount': float(quotes['volume'][i] * quotes['close'][i]) if quotes['volume'][i] and quotes['close'][i] else 0
-                        })
-                    
-                    company_name = chart_data.get('meta', {}).get('longName', symbol)
-                    click.echo(f"Got data from Yahoo Finance: {company_name}, {len(price_data)} days", err=True)
-                    
-                    # Clean up temp file
-                    os.remove(global_data_file)
-            except Exception as e:
-                click.echo(f"Failed to read pre-fetched data: {e}", err=True)
-                price_data = None
-        
-        if not price_data or len(price_data) == 0:
-            click.echo(f"Error: Could not get price data for {symbol}")
-            return 1
-        
-        # Prepare market data
-        closes = [row['close'] for row in price_data]
-        latest = price_data[-1]
-        
-        market_data = {
-            'current_price': latest['close'],
-            'data_points': len(price_data),
-            'price_change_1d': (latest['close'] - price_data[-2]['close']) / price_data[-2]['close'] * 100 if len(price_data) > 1 else 0,
-            'price_change_1w': (latest['close'] - price_data[-5]['close']) / price_data[-5]['close'] * 100 if len(price_data) > 5 else 0,
-            'volume': latest.get('volume', 0)
-        }
-        
-        # ── Fetch latest financial data (for AI analysis)──
-        financial_data = None
-        try:
-            click.echo("Fetching financial data...", err=True)
-            from kronos_fincept.financial import FinancialDataManager
-            fin_manager = FinancialDataManager()
-            financial_data = fin_manager.get_financial_data(symbol)
-            if financial_data:
-                click.echo(f"Got financial data: {financial_data.symbol}", err=True)
-                # Add financial data to market_data
-                market_data['financial'] = {
-                    'revenue': financial_data.income_statements[0].revenue if financial_data.income_statements else None,
-                    'net_income': financial_data.income_statements[0].net_income if financial_data.income_statements else None,
-                    'gross_profit': financial_data.income_statements[0].gross_profit if financial_data.income_statements else None,
-                    'ebitda': financial_data.income_statements[0].ebitda if financial_data.income_statements else None,
-                }
-        except Exception as e:
-            click.echo(f"Failed to get financial data: {e}", err=True)
-        
-        # Calculate risk metrics
-        risk_calc = RiskCalculator()
-        risk_metrics = risk_calc.calculate_risk_metrics(symbol, closes)
-        risk_data = {
-            'var_95': risk_metrics.var_95,
-            'sharpe_ratio': risk_metrics.sharpe_ratio,
-            'max_drawdown': risk_metrics.max_drawdown,
-            'volatility': risk_metrics.volatility
-        }
-        
-        # Kronos Prediction
-        prediction_data = None
-        try:
-            click.echo("Running Kronos prediction...", err=True)
-            forecast_rows = []
-            for row in price_data[-100:]:
-                forecast_row = ForecastRow(
-                    timestamp=row['timestamp'],
-                    open=float(row['open']),
-                    high=float(row['high']),
-                    low=float(row['low']),
-                    close=float(row['close']),
-                    volume=float(row.get('volume', 0)),
-                    amount=float(row.get('amount', 0))
-                )
-                forecast_rows.append(forecast_row)
-            
-            request = ForecastRequest(
-                symbol=symbol,
-                timeframe="1d",
-                rows=forecast_rows,
-                pred_len=5,
-                sample_count=100
-            )
-            
-            result = forecast_from_request(request)
-            
-            if result['ok']:
-                prediction_data = {
-                    'model': 'Kronos-base',
-                    'prediction_days': 5,
-                    'forecast': result['forecast'],
-                    'probabilistic': result.get('probabilistic', {})
-                }
-                click.echo("Kronos prediction completed.", err=True)
-        except Exception as e:
-            click.echo(f"Kronos prediction failed: {e}", err=True)
-        
-        # AI Analysis (with Kronos data)
-        advisor = AIInvestmentAdvisor()
-        ai_result = advisor.analyze_stock(symbol, market_data, risk_data, prediction_data)
-        
-        # Format output
+        from kronos_fincept.agent import analyze_investment_question
+
+        click.echo(f"Running shared agent analysis for {symbol} (market={market})...", err=True)
+        result = analyze_investment_question(
+            f"请分析 {symbol} 的当前行情、Kronos 预测、风险和投资建议。",
+            symbol=symbol,
+            market=market,
+            context={"source": "cli_ai_analyze"},
+        )
+        payload = result.to_dict()
+        report = payload.get("report") or {}
+
         if output_format == 'json':
-            output = {
-                'symbol': ai_result.symbol,
-                'market': market,
-                'summary': ai_result.summary,
-                'detailed_analysis': ai_result.detailed_analysis,
-                'recommendation': ai_result.recommendation,
-                'confidence': ai_result.confidence,
-                'risk_level': ai_result.risk_level,
-                'kronos_prediction': prediction_data,
-                'timestamp': ai_result.timestamp
-            }
-            click.echo(json.dumps(output, indent=2, ensure_ascii=False))
+            click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
-            click.echo(f"AI Analysis for {symbol} ({market})")
+            click.echo(f"AI Analysis for {payload.get('symbol') or symbol} ({payload.get('market') or market})")
             click.echo("=" * 50)
-            
-            if prediction_data:
-                click.echo("\nKronos Prediction:")
-                click.echo("-" * 30)
-                for day in prediction_data['forecast']:
-                    click.echo(f"  {day['timestamp']}: {day['close']:.2f}")
-            
-            click.echo(f"\nSummary: {ai_result.summary}")
-            click.echo(f"\nRecommendation: {ai_result.recommendation}")
-            click.echo(f"Confidence: {ai_result.confidence:.0%}")
-            click.echo(f"Risk Level: {ai_result.risk_level}")
-            click.echo(f"\nDetailed Analysis:")
+            click.echo(f"\nSummary: {report.get('conclusion') or payload.get('final_report', '')}")
+            click.echo(f"\nRecommendation: {payload.get('recommendation')}")
+            click.echo(f"Confidence: {float(payload.get('confidence') or 0):.0%}")
+            click.echo(f"Risk Level: {payload.get('risk_level')}")
+            click.echo("\nDetailed Analysis:")
             click.echo("-" * 50)
-            click.echo(ai_result.detailed_analysis)
-        
-        return 0
-        
+            click.echo(payload.get("final_report", ""))
+        return 0 if result.ok else 1
     except Exception as e:
         click.echo(f"Error: {e}")
         return 1
@@ -872,57 +707,25 @@ def ai_analyze(ctx, symbol, market, output_format):
 @click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
 @click.pass_context
 def ai_report(ctx, symbol, output_format):
-    """Generate AI-powered investment report."""
+    """Generate AI-powered investment report through the shared agent chain."""
     try:
-        from kronos_fincept.financial import AIInvestmentAdvisor
-        from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
-        from kronos_fincept.financial import TechnicalIndicators
-        
-        # Get market data
-        price_data = fetch_a_stock_ohlcv(
+        from kronos_fincept.agent import analyze_investment_question
+
+        click.echo(f"Generating shared agent report for {symbol}...", err=True)
+        result = analyze_investment_question(
+            f"请为 {symbol} 生成完整投资研究报告。",
             symbol=symbol,
-            start_date="20250101",
-            end_date="20260430"
+            market='cn',
+            context={"source": "cli_ai_report"},
         )
-        
-        if not price_data or len(price_data) == 0:
-            click.echo(f"Error: Could not get price data for {symbol}")
-            return 1
-        
-        # Prepare data
-        closes = [row['close'] for row in price_data]
-        latest = price_data[-1]
-        
-        market_data = {
-            'current_price': latest['close'],
-            'data_points': len(price_data),
-            'price_history': price_data[-10:]
-        }
-        
-        # Calculate technical indicators
-        ti = TechnicalIndicators()
-        indicators = ti.calculate_all_indicators(closes)
-        indicators_dict = {k: v.__dict__ if hasattr(v, '__dict__') else v for k, v in indicators.items()}
-        
-        # AI Report
-        advisor = AIInvestmentAdvisor()
-        report = advisor.generate_report(symbol, market_data, indicators_dict)
-        
-        # Format output
+        payload = result.to_dict()
         if output_format == 'json':
-            output = {
-                'symbol': symbol,
-                'report': report,
-                'timestamp': datetime.now().isoformat()
-            }
-            click.echo(json.dumps(output, indent=2, ensure_ascii=False))
+            click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
-            click.echo(f"Investment Report for {symbol}")
+            click.echo(f"Investment Report for {payload.get('symbol') or symbol}")
             click.echo("=" * 50)
-            click.echo(report)
-        
-        return 0
-        
+            click.echo(payload.get("final_report", ""))
+        return 0 if result.ok else 1
     except Exception as e:
         click.echo(f"Error: {e}")
         return 1
