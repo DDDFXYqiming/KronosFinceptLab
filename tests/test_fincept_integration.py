@@ -106,7 +106,7 @@ def start_daemon(dry_run: bool = True) -> subprocess.Popen:
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_ready_handshake() -> bool:
+def _check_ready_handshake() -> bool:
     """Daemon should send {"ready": true} on startup."""
     print("  [1] Ready handshake...", end=" ")
     proc = start_daemon()
@@ -122,7 +122,7 @@ def test_ready_handshake() -> bool:
         proc.wait()
 
 
-def test_forecast_dry_run() -> bool:
+def _check_forecast_dry_run() -> bool:
     """Single-asset forecast in dry-run mode."""
     print("  [2] Forecast (dry-run)...", end=" ")
     proc = start_daemon()
@@ -159,7 +159,7 @@ def test_forecast_dry_run() -> bool:
         proc.wait()
 
 
-def test_batch_forecast() -> bool:
+def _check_batch_forecast() -> bool:
     """Batch forecast with ranking."""
     print("  [3] Batch forecast (dry-run)...", end=" ")
     proc = start_daemon()
@@ -197,7 +197,7 @@ def test_batch_forecast() -> bool:
         proc.wait()
 
 
-def test_shutdown() -> bool:
+def _check_shutdown() -> bool:
     """Shutdown action should cleanly terminate the daemon."""
     print("  [4] Shutdown...", end=" ")
     proc = start_daemon()
@@ -225,7 +225,7 @@ def test_shutdown() -> bool:
             proc.wait()
 
 
-def test_error_handling() -> bool:
+def _check_error_handling() -> bool:
     """Invalid OHLC data should return error, not crash."""
     print("  [5] Error handling...", end=" ")
     proc = start_daemon()
@@ -267,7 +267,7 @@ def test_error_handling() -> bool:
         proc.wait()
 
 
-def test_unknown_action() -> bool:
+def _check_unknown_action() -> bool:
     """Unknown action should return error, not crash."""
     print("  [6] Unknown action...", end=" ")
     proc = start_daemon()
@@ -287,6 +287,30 @@ def test_unknown_action() -> bool:
         proc.wait()
 
 
+def test_ready_handshake() -> None:
+    assert _check_ready_handshake()
+
+
+def test_forecast_dry_run() -> None:
+    assert _check_forecast_dry_run()
+
+
+def test_batch_forecast() -> None:
+    assert _check_batch_forecast()
+
+
+def test_shutdown() -> None:
+    assert _check_shutdown()
+
+
+def test_error_handling() -> None:
+    assert _check_error_handling()
+
+
+def test_unknown_action() -> None:
+    assert _check_unknown_action()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -300,12 +324,12 @@ def main():
     print()
 
     tests = [
-        test_ready_handshake,
-        test_forecast_dry_run,
-        test_batch_forecast,
-        test_shutdown,
-        test_error_handling,
-        test_unknown_action,
+        _check_ready_handshake,
+        _check_forecast_dry_run,
+        _check_batch_forecast,
+        _check_shutdown,
+        _check_error_handling,
+        _check_unknown_action,
     ]
 
     passed = 0
