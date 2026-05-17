@@ -47,10 +47,7 @@ def test_v100_analysis_page_keeps_five_temporary_turns_and_agent_timeout():
     assert "Agent 分析包含行情、Kronos、网页检索和 LLM 汇总" in api
 
 
-def test_v100_readme_documents_digital_oracle_and_deepseek_endpoint():
+def test_v100_readme_keeps_current_version_label():
     readme = read("README.md")
 
     assert "Version: v10." in readme
-    assert "https://github.com/komako-workshop/digital-oracle" in readme
-    assert "https://api.deepseek.com" in readme
-    assert "chat/completions" in readme

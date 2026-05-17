@@ -30,9 +30,6 @@ An integrated quantitative finance analytics platform combining **market data, A
 | Macro signals | Macro page | `POST /api/v1/analyze/macro` | `kronos analyze macro` |
 | Batch ranking | Batch page | `POST /api/batch` | `kronos batch` |
 
-The macro layer is orchestrated by `MacroDataManager`, with optional Digital Oracle integration: https://github.com/komako-workshop/digital-oracle.
-LLM synthesis uses OpenRouter first, then DeepSeek-compatible `https://api.deepseek.com/chat/completions` fallback when configured.
-
 ## What Makes It Unique
 
 - **Local-first** — All core capabilities run offline with no cloud dependency lock-in
