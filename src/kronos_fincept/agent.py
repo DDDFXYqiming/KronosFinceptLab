@@ -3420,7 +3420,9 @@ JSON 字段：
 conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties, recommendation, confidence, risk_level, disclaimer,
 如果 trusted_project_context.macro 存在，还必须输出：
 macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions。
-macro_signals 为数组，每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
+宏观问题的 conclusion 和 macro_analysis 第一字符起必须直接回答用户问题，格式为“结论：……”。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
+宏观问题每个文字字段最多 2 句，避免长篇解释导致 JSON 被截断。
+macro_signals 可省略或最多返回 5 条最关键摘要；后端会用真实 provider 结构化信号补齐。每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
 time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。信号分层规则：短期（3-12个月）= 期权、VIX、预测市场近月、价格动量、FOMC概率；中期（1-3年）= 收益率曲线、CFTC持仓、信用周期、GDP预测；长期（3-10年）= BIS信用缺口、世界银行GDP、设备订单、人口结构等。
 cross_validation 和 contradictions 合起来视为“信号一致性评估”区块：前者写共振信号，后者写矛盾信号及原因。
 probability_scenarios 为数组，每项包含 scenario, probability, basis。必须读取 trusted_project_context.macro.dimension_coverage；只有 sufficient_evidence=true 才能输出高置信度方向判断。少于 3 个独立宏观维度时必须明确说明缺口，不要编造，confidence 不得超过 0.45，recommendation 使用“观察”或“需更多证据”。概率总和应接近 1。
@@ -3468,7 +3470,7 @@ asset_reports: [
                 {"role": "user", "content": user_content},
             ],
             temperature=0.2,
-            max_tokens=1800,
+            max_tokens=3200,
             timeout=_deepseek_report_timeout_seconds(context),
             purpose="report",
             provider_timeouts=_report_provider_timeouts(context),
@@ -3576,9 +3578,36 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _macro_local_conclusion(
+    question: str,
+    *,
+    signal_count: int,
+    provider_count: int,
+    top_sources: str,
+    dimension_count: int,
+    required_dimensions: int,
+    sufficient_evidence: bool,
+) -> str:
+    normalized_question = question.lower()
+    asks_buy_timing = any(keyword in normalized_question for keyword in ("买", "买入", "加仓", "追", "配置", "入场"))
+    if signal_count <= 0:
+        return "结论：当前无法判断，不建议据此做买入、卖出或加仓决定；宏观数据源暂未返回有效信号。"
+    evidence_summary = (
+        f"本轮从 {provider_count} 个宏观 provider 获取 {signal_count} 条信号，"
+        f"覆盖 {dimension_count}/{required_dimensions} 类独立维度，主要来源：{top_sources}。"
+    )
+    if not sufficient_evidence:
+        action = "暂不支持直接买入或追涨，当前只能观察并继续验证" if asks_buy_timing else "只能给出观察结论，暂不支持高置信度方向判断"
+        return f"结论：{action}；{evidence_summary}"
+    if asks_buy_timing:
+        return f"结论：宏观证据已满足交叉验证，但仍不支持无条件追买；更适合观察或小仓位分批验证，并等待价格与盈利信号确认。{evidence_summary}"
+    return f"结论：当前宏观证据满足交叉验证，可给出中等置信度的观察判断；具体方向仍需结合下方信号一致性和监控阈值确认。{evidence_summary}"
+
+
 def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
     signals = _normalize_macro_signals(macro_context.get("signals"))
     provider_ids = macro_context.get("selected_provider_ids") or []
+    question = str(macro_context.get("question") or "")
     signal_count = len(signals)
     errors = macro_context.get("errors") or {}
     coverage = _macro_dimension_coverage_from_context(macro_context, signals)
@@ -3588,7 +3617,15 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
     sufficient_evidence = bool(coverage.get("sufficient_evidence"))
     top_sources = ", ".join(str(item.get("source")) for item in signals[:5]) if signals else "无可用信号"
     if signal_count and sufficient_evidence:
-        conclusion = f"已从 {len(provider_ids)} 个宏观 provider 获取 {signal_count} 条信号，主要来源：{top_sources}。"
+        conclusion = _macro_local_conclusion(
+            question,
+            signal_count=signal_count,
+            provider_count=len(provider_ids),
+            top_sources=top_sources,
+            dimension_count=dimension_count,
+            required_dimensions=required_dimensions,
+            sufficient_evidence=True,
+        )
         cross_validation = (
             f"已覆盖 {dimension_count}/{required_dimensions} 类独立宏观维度"
             f"（{', '.join(dimension_labels)}），可进行交叉校验；请优先关注多个来源同向的信号。"
@@ -3596,9 +3633,14 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
         contradictions = "如不同 provider 方向不一致，应以交易型数据优先，并降低结论置信度。"
         confidence = min(0.72, 0.45 + signal_count * 0.04)
     elif signal_count:
-        conclusion = (
-            f"已从 {len(provider_ids)} 个宏观 provider 获取 {signal_count} 条信号，但仅覆盖 "
-            f"{dimension_count}/{required_dimensions} 类独立宏观维度，证据不足，不能给出高置信度强结论。"
+        conclusion = _macro_local_conclusion(
+            question,
+            signal_count=signal_count,
+            provider_count=len(provider_ids),
+            top_sources=top_sources,
+            dimension_count=dimension_count,
+            required_dimensions=required_dimensions,
+            sufficient_evidence=False,
         )
         cross_validation = (
             f"交叉验证不足：当前维度为 {', '.join(dimension_labels) if dimension_labels else '无'}；"
@@ -3607,7 +3649,15 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
         contradictions = "证据维度不足时，任何单一 provider 的方向都只能视为研究线索，不能视为已验证结论。"
         confidence = min(float(coverage.get("confidence_cap") or 0.45), 0.3 + signal_count * 0.03)
     else:
-        conclusion = "宏观 provider 暂未返回可用信号，不能给出高置信度宏观判断。"
+        conclusion = _macro_local_conclusion(
+            question,
+            signal_count=0,
+            provider_count=len(provider_ids),
+            top_sources=top_sources,
+            dimension_count=dimension_count,
+            required_dimensions=required_dimensions,
+            sufficient_evidence=False,
+        )
         cross_validation = "缺少至少 3 个独立宏观维度，交叉验证不足。"
         contradictions = "无可比较信号；请检查 provider 可用性、网络和可选 API 配置。"
         confidence = 0.25
