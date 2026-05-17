@@ -28,8 +28,12 @@ external/
 !.env.example
 secrets/
 
-# Internal planning docs
+# Internal planning docs and local agent artifacts
 .hermes/
+.trae/
+.onboarded
+plan_*/
+skills/
 SPEC.md
 SPC.md
 spec.md
@@ -37,6 +41,9 @@ spc.md
 docs/spec*.md
 docs/spc*.md
 docs/RUST_REFACTORING_ASSESSMENT.md
+
+# Local dependency resolver artifacts
+uv.lock
 
 # Temporary / ad-hoc scripts
 scripts/*_analysis.py
