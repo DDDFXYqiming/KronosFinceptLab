@@ -128,6 +128,11 @@ def _query_text(query: MacroQuery) -> str:
     return " ".join(part for part in parts if part).lower()
 
 
+def _looks_like_market_symbol(value: str) -> bool:
+    candidate = (value or "").strip().upper()
+    return bool(re.fullmatch(r"\^?[A-Z0-9][A-Z0-9.\-=/]{0,14}", candidate))
+
+
 def _infer_yahoo_symbol(query: MacroQuery, *, default: str = "SPY") -> tuple[str, str]:
     if query.symbols:
         raw_symbol = str(query.symbols[0]).strip()
@@ -135,7 +140,8 @@ def _infer_yahoo_symbol(query: MacroQuery, *, default: str = "SPY") -> tuple[str
         for pattern, symbol, label in YAHOO_ASSET_SYMBOLS:
             if re.search(pattern, text, flags=re.IGNORECASE):
                 return symbol, label
-        return raw_symbol.upper(), raw_symbol.upper()
+        if _looks_like_market_symbol(raw_symbol):
+            return raw_symbol.upper(), raw_symbol.upper()
     text = _query_text(query)
     for pattern, symbol, label in YAHOO_ASSET_SYMBOLS:
         if re.search(pattern, text, flags=re.IGNORECASE):
@@ -1354,8 +1360,10 @@ class StooqProvider(MacroProvider):
         symbol: str | None = None
         label: str = ""
         if query.symbols:
-            symbol = str(query.symbols[0]).strip().upper()
-            label = symbol
+            raw_symbol = str(query.symbols[0]).strip()
+            if _looks_like_market_symbol(raw_symbol):
+                symbol = raw_symbol.upper()
+                label = symbol
 
         # If no symbol or it's a generic query, check against known indices
         if not symbol or len(signals) >= max(1, query.limit):
