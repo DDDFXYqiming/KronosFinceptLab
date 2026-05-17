@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 _LAST_REPORT_LLM_METADATA: dict[str, Any] = {}
+_LAST_REPORT_LLM_FAILURES: list[dict[str, Any]] = []
 _LLM_FAILURES: dict[str, tuple[int, float]] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
@@ -345,6 +346,7 @@ def _llm_source(provider: LLMChatProvider, purpose: str) -> str:
 
 def _clear_last_report_llm_metadata() -> None:
     _LAST_REPORT_LLM_METADATA.clear()
+    _LAST_REPORT_LLM_FAILURES.clear()
 
 
 def _set_last_report_llm_metadata(provider: LLMChatProvider) -> None:
@@ -361,6 +363,56 @@ def _set_last_report_llm_metadata(provider: LLMChatProvider) -> None:
 
 def _last_report_llm_metadata() -> dict[str, Any]:
     return dict(_LAST_REPORT_LLM_METADATA)
+
+
+def _record_report_llm_failure(provider: LLMChatProvider, reason: str, **metadata: Any) -> None:
+    _LAST_REPORT_LLM_FAILURES.append(
+        {
+            "provider": provider.name,
+            "provider_display": provider.display_name,
+            "model": provider.model,
+            "reason": reason,
+            **metadata,
+        }
+    )
+
+
+def _last_report_llm_failures() -> list[dict[str, Any]]:
+    return [dict(item) for item in _LAST_REPORT_LLM_FAILURES]
+
+
+def _report_llm_fallback_summary(failures: list[dict[str, Any]]) -> str:
+    if not failures:
+        if not _llm_provider_chain():
+            return "LLM 未配置，已使用本地结构化报告模板。"
+        return "LLM 调用失败，已使用本地结构化报告模板。"
+    parts: list[str] = []
+    for failure in failures:
+        provider = str(failure.get("provider_display") or failure.get("provider") or "LLM")
+        reason = str(failure.get("reason") or "failed")
+        if reason == "http_error":
+            status_code = failure.get("status_code")
+            if status_code == 429:
+                parts.append(f"{provider} 限流")
+            elif status_code:
+                parts.append(f"{provider} 返回 HTTP {status_code}")
+            else:
+                parts.append(f"{provider} HTTP 调用失败")
+        elif reason == "unparseable_content":
+            parts.append(f"{provider} 返回格式不可解析")
+        elif reason == "invalid_json_response":
+            parts.append(f"{provider} 返回非 JSON 响应")
+        elif reason == "circuit_open":
+            parts.append(f"{provider} 熔断暂跳过")
+        elif reason == "import_failed":
+            parts.append("requests 依赖不可用")
+        else:
+            parts.append(f"{provider} 调用异常")
+    attempted_deepseek = any(str(item.get("provider")) == "deepseek" for item in failures)
+    if any(item.get("status_code") == 429 for item in failures) and attempted_deepseek:
+        parts.append("已尝试 DeepSeek")
+    detail = "；".join(dict.fromkeys(parts))
+    return f"{detail}，已使用本地结构化报告模板。"
 
 
 def _call_structured_llm_json(
@@ -396,11 +448,15 @@ def _call_structured_llm_json(
             error_type=type(exc).__name__,
             purpose=purpose,
         )
+        if purpose == "report":
+            _LAST_REPORT_LLM_FAILURES.append({"reason": "import_failed"})
         return None
 
     max_attempts = max(1, env_int("KRONOS_LLM_MAX_PROVIDER_ATTEMPTS", 2))
     for provider in providers[:max_attempts]:
         if _llm_provider_circuit_open(provider):
+            if purpose == "report":
+                _record_report_llm_failure(provider, "circuit_open")
             log_event(
                 logger,
                 logging.WARNING,
@@ -427,6 +483,8 @@ def _call_structured_llm_json(
                 timeout=provider_timeout,
             )
             if response.status_code != 200:
+                if purpose == "report":
+                    _record_report_llm_failure(provider, "http_error", status_code=response.status_code)
                 log_event(
                     logger,
                     logging.WARNING,
@@ -443,6 +501,8 @@ def _call_structured_llm_json(
             try:
                 response_payload = response.json()
             except ValueError as exc:
+                if purpose == "report":
+                    _record_report_llm_failure(provider, "invalid_json_response")
                 log_event(
                     logger,
                     logging.WARNING,
@@ -458,6 +518,12 @@ def _call_structured_llm_json(
             content = _deepseek_message_content(response_payload)
             parsed = _extract_json_object(content)
             if not isinstance(parsed, dict) or not parsed:
+                if purpose == "report":
+                    _record_report_llm_failure(
+                        provider,
+                        "unparseable_content",
+                        finish_reason=_deepseek_finish_reason(response_payload),
+                    )
                 log_event(
                     logger,
                     logging.WARNING,
@@ -474,6 +540,8 @@ def _call_structured_llm_json(
             return parsed, provider
         except Exception as exc:
             _record_llm_provider_failure(provider)
+            if purpose == "report":
+                _record_report_llm_failure(provider, "exception", error_type=type(exc).__name__)
             log_event(
                 logger,
                 logging.WARNING,
@@ -3098,12 +3166,13 @@ def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, 
             ),
         )
 
+    failures = _last_report_llm_failures()
     return _fallback_report(context), AgentToolCall(
         name="LLM 汇总",
         status="fallback",
-        summary="LLM 未配置或调用失败，已使用本地结构化报告模板。",
+        summary=_report_llm_fallback_summary(failures),
         elapsed_ms=_elapsed_ms(started),
-        metadata=_tool_metadata(model=_deepseek_model(), fallback=True),
+        metadata=_tool_metadata(model=_deepseek_model(), fallback=True, failures=failures),
     )
 
 

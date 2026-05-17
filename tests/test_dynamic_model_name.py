@@ -3,6 +3,7 @@ from kronos_fincept.agent import (
     AgentToolCall,
     ResolvedSymbol,
     _generate_report,
+    _record_report_llm_failure,
     _set_last_report_llm_metadata,
     LLMChatProvider,
 )
@@ -85,6 +86,27 @@ def test_generate_report_fallback_uses_llm_summary_name(monkeypatch):
     assert "DeepSeek" not in tool_call.summary
     assert "OpenRouter" not in tool_call.summary
     assert "LLM" in tool_call.summary
+
+
+def test_generate_report_fallback_summary_shows_provider_failures(monkeypatch):
+    openrouter = _make_provider(name="openrouter", display_name="OpenRouter Free", model="deepseek/deepseek-v4-flash:free")
+    deepseek = _make_provider(name="deepseek", display_name="DeepSeek", model="deepseek-chat")
+
+    def fake_call(question, context):
+        _record_report_llm_failure(openrouter, "http_error", status_code=429)
+        _record_report_llm_failure(deepseek, "unparseable_content")
+        return None
+
+    monkeypatch.setattr("kronos_fincept.agent._call_deepseek_report", fake_call)
+
+    report, tool_call = _generate_report("test question", {})
+
+    assert tool_call.status == "fallback"
+    assert "OpenRouter Free 限流" in tool_call.summary
+    assert "已尝试 DeepSeek" in tool_call.summary
+    assert "DeepSeek 返回格式不可解析" in tool_call.summary
+    assert "本地结构化报告模板" in tool_call.summary
+    assert tool_call.metadata["failures"][0]["status_code"] == 429
 
 
 def test_step_name_inherits_tool_call_name(monkeypatch):
