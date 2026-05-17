@@ -140,7 +140,7 @@ def test_v1088_web_macro_uses_llm_router_before_local_fallback(monkeypatch):
 
     assert result.ok is True
     assert result.symbols == ["A股"]
-    assert manager.last_provider_ids == ["fear_greed", "us_treasury", "web_search"]
+    assert manager.last_provider_ids == ["fear_greed", "us_treasury", "web_search", "cftc_cot"]
     assert "openrouter_macro_router" in result.steps[0].summary
 
 
