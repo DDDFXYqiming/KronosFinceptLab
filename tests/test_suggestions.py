@@ -76,6 +76,33 @@ def test_macro_suggestions_returns_four_short_questions(monkeypatch: pytest.Monk
     assert len(calls) == 1
 
 
+def test_macro_suggestions_retry_when_topics_are_too_similar(monkeypatch: pytest.MonkeyPatch):
+    crypto_only = [
+        "比特币还能买吗",
+        "ETH会继续涨吗",
+        "加密市场见底了吗",
+        "BTC风险大吗",
+    ]
+    diverse = [
+        "黄金还能买吗",
+        "美联储会降息吗",
+        "AI泡沫到哪了",
+        "比特币见底了吗",
+    ]
+    calls = _patch_structured_llm(
+        monkeypatch,
+        [
+            {"questions": crypto_only},
+            {"questions": diverse},
+        ],
+    )
+
+    response = asyncio.run(suggestions.get_suggestions("macro"))
+
+    assert response["questions"] == diverse
+    assert len(calls) == 2
+
+
 def test_suggestions_retry_when_recent_history_overlaps(monkeypatch: pytest.MonkeyPatch):
     old_questions = [
         "招商银行能不能买",

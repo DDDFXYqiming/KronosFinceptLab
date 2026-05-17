@@ -73,7 +73,8 @@ _MACRO_SYSTEM = """\
   行业周期、全球市场位置、风险偏好、大类资产配置等
 - 问题应自然口语化，模拟真实用户提问
 - 每个问题必须简短精悍，建议 6-36 个中文字符
-- 覆盖不同宏观维度（利率、商品、地缘、加密、市场情绪等）
+- 4 个问题必须分别覆盖不同宏观维度（例如利率、商品、地缘、加密、市场情绪等），同一维度最多 1 个
+- 加密货币最多 1 个问题，不能让 4 个问题都围绕比特币/ETH/加密市场
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
 - 必须与先前给出的建议完全不同，刻意探索新角度、新问法
@@ -147,6 +148,15 @@ MACRO_ALLOWED_PATTERNS = [
     r"(?<![a-zA-Z])[A-Z]{1,5}(?![a-zA-Z])|(?<!\d)\d{6}(?!\d)",
 ]
 
+_MACRO_CATEGORY_PATTERNS = [
+    ("rates", r"利率|降息|加息|国债|收益率|美联储|央行|CPI|GDP|PMI|就业|美元|通胀|衰退"),
+    ("commodities", r"黄金|白银|原油|铜|商品|大宗|避险"),
+    ("geopolitics", r"战争|地缘|冲突|WW3|第三次世界大战|选举|预测市场|Polymarket|Kalshi"),
+    ("crypto", r"比特币|BTC|ETH|加密|crypto|Deribit|CoinGecko"),
+    ("equity_cycle", r"泡沫|AI|半导体|行业周期|估值|A股|港股|美股|大盘|指数|上证|深证|沪深|创业板|科创|恒生|纳指|标普|道指|罗素"),
+    ("sentiment", r"风险偏好|VIX|恐慌|贪婪|市场情绪|资金面|流动性|市场位置|现在位置|配置|入场"),
+]
+
 PROMPT_INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|rules|prompts)",
     r"忽略(以上|之前|前面|所有).*(规则|指令|提示|约束)",
@@ -190,6 +200,41 @@ def _validate_questions(questions: list[str], question_type: str) -> list[str]:
 
 def _normalize_question(question: str) -> str:
     return re.sub(r"[\s，。！？、,.!?；;：:\"'“”‘’（）()【】\[\]<>《》-]+", "", question.lower())
+
+
+def _macro_question_category(question: str) -> str:
+    """Classify a macro suggestion into a broad dimension for same-batch diversity."""
+    for category, pattern in _MACRO_CATEGORY_PATTERNS:
+        if re.search(pattern, question, re.IGNORECASE):
+            return category
+    return "other"
+
+
+def _select_diverse_macro_questions(questions: list[str], expected_count: int) -> list[str]:
+    """Prefer one question per macro dimension before filling remaining slots."""
+    selected: list[str] = []
+    used_categories: set[str] = set()
+
+    for question in questions:
+        category = _macro_question_category(question)
+        if category in used_categories:
+            continue
+        selected.append(question)
+        used_categories.add(category)
+        if len(selected) == expected_count:
+            return selected
+
+    for question in questions:
+        if question not in selected:
+            selected.append(question)
+            if len(selected) == expected_count:
+                break
+
+    return selected
+
+
+def _macro_diversity_count(questions: list[str]) -> int:
+    return len({_macro_question_category(question) for question in questions})
 
 
 def _overlap_ratio(new_questions: list[str], history: deque[list[str]]) -> float:
@@ -281,8 +326,21 @@ def _call_llm_for_suggestions(
                 )
                 continue
 
+            # Check same-batch macro topic diversity before accepting.
+            if question_type == "macro":
+                candidates = _select_diverse_macro_questions(valid, expected_count)
+                min_dimensions = min(3, expected_count)
+                diversity_count = _macro_diversity_count(candidates)
+                if diversity_count < min_dimensions:
+                    logger.info(
+                        "Attempt %d: only %d macro dimensions from %d questions, retrying",
+                        attempt + 1, diversity_count, len(candidates),
+                    )
+                    continue
+            else:
+                candidates = valid[:expected_count]
+
             # Check diversity against history
-            candidates = valid[:expected_count]
             ratio = _overlap_ratio(candidates, history)
             if ratio > 0.5 and attempt < MAX_RETRIES - 1:
                 logger.info(
