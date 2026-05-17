@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from scipy import stats
-from kronos_fincept import native
 
 
 @dataclass
@@ -103,10 +102,6 @@ class RiskCalculator:
         Returns:
             VaR value (positive number representing loss)
         """
-        rust_var = native.calculate_var_historical(returns, confidence_level, holding_period)
-        if rust_var is not None:
-            return rust_var
-
         if len(returns) == 0:
             return 0.0
         
@@ -210,14 +205,6 @@ class RiskCalculator:
             return 0.0
         
         rf = risk_free_rate or self.risk_free_rate
-        rust_sharpe = native.calculate_sharpe_ratio(
-            returns,
-            rf,
-            self.trading_days_per_year,
-        )
-        if rust_sharpe is not None:
-            return rust_sharpe
-        
         # Convert annual risk-free rate to daily
         rf_daily = (1 + rf) ** (1 / self.trading_days_per_year) - 1
         
@@ -256,15 +243,6 @@ class RiskCalculator:
             return 0.0
         
         rf = risk_free_rate or self.risk_free_rate
-        rust_sortino = native.calculate_sortino_ratio(
-            returns,
-            rf,
-            target_return,
-            self.trading_days_per_year,
-        )
-        if rust_sortino is not None:
-            return rust_sortino
-        
         # Convert annual risk-free rate to daily
         rf_daily = (1 + rf) ** (1 / self.trading_days_per_year) - 1
         
@@ -298,10 +276,6 @@ class RiskCalculator:
         Returns:
             Maximum drawdown as a positive number (e.g., 0.3 for 30%)
         """
-        rust_drawdown = native.calculate_max_drawdown(prices)
-        if rust_drawdown is not None:
-            return rust_drawdown
-
         if len(prices) < 2:
             return 0.0
         
@@ -333,14 +307,6 @@ class RiskCalculator:
         if len(returns) == 0:
             return 0.0
 
-        rust_volatility = native.calculate_volatility(
-            returns,
-            annualize,
-            self.trading_days_per_year,
-        )
-        if rust_volatility is not None:
-            return rust_volatility
-        
         volatility = np.std(returns)
         
         if annualize:

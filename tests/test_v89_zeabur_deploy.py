@@ -46,6 +46,8 @@ def test_zeabur_start_script_runs_api_and_next_standalone():
     assert "python -m uvicorn kronos_fincept.api.app:app" in script
     assert "node server.js" in script
     assert 'API_HOST="${API_HOST:-127.0.0.1}"' in script
+    assert 'WEB_HOST="${WEB_HOST:-0.0.0.0}"' in script
+    assert 'HOSTNAME="$WEB_HOST" PORT="$WEB_PORT" node server.js' in script
     assert 'WEB_PORT="${PORT:-3000}"' in script
     assert 'API_PORT="${API_PORT:-8000}"' in script
 
