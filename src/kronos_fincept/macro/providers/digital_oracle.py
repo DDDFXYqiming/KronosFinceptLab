@@ -220,6 +220,25 @@ def _latest_curve_row(year: int, curve_kind: str, *, timeout: int | float = 8) -
     return None
 
 
+def _latest_curve_row_with_retry(
+    year: int,
+    curve_kind: str,
+    *,
+    timeout: int | float = 8,
+    attempts: int = 2,
+) -> dict[str, Any] | None:
+    last_error: Exception | None = None
+    per_attempt_timeout = max(float(timeout) / max(1, attempts), 1.0)
+    for _ in range(max(1, attempts)):
+        try:
+            return _latest_curve_row(year, curve_kind, timeout=per_attempt_timeout)
+        except Exception as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    return None
+
+
 def _primary_cot_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not rows:
         return None
@@ -333,7 +352,7 @@ class USTreasuryProvider(MacroProvider):
         }
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         futures = {
-            executor.submit(_latest_curve_row, year, curve_type, timeout=timeout_seconds): curve_type
+            executor.submit(_latest_curve_row_with_retry, year, curve_type, timeout=timeout_seconds): curve_type
             for curve_type in rows
         }
         try:
