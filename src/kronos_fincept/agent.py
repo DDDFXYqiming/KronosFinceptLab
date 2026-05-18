@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import math
@@ -25,7 +26,7 @@ from kronos_fincept.schemas import (
     resolve_max_context,
 )
 from kronos_fincept.security_utils import env_int
-from kronos_fincept.web_search import WebSearchClient, WebSearchResponse
+from kronos_fincept.web_search import AnySearchClient, WebSearchClient, WebSearchResponse
 
 
 logger = logging.getLogger(__name__)
@@ -147,10 +148,10 @@ MACRO_ALLOWED_PATTERNS = [
 MACRO_ROUTE_PROVIDER_IDS: dict[str, tuple[str, ...]] = {
     "geopolitical": ("polymarket", "kalshi", "yahoo_price", "cftc_cot", "bis"),
     "recession": ("us_treasury", "cftc_cot", "bis", "fear_greed", "cme_fedwatch"),
-    "asset_pricing": ("yfinance_options", "yahoo_price", "cftc_cot", "fear_greed", "us_treasury"),
+    "asset_pricing": ("yfinance_options", "yahoo_price", "cftc_cot", "anysearch", "fear_greed", "us_treasury"),
     "stock_options": ("yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
-    "crypto": ("coingecko", "deribit", "fear_greed", "web_search", "polymarket"),
-    "default": ("polymarket", "us_treasury", "cftc_cot", "fear_greed", "web_search"),
+    "crypto": ("coingecko", "deribit", "fear_greed", "anysearch", "web_search"),
+    "default": ("polymarket", "us_treasury", "cftc_cot", "anysearch", "web_search"),
 }
 
 ALLOWED_MACRO_PROVIDER_IDS = frozenset(
@@ -167,6 +168,7 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "fear_greed",
         "cme_fedwatch",
         "web_search",
+        "anysearch",
         "yahoo_price",
         "deribit",
         "currency",
@@ -201,6 +203,7 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "fear_greed": "sentiment_news",
     "cme_fedwatch": "rates",
     "web_search": "sentiment_news",
+    "anysearch": "sentiment_news",
     "yahoo_price": "market_price",
     "deribit": "crypto_derivatives",
     "stooq": "market_price",
@@ -1958,15 +1961,20 @@ def _build_online_research(
 ) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
     web_client = _create_web_search_client()
+    anysearch_client = _create_anysearch_client()
     cninfo_client = _create_cninfo_client() if item.market == "cn" else None
     web_queries = _build_research_queries(item, question, max_queries=query_limit)
+    anysearch_queries = list(web_queries)
     cninfo_queries = _build_cninfo_queries(item, question, max_queries=max(1, min(query_limit, 2))) if item.market == "cn" else []
     active_web = web_client.is_configured
+    active_anysearch = anysearch_client.is_configured
     active_cninfo = bool(cninfo_client and cninfo_client.is_configured)
 
     query_groups: dict[str, list[str]] = {}
     if web_queries:
         query_groups["web_search"] = web_queries
+    if anysearch_queries:
+        query_groups["anysearch"] = anysearch_queries
     if cninfo_queries:
         query_groups["cninfo"] = cninfo_queries
 
@@ -1987,7 +1995,15 @@ def _build_online_research(
             "query_count": len(web_queries),
             "result_count": 0,
             "errors": [],
-        }
+        },
+        {
+            "source": "anysearch",
+            "provider": "anysearch" if active_anysearch else None,
+            "enabled": active_anysearch,
+            "query_count": len(anysearch_queries),
+            "result_count": 0,
+            "errors": [],
+        },
     ]
     if item.market == "cn":
         source_details.append(
@@ -2001,10 +2017,11 @@ def _build_online_research(
             }
         )
 
+    providers = [provider for provider in [web_client.provider or None, "anysearch" if active_anysearch else None, "cninfo" if active_cninfo else None] if provider]
     research: dict[str, Any] = {
-        "enabled": active_web or active_cninfo,
-        "provider": web_client.provider or ("cninfo" if active_cninfo else None),
-        "providers": [provider for provider in [web_client.provider or None, "cninfo" if active_cninfo else None] if provider],
+        "enabled": active_web or active_anysearch or active_cninfo,
+        "provider": providers[0] if providers else None,
+        "providers": providers,
         "queries": queries,
         "query_groups": query_groups,
         "results": [],
@@ -2014,15 +2031,8 @@ def _build_online_research(
     }
 
     if not research["enabled"]:
-        summary = "网页检索未启用：配置 WEB_SEARCH_PROVIDER 和 WEB_SEARCH_API_KEY 后可加入公开信息。"
-        log_event(
-            logger,
-            logging.INFO,
-            "web_search.disabled",
-            summary,
-            symbol=item.symbol,
-            market=item.market,
-        )
+        summary = "网页检索未启用：配置 WEB_SEARCH_PROVIDER/WEB_SEARCH_API_KEY 或 ANYSEARCH_ENABLED 后可加入公开信息。"
+        log_event(logger, logging.INFO, "web_search.disabled", summary, symbol=item.symbol, market=item.market)
         return research, AgentToolCall(
             name="online_research",
             status="skipped",
@@ -2032,7 +2042,7 @@ def _build_online_research(
                 symbol=item.symbol,
                 market=item.market,
                 enabled=False,
-                provider=web_client.provider or None,
+                provider=None,
                 providers=research["providers"],
                 queries=queries,
                 query_groups=query_groups,
@@ -2064,34 +2074,44 @@ def _build_online_research(
             )
         return responses
 
-    responses: list[WebSearchResponse] = []
-    web_responses: list[WebSearchResponse] = []
+    source_jobs: list[tuple[str, Any, list[str]]] = []
     if active_web:
-        web_responses = _run_source("web_search", web_client, web_queries)
-        responses.extend(web_responses)
+        source_jobs.append(("web_search", web_client, web_queries))
     elif web_queries:
-        log_event(
-            logger,
-            logging.INFO,
-            "web_search.disabled",
-            "网页检索未启用：配置 WEB_SEARCH_PROVIDER 和 WEB_SEARCH_API_KEY 后可加入公开信息。",
-            symbol=item.symbol,
-            market=item.market,
-        )
-
-    cninfo_responses: list[WebSearchResponse] = []
+        log_event(logger, logging.INFO, "web_search.disabled", "网页检索未启用：配置 WEB_SEARCH_PROVIDER 和 WEB_SEARCH_API_KEY 后可加入公开信息。", symbol=item.symbol, market=item.market)
+    if active_anysearch:
+        source_jobs.append(("anysearch", anysearch_client, anysearch_queries))
+    elif anysearch_queries:
+        log_event(logger, logging.INFO, "anysearch.disabled", "AnySearch 未启用：设置 ANYSEARCH_ENABLED=true 后可加入匿名公开搜索。", symbol=item.symbol, market=item.market)
     if active_cninfo and cninfo_client is not None:
-        cninfo_responses = _run_source("cninfo", cninfo_client, cninfo_queries)
-        responses.extend(cninfo_responses)
+        source_jobs.append(("cninfo", cninfo_client, cninfo_queries))
     elif cninfo_queries:
-        log_event(
-            logger,
-            logging.INFO,
-            "cninfo.disabled",
-            "巨潮资讯网官方披露检索未启用。",
-            symbol=item.symbol,
-            market=item.market,
-        )
+        log_event(logger, logging.INFO, "cninfo.disabled", "巨潮资讯网官方披露检索未启用。", symbol=item.symbol, market=item.market)
+
+    responses_by_source: dict[str, list[WebSearchResponse]] = {name: [] for name, _, _ in source_jobs}
+    if source_jobs:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(source_jobs)) as executor:
+            future_to_name = {executor.submit(_run_source, name, client, source_queries): name for name, client, source_queries in source_jobs}
+            for future in concurrent.futures.as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    responses_by_source[name] = future.result()
+                except Exception as exc:
+                    responses_by_source[name] = [
+                        WebSearchResponse(
+                            enabled=True,
+                            status="failed",
+                            provider=name,
+                            query="; ".join(query_groups.get(name, [])),
+                            results=[],
+                            elapsed_ms=_elapsed_ms(started),
+                            error=_short_error(exc),
+                        )
+                    ]
+
+    responses: list[WebSearchResponse] = []
+    for source_name in ("web_search", "anysearch", "cninfo"):
+        responses.extend(responses_by_source.get(source_name, []))
 
     result_payloads = []
     seen_urls: set[str] = set()
@@ -2102,38 +2122,20 @@ def _build_online_research(
             seen_urls.add(result.url)
             result_payloads.append(result.to_dict())
 
-    web_result_count = sum(len(response.results) for response in web_responses)
-    web_errors = [response.error for response in web_responses if response.error]
-    source_details[0].update(
-        {
-            "result_count": web_result_count,
-            "errors": web_errors,
-        }
-    )
-    cninfo_result_count = 0
-    cninfo_errors: list[str] = []
-    if item.market == "cn":
-        cninfo_result_count = sum(len(response.results) for response in cninfo_responses)
-        cninfo_errors = [response.error for response in cninfo_responses if response.error]
-        source_details[1].update(
-            {
-                "result_count": cninfo_result_count,
-                "errors": cninfo_errors,
-            }
-        )
+    counts = {name: sum(len(response.results) for response in source_responses) for name, source_responses in responses_by_source.items()}
+    errors_by_source = {name: [response.error for response in source_responses if response.error] for name, source_responses in responses_by_source.items()}
+    for detail in source_details:
+        name = str(detail["source"])
+        detail.update({"result_count": counts.get(name, 0), "errors": errors_by_source.get(name, [])})
 
     research["results"] = result_payloads
     research["responses"] = [response.to_dict() for response in responses]
     if result_payloads:
-        if web_result_count and cninfo_result_count:
-            summary = (
-                f"公开信息检索完成：{len(web_queries)} 个网页查询 + {len(cninfo_queries)} 个巨潮披露查询，"
-                f"共返回 {len(result_payloads)} 条结果。"
-            )
-        elif cninfo_result_count:
+        active_labels = [detail["source"] for detail in source_details if detail.get("enabled")]
+        if active_labels == ["cninfo"]:
             summary = f"官方披露检索完成：{len(cninfo_queries)} 个巨潮披露查询返回 {len(result_payloads)} 条结果。"
         else:
-            summary = f"网页检索完成：{len(web_queries)} 个查询返回 {len(result_payloads)} 条公开结果。"
+            summary = f"公开信息检索完成：{len(active_labels)} 个来源、{len(queries)} 个去重查询，共返回 {len(result_payloads)} 条结果。"
         return research, AgentToolCall(
             name="online_research",
             status="completed",
@@ -2143,7 +2145,7 @@ def _build_online_research(
                 symbol=item.symbol,
                 market=item.market,
                 enabled=True,
-                provider=web_client.provider or ("cninfo" if active_cninfo else None),
+                provider=research["provider"],
                 providers=research["providers"],
                 result_count=len(result_payloads),
                 queries=queries,
@@ -2154,14 +2156,7 @@ def _build_online_research(
 
     errors = [response.error for response in responses if response.error]
     hard_errors = [error for error in errors if error and error != "no results"]
-    if active_web and active_cninfo:
-        summary = "网页检索和巨潮披露检索未返回可用结果。" if not hard_errors else "网页检索和巨潮披露检索失败：" + "; ".join(hard_errors[:3])
-    elif active_cninfo:
-        summary = "巨潮披露检索未返回可用结果。" if not hard_errors else "巨潮披露检索失败：" + "; ".join(hard_errors[:3])
-    elif active_web:
-        summary = "网页检索未返回可用结果。" if not hard_errors else "网页检索失败：" + "; ".join(hard_errors[:2])
-    else:
-        summary = "网页检索未启用：配置 WEB_SEARCH_PROVIDER 和 WEB_SEARCH_API_KEY 后可加入公开信息。"
+    summary = "公开信息检索未返回可用结果。" if not hard_errors else "公开信息检索失败：" + "; ".join(hard_errors[:3])
     return research, AgentToolCall(
         name="online_research",
         status="failed" if research["enabled"] else "skipped",
@@ -2171,7 +2166,7 @@ def _build_online_research(
             symbol=item.symbol,
             market=item.market,
             enabled=research["enabled"],
-            provider=web_client.provider or ("cninfo" if active_cninfo else None),
+            provider=research["provider"],
             providers=research["providers"],
             queries=queries,
             errors=errors,
@@ -2180,9 +2175,12 @@ def _build_online_research(
         ),
     )
 
-
 def _create_web_search_client() -> WebSearchClient:
     return WebSearchClient()
+
+
+def _create_anysearch_client() -> AnySearchClient:
+    return AnySearchClient()
 
 
 def _create_cninfo_client() -> CninfoDisclosureClient:
@@ -2281,6 +2279,7 @@ def _ensure_macro_provider_dimension_floor(
         "cftc_cot",
         "dbnomics",
         "currency",
+        "anysearch",
         *select_macro_provider_ids(question, symbols=symbols),
         *MACRO_ROUTE_PROVIDER_IDS["default"],
         "stooq",
@@ -2352,7 +2351,7 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
     for provider_id in MACRO_ROUTE_PROVIDER_IDS[route]:
         if provider_id not in selected:
             selected.append(provider_id)
-        if len(selected) >= 5:
+        if len(selected) >= 6:
             break
     if len(selected) < 3:
         for provider_id in MACRO_ROUTE_PROVIDER_IDS["default"]:

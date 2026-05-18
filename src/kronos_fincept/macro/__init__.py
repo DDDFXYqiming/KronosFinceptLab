@@ -2,6 +2,7 @@
 
 from kronos_fincept.macro.manager import MacroDataManager
 from kronos_fincept.macro.providers import (
+    AnySearchProvider,
     BisProvider,
     CMEFedWatchProvider,
     CftcCotProvider,
@@ -26,6 +27,7 @@ from kronos_fincept.macro.providers import (
 from kronos_fincept.macro.schemas import MacroGatherResult, MacroProviderResult, MacroQuery, MacroSignal
 
 __all__ = [
+    "AnySearchProvider",
     "BisProvider",
     "CMEFedWatchProvider",
     "CftcCotProvider",

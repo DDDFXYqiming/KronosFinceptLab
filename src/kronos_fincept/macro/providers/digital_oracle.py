@@ -24,7 +24,7 @@ from typing import Any
 
 from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderUnavailable
 from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
-from kronos_fincept.web_search import WebSearchClient
+from kronos_fincept.web_search import AnySearchClient, WebSearchClient
 
 
 CFTC_SODA_URL = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
@@ -1026,6 +1026,18 @@ class WebSearchProvider(MacroProvider):
         return WebSearchClient()
 
 
+class AnySearchProvider(WebSearchProvider):
+    provider_id = "anysearch"
+    display_name = "AnySearch"
+    capabilities = ("public_web", "news")
+    requires_api_key = False
+
+    def _create_client(self) -> AnySearchClient | None:
+        if self._search_client_factory is not None:
+            return self._search_client_factory()
+        return AnySearchClient()
+
+
 class CurrencyProvider(MacroProvider):
     """Major currency pair data via Yahoo Finance.
 
@@ -1440,6 +1452,7 @@ def create_default_providers() -> list[MacroProvider]:
         FearGreedProvider(),
         CMEFedWatchProvider(),
         WebSearchProvider(),
+        AnySearchProvider(),
         YahooPriceProvider(),
         DeribitProvider(),
         CurrencyProvider(),
