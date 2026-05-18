@@ -140,6 +140,19 @@ class WebSearchConfig:
 
 
 @dataclass(frozen=True)
+class AnySearchConfig:
+    """Anonymous AnySearch REST API config."""
+    enabled: bool = field(default_factory=lambda: _get_bool("ANYSEARCH_ENABLED", False))
+    endpoint: str = field(default_factory=lambda: _get("ANYSEARCH_ENDPOINT", "https://api.anysearch.com/v1/search"))
+    timeout_seconds: int = field(default_factory=lambda: _get_int("ANYSEARCH_TIMEOUT_SECONDS", 8))
+    max_results: int = field(default_factory=lambda: _get_int("ANYSEARCH_MAX_RESULTS", 4))
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.enabled and self.endpoint)
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     """API server config."""
     host: str = field(default_factory=lambda: _get("API_HOST", "0.0.0.0"))
@@ -189,6 +202,7 @@ class Settings:
     kronos: KronosConfig = field(default_factory=KronosConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
+    anysearch: AnySearchConfig = field(default_factory=AnySearchConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 

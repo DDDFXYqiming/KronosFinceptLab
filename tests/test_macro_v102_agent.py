@@ -207,3 +207,10 @@ def test_v102_macro_cli_command(monkeypatch):
     assert payload["ok"] is True
     assert payload["report"]["macro_signals"]
     assert "macro_signal" in {call["name"] for call in payload["tool_calls"]}
+
+
+def test_v102_routes_include_anysearch_for_news_heavy_macro_questions():
+    from kronos_fincept.agent import select_macro_provider_ids
+
+    assert "anysearch" in select_macro_provider_ids("AI泡沫会不会影响美股和加密市场")
+    assert "anysearch" in select_macro_provider_ids("比特币现在宏观风险怎么样")

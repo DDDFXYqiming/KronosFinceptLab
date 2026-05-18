@@ -95,7 +95,7 @@ def test_v101_macro_manager_imports_and_registers_digital_oracle_providers():
     provider_ids = {item.provider_id for item in providers}
 
     assert MacroDataManager
-    assert len(providers) == 17
+    assert len(providers) == 18
     assert {
         "polymarket",
         "kalshi",
@@ -109,6 +109,7 @@ def test_v101_macro_manager_imports_and_registers_digital_oracle_providers():
         "fear_greed",
         "cme_fedwatch",
         "web_search",
+        "anysearch",
         "yahoo_price",
         "deribit",
         "currency",
@@ -196,3 +197,27 @@ def test_v101_readme_and_version_labels_are_current():
     assert "Version: v10." in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")
     assert "v10." in read("web/src/components/layout/Header.tsx")
+
+
+def test_v101_anysearch_provider_emits_public_web_signals():
+    from kronos_fincept.macro import AnySearchProvider, MacroQuery
+    from kronos_fincept.web_search import WebSearchResponse, WebSearchResult
+
+    class Client:
+        is_configured = True
+
+        def search(self, query):
+            return WebSearchResponse(
+                enabled=True,
+                status="completed",
+                provider="anysearch",
+                query=query,
+                results=[WebSearchResult("Macro news", "https://example.com/macro", "Macro signal")],
+                elapsed_ms=1,
+            )
+
+    signals = AnySearchProvider(search_client_factory=lambda: Client()).fetch_signals(MacroQuery("黄金宏观风险"))
+
+    assert len(signals) == 1
+    assert signals[0].source == "anysearch"
+    assert signals[0].metadata["search_provider"] == "anysearch"

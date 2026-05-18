@@ -2,6 +2,7 @@
 
 from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderError, MacroProviderUnavailable
 from kronos_fincept.macro.providers.digital_oracle import (
+    AnySearchProvider,
     BisProvider,
     CMEFedWatchProvider,
     CftcCotProvider,
@@ -23,6 +24,7 @@ from kronos_fincept.macro.providers.digital_oracle import (
 )
 
 __all__ = [
+    "AnySearchProvider",
     "BisProvider",
     "CMEFedWatchProvider",
     "CftcCotProvider",

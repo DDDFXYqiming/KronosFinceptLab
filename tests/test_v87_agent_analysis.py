@@ -167,3 +167,62 @@ def test_web_analysis_page_uses_agent_contract():
     assert "kronos-analysis-result" in page
     assert "AgentAnalyzeRequest" in api
     assert '"/v1/analyze/agent"' in api
+
+
+def test_online_research_runs_configured_web_and_anysearch_in_parallel(monkeypatch):
+    import time
+
+    from kronos_fincept import agent
+    from kronos_fincept.agent import ResolvedSymbol
+    from kronos_fincept.web_search import WebSearchResponse, WebSearchResult
+
+    class SlowSearchClient:
+        provider = "slow-web"
+        is_configured = True
+
+        def search(self, query: str):
+            time.sleep(0.2)
+            return WebSearchResponse(
+                enabled=True,
+                status="completed",
+                provider=self.provider,
+                query=query,
+                results=[WebSearchResult("Same URL", "https://example.com/shared", "web snippet")],
+                elapsed_ms=200,
+            )
+
+    class FastAnySearchClient:
+        provider = "anysearch"
+        is_configured = True
+
+        def search(self, query: str):
+            return WebSearchResponse(
+                enabled=True,
+                status="completed",
+                provider=self.provider,
+                query=query,
+                results=[
+                    WebSearchResult("Same URL duplicate", "https://example.com/shared", "dupe"),
+                    WebSearchResult("AnySearch Only", "https://example.com/any", "any snippet"),
+                ],
+                elapsed_ms=1,
+            )
+
+    monkeypatch.setattr(agent, "_build_research_queries", lambda *args, **kwargs: ["招商银行 analysis"])
+    monkeypatch.setattr(agent, "_create_web_search_client", lambda: SlowSearchClient())
+    monkeypatch.setattr(agent, "_create_anysearch_client", lambda: FastAnySearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: None)
+
+    started = time.perf_counter()
+    research, tool_call = agent._build_online_research(
+        ResolvedSymbol("600036", "cn", "招商银行"),
+        question="招商银行现在能不能买",
+        query_limit=1,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 0.35
+    assert tool_call.status == "completed"
+    assert research["providers"] == ["slow-web", "anysearch"]
+    assert [item["url"] for item in research["results"]] == ["https://example.com/shared", "https://example.com/any"]
+    assert {source["source"] for source in research["sources"]} >= {"web_search", "anysearch"}

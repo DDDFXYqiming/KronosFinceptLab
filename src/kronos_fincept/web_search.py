@@ -6,7 +6,7 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from kronos_fincept.config import WebSearchConfig, settings
+from kronos_fincept.config import AnySearchConfig, WebSearchConfig, settings
 
 
 @dataclass(frozen=True)
@@ -213,6 +213,49 @@ class WebSearchClient:
             elapsed_ms=int((time.perf_counter() - started_at) * 1000),
             error=error,
         )
+
+
+class AnySearchClient(WebSearchClient):
+    """Anonymous AnySearch REST client with WebSearchResponse-compatible output."""
+
+    def __init__(self, config: AnySearchConfig | Any | None = None, requester: Any | None = None) -> None:
+        self.config = config or settings.anysearch
+        self._requester = requester
+
+    @property
+    def provider(self) -> str:
+        return "anysearch"
+
+    @property
+    def is_configured(self) -> bool:
+        configured = getattr(self.config, "is_configured", None)
+        if isinstance(configured, bool):
+            return configured
+        if callable(configured):
+            return bool(configured())
+        return bool(getattr(self.config, "enabled", False) and getattr(self.config, "endpoint", ""))
+
+    def search(self, query: str) -> WebSearchResponse:
+        started = time.perf_counter()
+        clean_query = " ".join((query or "").split())
+        if not clean_query:
+            return self._response(False, "skipped", clean_query, started, [], "empty query")
+        if not self.is_configured:
+            return self._response(False, "disabled", clean_query, started, [], "anysearch is not enabled")
+        try:
+            response = self._requests().post(
+                self._endpoint("https://api.anysearch.com/v1/search"),
+                headers={"Content-Type": "application/json"},
+                json={"query": clean_query, "max_results": self._max_results()},
+                timeout=self._timeout(),
+            )
+            data = self._checked_json(response)
+            results = self._parse_results(data.get("results") or [], provider="anysearch")
+        except Exception as exc:
+            return self._response(True, "failed", clean_query, started, [], _short_error(exc))
+        status = "completed" if results else "skipped"
+        error = None if results else "no results"
+        return self._response(True, status, clean_query, started, results, error)
 
 
 def _optional_str(value: Any) -> str | None:
