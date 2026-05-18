@@ -43,6 +43,7 @@ WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 35}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 35
 WEB_MACRO_TIMEOUT_SECONDS = 16.0
 WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 12.0
+DEFAULT_LLM_PROVIDER_ORDER = ("deepseek", "openrouter")
 LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
 LLM_CONTEXT_MAX_TEXT_CHARS = 600
 LLM_CONTEXT_RECENT_MARKET_ROWS = 5
@@ -325,6 +326,23 @@ def _llm_provider_chain() -> list[LLMChatProvider]:
     return providers
 
 
+def _ordered_llm_providers(
+    providers: list[LLMChatProvider],
+    provider_order: tuple[str, ...] | None = None,
+) -> list[LLMChatProvider]:
+    """Return providers in a stable, latency-oriented order."""
+
+    order = provider_order or DEFAULT_LLM_PROVIDER_ORDER
+    priority = {name: index for index, name in enumerate(order)}
+    return [
+        provider
+        for _, provider in sorted(
+            enumerate(providers),
+            key=lambda item: (priority.get(item[1].name, len(priority)), item[0]),
+        )
+    ]
+
+
 def _llm_headers(provider: LLMChatProvider) -> dict[str, str]:
     headers = {
         "Authorization": f"Bearer {provider.api_key}",
@@ -425,18 +443,10 @@ def _call_structured_llm_json(
     provider_timeouts: dict[str, int] | None = None,
     provider_order: tuple[str, ...] | None = None,
 ) -> tuple[dict[str, Any], LLMChatProvider] | None:
-    providers = _llm_provider_chain()
-    if provider_order:
-        priority = {name: index for index, name in enumerate(provider_order)}
-        providers = [
-            provider
-            for _, provider in sorted(
-                enumerate(providers),
-                key=lambda item: (priority.get(item[1].name, len(priority)), item[0]),
-            )
-        ]
+    providers = _ordered_llm_providers(_llm_provider_chain(), provider_order)
     if not providers:
         return None
+
     try:
         import requests
     except Exception as exc:

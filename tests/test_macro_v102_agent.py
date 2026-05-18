@@ -102,6 +102,19 @@ def _rows(n: int = 40) -> list[dict]:
     ]
 
 
+def test_structured_llm_defaults_to_deepseek_before_openrouter():
+    from kronos_fincept import agent
+
+    providers = [
+        agent.LLMChatProvider("openrouter", "OpenRouter Free", "sk-or-test", "https://openrouter.example/v1", "free"),
+        agent.LLMChatProvider("deepseek", "DeepSeek", "sk-test", "https://deepseek.example/v1", "deepseek-chat"),
+    ]
+
+    ordered = agent._ordered_llm_providers(providers)
+
+    assert [provider.name for provider in ordered] == ["deepseek", "openrouter"]
+
+
 def test_v102_selects_macro_providers_for_geopolitical_question():
     from kronos_fincept.agent import select_macro_provider_ids
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -57,7 +58,34 @@ def test_suggestions_fetches_llm_once_then_uses_cache(monkeypatch: pytest.Monkey
     assert second["questions"] == questions
     assert second["source"] == "cache"
     assert len(calls) == 1
-    assert calls[0]["provider_order"] == ("openrouter", "deepseek")
+    assert "provider_order" not in calls[0]
+
+
+def test_concurrent_suggestions_share_one_generation(monkeypatch: pytest.MonkeyPatch):
+    questions = [
+        "招商银行短期风险",
+        "AAPL技术面怎么看",
+        "比亚迪Kronos预测",
+    ]
+    calls = _patch_structured_llm(monkeypatch, [{"questions": questions}])
+
+    original_fake = __import__("kronos_fincept.agent", fromlist=["_call_structured_llm_json"])._call_structured_llm_json
+
+    def slow_fake(*args: Any, **kwargs: Any):
+        time.sleep(0.05)
+        return original_fake(*args, **kwargs)
+
+    monkeypatch.setattr("kronos_fincept.agent._call_structured_llm_json", slow_fake)
+
+    async def run_many() -> list[dict[str, Any]]:
+        return await asyncio.gather(*(suggestions.get_suggestions("analysis") for _ in range(5)))
+
+    responses = asyncio.run(run_many())
+
+    assert all(response["questions"] == questions for response in responses)
+    assert [response["source"] for response in responses].count("fresh") == 1
+    assert [response["source"] for response in responses].count("cache") == 4
+    assert len(calls) == 1
 
 
 def test_macro_suggestions_returns_four_short_questions(monkeypatch: pytest.MonkeyPatch):

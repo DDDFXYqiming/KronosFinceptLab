@@ -103,7 +103,7 @@ def test_v107_deepseek_payload_keeps_structured_json_options():
     assert payload["thinking"] == {"type": "disabled"}
 
 
-def test_v107_stock_router_falls_back_from_openrouter_to_deepseek(monkeypatch):
+def test_v107_stock_router_uses_deepseek_before_openrouter(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -134,13 +134,11 @@ def test_v107_stock_router_falls_back_from_openrouter_to_deepseek(monkeypatch):
     assert decision.source == "deepseek_router"
     assert decision.metadata["provider"] == "deepseek"
     assert [(item.symbol, item.market, item.name) for item in decision.symbols] == [("600036", "cn", "招商银行")]
-    assert [call["json"]["model"] for call in calls] == ["openrouter/free", "deepseek-v4-flash"]
-    assert calls[0]["headers"]["HTTP-Referer"].endswith("KronosFinceptLab")
+    assert [call["json"]["model"] for call in calls] == ["deepseek-v4-flash"]
     assert calls[0]["json"]["thinking"] == {"type": "disabled"}
-    assert calls[1]["json"]["thinking"] == {"type": "disabled"}
 
 
-def test_v107_macro_router_uses_openrouter_free_when_it_returns_valid_json(monkeypatch):
+def test_v107_macro_router_uses_deepseek_before_openrouter(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -168,15 +166,15 @@ def test_v107_macro_router_uses_openrouter_free_when_it_returns_valid_json(monke
     decision = agent._call_deepseek_macro_router("A股现在位置怎么样")
 
     assert decision is not None
-    assert decision.source == "openrouter_macro_router"
-    assert decision.metadata["provider"] == "openrouter"
+    assert decision.source == "deepseek_macro_router"
+    assert decision.metadata["provider"] == "deepseek"
     assert decision.symbols == ["A股"]
     assert decision.provider_ids == ["web_search", "us_treasury"]
     assert len(calls) == 1
-    assert calls[0]["json"]["model"] == "openrouter/free"
+    assert calls[0]["json"]["model"] == "deepseek-v4-flash"
 
 
-def test_v107_report_uses_openrouter_metadata_when_free_model_succeeds(monkeypatch):
+def test_v107_report_uses_deepseek_metadata_when_both_providers_are_configured(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -190,7 +188,7 @@ def test_v107_report_uses_openrouter_metadata_when_free_model_succeeds(monkeypat
             200,
             _chat_payload(
                 {
-                    "conclusion": "OpenRouter 已完成低成本汇总。",
+                    "conclusion": "DeepSeek 已完成低延迟汇总。",
                     "short_term_prediction": "短期中性。",
                     "technical": "技术面中性。",
                     "fundamentals": "基本面需继续跟踪。",
@@ -208,15 +206,15 @@ def test_v107_report_uses_openrouter_metadata_when_free_model_succeeds(monkeypat
 
     report, tool_call = agent._generate_report("招商银行现在还能买吗", {"assets": []})
 
-    assert report["conclusion"] == "OpenRouter 已完成低成本汇总。"
+    assert report["conclusion"] == "DeepSeek 已完成低延迟汇总。"
     assert tool_call.status == "completed"
-    assert tool_call.metadata["provider"] == "openrouter"
-    assert tool_call.metadata["model"] == "openrouter/free"
-    assert "OpenRouter Free" in tool_call.summary
+    assert tool_call.metadata["provider"] == "deepseek"
+    assert tool_call.metadata["model"] == "deepseek-v4-flash"
+    assert "DeepSeek" in tool_call.summary
     assert len(calls) == 1
 
 
-def test_v107_report_falls_back_to_deepseek_when_openrouter_content_is_not_json(monkeypatch):
+def test_v107_report_skips_openrouter_when_deepseek_is_configured(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -253,10 +251,10 @@ def test_v107_report_falls_back_to_deepseek_when_openrouter_content_is_not_json(
     assert report["conclusion"] == "DeepSeek 兜底汇总完成。"
     assert tool_call.metadata["provider"] == "deepseek"
     assert tool_call.metadata["model"] == "deepseek-v4-flash"
-    assert [call["json"]["model"] for call in calls] == ["openrouter/free", "deepseek-v4-flash"]
+    assert [call["json"]["model"] for call in calls] == ["deepseek-v4-flash"]
 
 
-def test_v107_web_report_uses_free_provider_budget_before_deepseek(monkeypatch):
+def test_v107_web_report_uses_deepseek_budget_without_openrouter_probe(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -295,10 +293,10 @@ def test_v107_web_report_uses_free_provider_budget_before_deepseek(monkeypatch):
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [8, 30]
+    assert [call["timeout"] for call in calls] == [30]
 
 
-def test_v107_web_macro_report_uses_free_provider_budget_before_deepseek(monkeypatch):
+def test_v107_web_macro_report_uses_deepseek_budget_without_openrouter_probe(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -337,7 +335,7 @@ def test_v107_web_macro_report_uses_free_provider_budget_before_deepseek(monkeyp
 
     assert report is not None
     assert report["conclusion"] == "DeepSeek 在宏观 Web 短预算内完成兜底。"
-    assert [call["timeout"] for call in calls] == [8, 35]
+    assert [call["timeout"] for call in calls] == [35]
 
 
 def test_v107_web_macro_uses_llm_route_and_fast_provider_manager(monkeypatch):

@@ -35,6 +35,10 @@ class SuggestionResult:
 
 # In-memory cache: {type: SuggestionResult}
 _cache: dict[str, SuggestionResult] = {}
+_cache_locks: dict[str, asyncio.Lock] = {
+    "analysis": asyncio.Lock(),
+    "macro": asyncio.Lock(),
+}
 
 # History: track last 3 generations per type to avoid repeats
 _history: dict[str, deque[list[str]]] = {"analysis": deque(maxlen=3), "macro": deque(maxlen=3)}
@@ -295,7 +299,6 @@ def _call_llm_for_suggestions(
                 max_tokens=300,
                 timeout=15,
                 purpose="suggestions",
-                provider_order=("openrouter", "deepseek"),
             )
 
             if result is None:
@@ -389,40 +392,51 @@ async def get_suggestions(
             "source": "cache",
         }
 
-    if type == "analysis":
-        questions = await asyncio.to_thread(
-            _call_llm_for_suggestions,
-            _ANALYSIS_SYSTEM,
-            "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
-            _ANALYSIS_FLAVORS,
-            3,
-            "analysis",
+    async with _cache_locks[type]:
+        cached = _cache.get(type)
+        now = time.time()
+        if cached and (now - cached.generated_at) < SUGGESTION_CACHE_TTL_SECONDS:
+            return {
+                "questions": cached.questions,
+                "generated_at": cached.generated_at,
+                "source": "cache",
+            }
+
+        if type == "analysis":
+            questions = await asyncio.to_thread(
+                _call_llm_for_suggestions,
+                _ANALYSIS_SYSTEM,
+                "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
+                _ANALYSIS_FLAVORS,
+                3,
+                "analysis",
+            )
+        else:
+            questions = await asyncio.to_thread(
+                _call_llm_for_suggestions,
+                _MACRO_SYSTEM,
+                "请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。",
+                _MACRO_FLAVORS,
+                4,
+                "macro",
+            )
+
+        # Store in cache
+        generated_at = time.time()
+        result = SuggestionResult(questions=questions, generated_at=generated_at)
+        _cache[type] = result
+
+        log_event(
+            logger,
+            logging.INFO,
+            "suggestions.generated",
+            f"Generated {len(questions)} {type} suggestions",
+            suggestion_type=type,
+            count=len(questions),
         )
-    else:
-        questions = await asyncio.to_thread(
-            _call_llm_for_suggestions,
-            _MACRO_SYSTEM,
-            "请生成 4 个中文宏观经济/市场洞察问题，以 JSON 格式输出。",
-            _MACRO_FLAVORS,
-            4,
-            "macro",
-        )
 
-    # Store in cache
-    result = SuggestionResult(questions=questions, generated_at=now)
-    _cache[type] = result
-
-    log_event(
-        logger,
-        logging.INFO,
-        "suggestions.generated",
-        f"Generated {len(questions)} {type} suggestions",
-        suggestion_type=type,
-        count=len(questions),
-    )
-
-    return {
-        "questions": questions,
-        "generated_at": now,
-        "source": "fresh",
-    }
+        return {
+            "questions": questions,
+            "generated_at": generated_at,
+            "source": "fresh",
+        }
