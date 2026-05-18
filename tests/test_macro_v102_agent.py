@@ -214,3 +214,63 @@ def test_v102_routes_include_anysearch_for_news_heavy_macro_questions():
 
     assert "anysearch" in select_macro_provider_ids("AI泡沫会不会影响美股和加密市场")
     assert "anysearch" in select_macro_provider_ids("比特币现在宏观风险怎么样")
+
+
+
+
+def test_v102_macro_monitoring_disambiguates_tips_real_yield_and_nominal_degradation():
+    from kronos_fincept import agent
+
+    macro_context = {
+        "signals": [
+            {
+                "source": "us_treasury",
+                "signal_type": "real_yield_10y",
+                "value": 2.1,
+                "interpretation": "美国 10Y TIPS 实际收益率，黄金通常对实际利率上行承压。",
+                "time_horizon": "medium",
+                "confidence": 0.74,
+                "observed_at": "05/15/2026",
+                "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates",
+                "metadata": {
+                    "10y_real": 2.1,
+                    "curve_kind": "real",
+                    "degraded_errors": {"nominal": "timeout while fetching nominal curve after 12s"},
+                },
+            }
+        ],
+        "provider_results": {},
+        "dimension_coverage": {"sufficient_evidence": True, "dimension_count": 3, "required_dimension_count": 3},
+    }
+    report = {
+        "conclusion": "结论：观察。",
+        "short_term_prediction": "宏观链路不直接调用 Kronos K 线预测。",
+        "technical": "不适用。",
+        "fundamentals": "不适用。",
+        "risk": "数据时效风险。",
+        "uncertainties": "provider 可能降级。",
+        "recommendation": "观察",
+        "confidence": 0.6,
+        "risk_level": "中",
+        "disclaimer": "仅供研究。",
+        "macro_analysis": "实际收益率偏高。",
+        "macro_signals": macro_context["signals"],
+        "cross_validation": "利率维度需要和其他维度交叉验证。",
+        "contradictions": "名义利率暂缺。",
+        "monitoring_signals": [
+            {
+                "signal": "美国10Y实际收益率",
+                "current_value": 2.1,
+                "threshold": "跌破1.8%为看多信号",
+                "meaning": "实际利率下行将降低黄金持有成本。",
+            }
+        ],
+    }
+
+    normalized = agent._ensure_macro_report(report, macro_context)
+    monitoring = normalized["monitoring_signals"]
+
+    assert monitoring[0]["signal"] == "美国10Y TIPS实际收益率"
+    assert "05/15/2026" in monitoring[0]["meaning"]
+    assert "名义10Y收益率源降级" in monitoring[0]["meaning"]
+    assert any(item["signal"] == "美国10Y名义收益率" and item["current_value"] == "缺失" for item in monitoring)

@@ -3782,7 +3782,9 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
         if not merged.get(key):
             merged[key] = fallback.get(key)
     merged.setdefault("macro_evidence", fallback.get("macro_evidence"))
-    return _apply_macro_evidence_guard(_normalize_report(merged), macro_context)
+    normalized = _normalize_report(merged)
+    normalized = _annotate_macro_monitoring_signals(normalized, macro_context)
+    return _apply_macro_evidence_guard(normalized, macro_context)
 
 
 def _apply_macro_evidence_guard(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
@@ -3857,16 +3859,86 @@ def _default_probability_scenarios(signals: list[dict[str, Any]]) -> list[dict[s
     ]
 
 
+def _macro_monitoring_signal_label(signal: dict[str, Any]) -> str:
+    signal_type = str(signal.get("signal_type") or "").strip()
+    if signal_type == "real_yield_10y":
+        return "美国10Y TIPS实际收益率"
+    if signal_type == "yield_curve_10y_2y_spread":
+        return "美国10Y-2Y名义收益率利差"
+    if signal_type == "breakeven_10y":
+        return "美国10Y盈亏平衡通胀率"
+    return str(signal.get("source") or signal_type or "macro_signal")
+
+
+def _treasury_nominal_degradation(signals: list[dict[str, Any]]) -> str:
+    for signal in signals:
+        if str(signal.get("source") or "") != "us_treasury":
+            continue
+        metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+        degraded_errors = metadata.get("degraded_errors") if isinstance(metadata.get("degraded_errors"), dict) else {}
+        nominal_error = str(degraded_errors.get("nominal") or "").strip()
+        if nominal_error:
+            return nominal_error
+    return ""
+
+
+def _annotate_macro_monitoring_rows(
+    rows: list[dict[str, Any]],
+    signals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    real_yield = next((item for item in signals if item.get("signal_type") == "real_yield_10y"), None)
+    nominal_error = _treasury_nominal_degradation(signals)
+    nominal_present = any(item.get("signal_type") == "yield_curve_10y_2y_spread" for item in signals)
+    annotated: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        signal_name = str(item.get("signal") or "")
+        if "10Y" in signal_name and "实际收益率" in signal_name and "TIPS" not in signal_name:
+            item["signal"] = "美国10Y TIPS实际收益率"
+        if real_yield and item.get("signal") == "美国10Y TIPS实际收益率":
+            observed_at = str(real_yield.get("observed_at") or "").strip()
+            additions = []
+            if observed_at and observed_at not in str(item.get("meaning") or ""):
+                additions.append(f"数据日期：{observed_at}。")
+            if nominal_error and "名义10Y收益率源降级" not in str(item.get("meaning") or ""):
+                additions.append(f"名义10Y收益率源降级/缺失：{nominal_error}。")
+            if additions:
+                item["meaning"] = f"{item.get('meaning') or ''}{''.join(additions)}"
+        annotated.append(item)
+    if nominal_error and not nominal_present and not any(item.get("signal") == "美国10Y名义收益率" for item in annotated):
+        annotated.append(
+            {
+                "signal": "美国10Y名义收益率",
+                "current_value": "缺失",
+                "threshold": "名义曲线恢复可用后重新评估",
+                "meaning": f"名义10Y收益率源降级/缺失：{nominal_error}。当前不能把 TIPS 实际收益率当作名义10Y收益率。",
+            }
+        )
+    return annotated
+
+
+def _annotate_macro_monitoring_signals(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
+    rows = _normalize_monitoring_signals(report.get("monitoring_signals"))
+    if not rows:
+        return report
+    signals = _normalize_macro_signals(macro_context.get("signals")) or _normalize_macro_signals(report.get("macro_signals"))
+    report = dict(report)
+    report["monitoring_signals"] = _annotate_macro_monitoring_rows(rows, signals)
+    return report
+
+
 def _default_monitoring_signals(signals: list[dict[str, Any]], errors: dict[str, Any]) -> list[dict[str, Any]]:
     monitoring = [
         {
-            "signal": item["source"],
+            "signal": _macro_monitoring_signal_label(item),
             "current_value": item.get("value"),
             "threshold": "方向变化或置信度低于 0.5",
             "meaning": item.get("interpretation"),
         }
         for item in signals[:5]
     ]
+    if monitoring:
+        monitoring = _annotate_macro_monitoring_rows(monitoring, signals)
     if not monitoring and errors:
         monitoring.append(
             {

@@ -221,3 +221,47 @@ def test_v101_anysearch_provider_emits_public_web_signals():
     assert len(signals) == 1
     assert signals[0].source == "anysearch"
     assert signals[0].metadata["search_provider"] == "anysearch"
+
+
+
+
+def test_v101_us_treasury_retries_nominal_curve_before_degrading(monkeypatch):
+    from kronos_fincept.macro.providers import digital_oracle as providers
+
+    attempts = {"nominal": 0, "real": 0}
+
+    def fake_latest_curve_row(year, curve_kind, *, timeout=8):
+        attempts[curve_kind] += 1
+        if curve_kind == "nominal" and attempts[curve_kind] == 1:
+            raise TimeoutError("temporary nominal timeout")
+        if curve_kind == "nominal":
+            return {"Date": "05/15/2026", "2 Yr": "4.09", "10 Yr": "4.59"}
+        return {"Date": "05/15/2026", "10 YR": "2.10"}
+
+    monkeypatch.setattr(providers, "_latest_curve_row", fake_latest_curve_row)
+
+    signals = providers.USTreasuryProvider().fetch_signals(providers.MacroQuery("黄金该不该买"))
+    by_type = {signal.signal_type: signal for signal in signals}
+
+    assert attempts["nominal"] == 2
+    assert by_type["yield_curve_10y_2y_spread"].metadata["10y"] == 4.59
+    assert by_type["real_yield_10y"].value == 2.1
+    assert by_type["breakeven_10y"].value == 2.49
+    assert by_type["real_yield_10y"].metadata["degraded_errors"] == {}
+
+
+def test_v101_us_treasury_real_yield_signal_uses_tips_label(monkeypatch):
+    from kronos_fincept.macro.providers import digital_oracle as providers
+
+    def fake_latest_curve_row(year, curve_kind, *, timeout=8):
+        if curve_kind == "nominal":
+            raise TimeoutError("nominal unavailable")
+        return {"Date": "05/15/2026", "10 YR": "2.10"}
+
+    monkeypatch.setattr(providers, "_latest_curve_row", fake_latest_curve_row)
+
+    signals = providers.USTreasuryProvider().fetch_signals(providers.MacroQuery("黄金该不该买"))
+
+    assert [signal.signal_type for signal in signals] == ["real_yield_10y"]
+    assert "TIPS" in signals[0].interpretation
+    assert signals[0].metadata["degraded_errors"]["nominal"]
