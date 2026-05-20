@@ -265,3 +265,59 @@ def test_v101_us_treasury_real_yield_signal_uses_tips_label(monkeypatch):
     assert [signal.signal_type for signal in signals] == ["real_yield_10y"]
     assert "TIPS" in signals[0].interpretation
     assert signals[0].metadata["degraded_errors"]["nominal"]
+
+
+def test_v101_get_text_falls_back_to_urllib_when_requests_times_out(monkeypatch):
+    from kronos_fincept.macro.providers import digital_oracle as providers
+
+    class TimedOutRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            raise TimeoutError("requests read timed out")
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b"Date,10 Yr\n05/19/2026,4.59\n"
+
+    captured = {}
+
+    def fake_urlopen(request, timeout=8):
+        captured["timeout"] = timeout
+        captured["headers"] = dict(request.header_items())
+        return FakeResponse()
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", TimedOutRequests)
+    monkeypatch.setattr(providers.urllib.request, "urlopen", fake_urlopen)
+
+    text = providers._get_text("https://example.com/data.csv", timeout=7)
+
+    assert "05/19/2026" in text
+    assert captured["timeout"] == 7
+    assert captured["headers"]["Connection"] == "close"
+
+
+def test_v101_us_treasury_fetches_curves_sequentially_without_shared_timeout_border(monkeypatch):
+    from kronos_fincept.macro.providers import digital_oracle as providers
+
+    calls = []
+
+    def fake_latest_curve_row_with_retry(year, curve_kind, *, timeout=8):
+        calls.append((curve_kind, timeout))
+        if curve_kind == "nominal":
+            return {"Date": "05/19/2026", "2 Yr": "4.09", "10 Yr": "4.59"}
+        return {"Date": "05/19/2026", "10 YR": "2.10"}
+
+    monkeypatch.setattr(providers, "_latest_curve_row_with_retry", fake_latest_curve_row_with_retry)
+
+    nominal, real, errors = providers.USTreasuryProvider()._fetch_curve_rows(2026, timeout_seconds=30.0)
+
+    assert nominal["10 Yr"] == "4.59"
+    assert real["10 YR"] == "2.10"
+    assert errors == {}
+    assert calls == [("nominal", 30.0), ("real", 30.0)]
