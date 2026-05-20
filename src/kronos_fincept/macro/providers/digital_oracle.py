@@ -9,7 +9,6 @@ handled by ``MacroDataManager``.
 
 from __future__ import annotations
 
-import concurrent.futures
 import csv
 import io
 import json
@@ -89,18 +88,26 @@ def _get_json(url: str, *, params: dict[str, Any] | None = None, timeout: int = 
         return json.loads(response.read().decode("utf-8"))
 
 
-def _get_text(url: str, *, params: dict[str, Any] | None = None, timeout: int = 8) -> str:
+def _get_text_via_urllib(url: str, *, params: dict[str, Any] | None = None, timeout: int | float = 8) -> str:
+    with urllib.request.urlopen(_request(url, params=params, accept="text/csv,text/plain,*/*"), timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def _get_text(url: str, *, params: dict[str, Any] | None = None, timeout: int | float = 8) -> str:
     full_url = _encode_params(url, params)
     accept = "text/csv,text/plain,*/*"
     try:
         import requests  # type: ignore
     except Exception:
-        with urllib.request.urlopen(_request(url, params=params, accept=accept), timeout=timeout) as response:
-            return response.read().decode("utf-8", errors="replace")
+        return _get_text_via_urllib(url, params=params, timeout=timeout)
 
-    response = requests.get(full_url, headers=_request_headers(accept), timeout=timeout)
-    response.raise_for_status()
-    return str(response.text)
+    try:
+        request_timeout = min(float(timeout), 4.0) if full_url.startswith(TREASURY_RATES_CSV_URL) else timeout
+        response = requests.get(full_url, headers=_request_headers(accept), timeout=request_timeout)
+        response.raise_for_status()
+        return str(response.text)
+    except Exception:
+        return _get_text_via_urllib(url, params=params, timeout=timeout)
 
 
 def _get_zip_csv_rows(url: str, *, timeout: int = 10) -> list[dict[str, Any]]:
@@ -350,34 +357,16 @@ class USTreasuryProvider(MacroProvider):
             "nominal": None,
             "real": None,
         }
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        futures = {
-            executor.submit(_latest_curve_row_with_retry, year, curve_type, timeout=timeout_seconds): curve_type
-            for curve_type in rows
-        }
-        try:
-            done, pending = concurrent.futures.wait(
-                futures.keys(),
-                timeout=timeout_seconds,
-                return_when=concurrent.futures.ALL_COMPLETED,
-            )
-            for future in done:
-                curve_type = futures[future]
-                try:
-                    rows[curve_type] = future.result(timeout=0)
-                except Exception as exc:
-                    errors[curve_type] = str(exc)
-            for future in pending:
-                curve_type = futures[future]
-                errors[curve_type] = f"timeout while fetching {curve_type} curve after {timeout_seconds:g}s"
-                future.cancel()
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+        for curve_type in rows:
+            try:
+                rows[curve_type] = _latest_curve_row_with_retry(year, curve_type, timeout=timeout_seconds)
+            except Exception as exc:
+                errors[curve_type] = str(exc)
         return rows["nominal"], rows["real"], errors
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         year = date.today().year
-        nominal_row, real_row, errors = self._fetch_curve_rows(year, timeout_seconds=12.0)
+        nominal_row, real_row, errors = self._fetch_curve_rows(year, timeout_seconds=30.0)
 
         signals: list[MacroSignal] = []
         nominal_10y = _row_number(nominal_row or {}, "10 Yr", "10 YR", "10Y")
