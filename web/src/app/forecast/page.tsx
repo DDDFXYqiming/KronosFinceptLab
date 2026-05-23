@@ -6,7 +6,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { ApiError, api, formatApiError } from "@/lib/api";
+import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
 import { DEFAULT_MARKET, MARKET_OPTIONS, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
@@ -86,6 +88,7 @@ function ForecastContent() {
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const hasChartData = data.length > 0;
+  const demoMode = searchParams.get("demo") === "1";
 
   const clearForecastState = useCallback(() => {
     setData([]);
@@ -155,6 +158,21 @@ function ForecastContent() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!demoMode) return;
+    setSymbol(DEMO_SYMBOL);
+    setMarket(DEMO_MARKET as Market);
+    setData(demoHistoricalRows);
+    setPrediction(demoForecastRows);
+    setPredResult({
+      ok: true,
+      symbol: DEMO_SYMBOL,
+      forecast: demoForecastRows,
+      metadata: { device: "demo", elapsed_ms: 0, backend: "demo", warning: "演示数据，不代表实时行情，不构成投资建议。" },
+    });
+    setError("");
+  }, [demoMode, setData, setError, setMarket, setPredResult, setPrediction, setSymbol]);
 
   // Create/destroy chart
   useEffect(() => {
@@ -328,6 +346,12 @@ function ForecastContent() {
     <div className="page-shell space-y-6">
       <SectionLabel>价格预测</SectionLabel>
       <h1 className="page-title">价格预测</h1>
+      <ApiKeyNotice />
+      {demoMode && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          当前展示固定演示数据，不调用后端模型，不代表实时行情。
+        </div>
+      )}
 
       {/* Controls */}
       <Card>

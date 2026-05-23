@@ -15,8 +15,11 @@ import type {
   ForecastResponse,
   HealthResponse,
   IndicatorResponse,
+  JobStatusResponse,
+  JobSubmitResponse,
   MacroAnalyzeRequest,
   SearchResult,
+  SecuritySummaryResponse,
 } from "@/types/api";
 
 export type {
@@ -44,12 +47,15 @@ export type {
   GlobalDataResponse,
   HealthResponse,
   IndicatorResponse,
+  JobStatusResponse,
+  JobSubmitResponse,
   MacroAnalyzeRequest,
   MacroMonitoringSignal,
   MacroProbabilityScenario,
   MacroSignal,
   RankedSignal,
   SearchResult,
+  SecuritySummaryResponse,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
@@ -147,6 +153,15 @@ export function saveConfiguredApiKey(value: string): void {
 }
 
 function enrichGatewayError(status: number, message: string, path: string): string {
+  if (status === 401) {
+    return "需要配置 Kronos API Key 后才能使用该功能。请前往设置页保存密钥。";
+  }
+  if (status === 403) {
+    return "该操作需要 Admin API Key；普通 API Key 不能执行告警管理或安全诊断。";
+  }
+  if (status === 429) {
+    return "请求过于频繁，已触发限流。请稍后重试，或降低分析/预测频率。";
+  }
   const isAgentAnalyze = path.includes("/v1/analyze/agent");
   const isMacroAnalyze = path.includes("/v1/analyze/macro");
   if (![502, 503, 504].includes(status) && !((isAgentAnalyze || isMacroAnalyze) && status === 500)) return message;
@@ -393,4 +408,16 @@ export const api = {
 
   getSuggestions: (type: "analysis" | "macro" = "analysis", options?: ApiClientOptions) =>
     get<{ questions: string[]; generated_at: number; source: string }>(`/v1/suggestions?type=${type}`, options),
+
+  submitForecastJob: (req: ForecastRequest, options?: ApiClientOptions) =>
+    post<JobSubmitResponse>("/jobs/forecast", req, options),
+
+  submitAnalyzeJob: (req: AgentAnalyzeRequest, options?: ApiClientOptions) =>
+    post<JobSubmitResponse>("/jobs/analyze", req, options),
+
+  getJob: <T = any>(jobId: string, options?: ApiClientOptions) =>
+    get<JobStatusResponse<T>>(`/jobs/${encodeURIComponent(jobId)}`, options),
+
+  securitySummary: (options?: ApiClientOptions) =>
+    get<SecuritySummaryResponse>("/admin/security/summary", options),
 };

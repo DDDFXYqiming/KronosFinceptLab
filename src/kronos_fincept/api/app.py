@@ -10,11 +10,13 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from kronos_fincept.api.routes import backtest, batch, data, forecast, health, analyze, ai_analyze, alert, suggestions
-from kronos_fincept.api.security import api_docs_enabled, check_request_security, max_body_bytes
+from kronos_fincept.api.routes import admin, backtest, batch, data, forecast, health, analyze, ai_analyze, alert, jobs, suggestions
+from kronos_fincept.api.security import api_docs_enabled, check_request_security, max_body_bytes, record_security_decision
 from kronos_fincept.config import settings
 from kronos_fincept.logging_config import (
     configure_logging,
@@ -111,6 +113,7 @@ def create_app() -> FastAPI:
         test_token = set_test_run_id(test_run_id)
         start = time.perf_counter()
         security_decision = check_request_security(request)
+        record_security_decision(security_decision)
         request.state.auth_role = security_decision.role
         request.state.auth_result = security_decision.auth_result
         request.state.auth_key_id = security_decision.key_id
@@ -152,6 +155,17 @@ def create_app() -> FastAPI:
                 return response
             body_limit_response = await _check_streamed_body_size(request, request_id)
             if body_limit_response is not None:
+                record_security_decision(
+                    type(
+                        "BodyLimitDecision",
+                        (),
+                        {
+                            "status_code": 413,
+                            "error_type": "body_too_large",
+                            "rate_category": getattr(request.state, "rate_category", "default"),
+                        },
+                    )()
+                )
                 return body_limit_response
             response = await call_next(request)
             elapsed_ms = int((time.perf_counter() - start) * 1000)
@@ -236,6 +250,29 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        request_id = request.headers.get("X-Request-ID") or getattr(request.state, "request_id", None)
+        errors = exc.errors()
+        error_text = str(errors)
+        if "prompt-injection" in error_text or "unsafe prompt" in error_text:
+            record_security_decision(
+                type(
+                    "ValidationSecurityDecision",
+                    (),
+                    {
+                        "status_code": 422,
+                        "error_type": "prompt_injection_rejected",
+                        "rate_category": getattr(request.state, "rate_category", "default"),
+                    },
+                )()
+            )
+        return JSONResponse(
+            status_code=422,
+            content=jsonable_encoder({"detail": errors, "request_id": request_id}),
+            headers={"X-Request-ID": request_id or ""},
+        )
+
     # Register routes
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(forecast.router, prefix="/api", tags=["forecast"])
@@ -246,9 +283,11 @@ def create_app() -> FastAPI:
     app.include_router(ai_analyze.router, tags=["analysis"])
     app.include_router(alert.router, prefix="/api", tags=["alert"])
     app.include_router(suggestions.router, tags=["suggestions"])
+    app.include_router(jobs.router, prefix="/api", tags=["jobs"])
+    app.include_router(admin.router, prefix="/api", tags=["admin"])
 
     # Expose start_time for health endpoint
-    app.state.start_time = _start_time
+    app.state.start_time = time.time()
 
     return app
 

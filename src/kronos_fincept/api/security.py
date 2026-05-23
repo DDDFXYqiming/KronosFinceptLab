@@ -20,6 +20,8 @@ API_KEY_HEADER = "x-kronos-api-key"
 INTERNAL_KEY_HEADER = "x-kronos-internal-key"
 
 _RATE_BUCKETS: dict[tuple[str, str, int], int] = {}
+_SECURITY_COUNTERS: dict[str, int] = {}
+_SECURITY_STARTED_AT = time.time()
 
 
 @dataclass(frozen=True)
@@ -98,12 +100,44 @@ def clear_rate_limits() -> None:
     _RATE_BUCKETS.clear()
 
 
+def clear_security_counters() -> None:
+    _SECURITY_COUNTERS.clear()
+
+
+def record_security_decision(decision: Any) -> None:
+    status_code = int(getattr(decision, "status_code", 200) or 200)
+    error_type = str(getattr(decision, "error_type", "") or "")
+    category = str(getattr(decision, "rate_category", "default") or "default")
+    if status_code in {401, 403, 413, 429}:
+        record_security_event(f"http_{status_code}")
+    if error_type:
+        record_security_event(error_type)
+    if status_code == 429:
+        record_security_event(f"rate_limited.{category}")
+
+
+def record_security_event(name: str, amount: int = 1) -> None:
+    safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)[:80]
+    if safe_name:
+        _SECURITY_COUNTERS[safe_name] = _SECURITY_COUNTERS.get(safe_name, 0) + max(1, amount)
+
+
+def get_security_summary() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "started_at": _SECURITY_STARTED_AT,
+        "uptime_seconds": round(time.time() - _SECURITY_STARTED_AT, 1),
+        "counters": dict(sorted(_SECURITY_COUNTERS.items())),
+        "rate_bucket_count": len(_RATE_BUCKETS),
+    }
+
+
 def _is_api_path(path: str) -> bool:
     return path.startswith("/api/")
 
 
 def _requires_admin(path: str) -> bool:
-    return path.startswith("/api/alert")
+    return path.startswith("/api/alert") or path.startswith("/api/admin")
 
 
 def _extract_key(request: Request) -> str | None:

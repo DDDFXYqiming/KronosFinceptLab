@@ -20,9 +20,10 @@ def _secure_client(monkeypatch, **env: str) -> TestClient:
     monkeypatch.setenv("KRONOS_ALERT_VALIDATE_DNS", "0")
     for key, value in env.items():
         monkeypatch.setenv(key, value)
-    from kronos_fincept.api.security import clear_rate_limits
+    from kronos_fincept.api.security import clear_rate_limits, clear_security_counters
 
     clear_rate_limits()
+    clear_security_counters()
     return TestClient(create_app())
 
 
@@ -117,6 +118,52 @@ def test_security_rejects_prompt_injection_in_question_and_context(monkeypatch):
     )
     assert question.status_code == 422
     assert context.status_code == 422
+
+
+def test_health_reports_current_build_info_and_real_uptime(monkeypatch):
+    client = _secure_client(
+        monkeypatch,
+        KRONOS_APP_VERSION="v-test",
+        KRONOS_BUILD_COMMIT="abcdef123456",
+        KRONOS_BUILD_REF="main",
+    )
+
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["app_version"] == "v-test"
+    assert data["build_commit"] == "abcdef123456"
+    assert data["build_ref"] == "main"
+    assert 0 <= data["uptime_seconds"] < 3600
+
+
+def test_security_summary_is_admin_only_and_aggregated(monkeypatch):
+    client = _secure_client(monkeypatch)
+
+    assert client.get("/api/admin/security/summary").status_code == 401
+    assert client.get("/api/admin/security/summary", headers=USER_HEADERS).status_code == 403
+    response = client.get("/api/admin/security/summary", headers=ADMIN_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert "counters" in data
+    serialized = str(data).lower()
+    assert "user-key" not in serialized
+    assert "admin-key" not in serialized
+
+
+def test_jobs_forecast_submit_and_read_status(monkeypatch):
+    client = _secure_client(monkeypatch)
+
+    submit = client.post("/api/jobs/forecast", json=_forecast_payload(), headers=USER_HEADERS)
+    assert submit.status_code == 200
+    job_id = submit.json()["job_id"]
+    status = client.get(f"/api/jobs/{job_id}", headers=USER_HEADERS)
+    assert status.status_code == 200
+    data = status.json()
+    assert data["job_id"] == job_id
+    assert data["kind"] == "forecast"
+    assert data["status"] in {"queued", "running", "completed", "failed"}
 
 
 def test_security_rate_limits_per_key(monkeypatch):

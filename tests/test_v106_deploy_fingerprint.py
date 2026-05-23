@@ -64,7 +64,7 @@ def test_v106_build_info_uses_safe_defaults_when_env_missing(monkeypatch):
 
     info = get_build_info().as_dict()
 
-    assert info["app_version"] == "v10.6.2"
+    assert info["app_version"] == "v10.8.9"
     assert info["build_commit"] == "unknown"
     assert info["build_ref"] == "unknown"
     assert info["build_source"] == "unknown"
@@ -134,7 +134,7 @@ def test_v106_dockerfile_and_dashboard_expose_build_metadata_contract():
     dashboard = read("web/src/app/page.tsx")
 
     for marker in [
-        "ARG KRONOS_APP_VERSION=v10.8.7",
+        "ARG KRONOS_APP_VERSION=v10.8.9",
         "ARG KRONOS_BUILD_COMMIT=unknown",
         "ARG KRONOS_BUILD_REF=unknown",
         "ARG KRONOS_BUILD_SOURCE=docker",

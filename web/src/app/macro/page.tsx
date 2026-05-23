@@ -1,11 +1,14 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useIsFetching, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
+import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { api, formatApiError } from "@/lib/api";
+import { demoMacroResult } from "@/lib/demoData";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
 import type {
@@ -635,8 +638,10 @@ function MonitoringTable({ rows }: { rows: MacroMonitoringSignal[] }) {
   );
 }
 
-export default function MacroPage() {
+function MacroContent() {
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const demoMode = searchParams.get("demo") === "1";
   const inFlightRef = useRef(false);
   const [question, setQuestion] = useSessionState("kronos-macro-question", DEFAULT_QUESTION);
   const [loading, setLoading] = useState(false);
@@ -798,6 +803,15 @@ export default function MacroPage() {
     void resumeActiveRun(activeRun);
   }, [activeRun, result, resumeActiveRun, setResult]);
 
+  useEffect(() => {
+    if (!demoMode) return;
+    setQuestion(demoMacroResult.question);
+    setResult(demoMacroResult);
+    setHistory([demoMacroResult]);
+    setError("");
+    setActiveRun(null);
+  }, [demoMode, setActiveRun, setError, setHistory, setQuestion, setResult]);
+
   const report = result?.report;
   const macroSignals = normalizeSignals(report?.macro_signals);
   const scenarios = normalizeScenarios(report?.probability_scenarios);
@@ -810,6 +824,12 @@ export default function MacroPage() {
     <div className="page-shell space-y-6">
       <SectionLabel>宏观洞察</SectionLabel>
       <h1 className="page-title">宏观信号分析</h1>
+      <ApiKeyNotice />
+      {demoMode && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          当前展示固定宏观演示样例，不调用 provider 或 LLM。
+        </div>
+      )}
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -1028,5 +1048,13 @@ export default function MacroPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function MacroPage() {
+  return (
+    <Suspense fallback={<div className="p-12 text-center text-muted-foreground">加载中...</div>}>
+      <MacroContent />
+    </Suspense>
   );
 }
