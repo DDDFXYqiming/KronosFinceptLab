@@ -9,8 +9,18 @@ from fastapi import APIRouter, Request
 from kronos_fincept.api.models import HealthResponseOut
 from kronos_fincept.api.deps import get_model_info
 from kronos_fincept.build_info import get_build_info
+from kronos_fincept.security_utils import split_env_list
 
 router = APIRouter()
+
+
+def _site_api_configured() -> bool:
+    return bool(
+        split_env_list("KRONOS_API_KEYS")
+        or split_env_list("KRONOS_ADMIN_API_KEYS")
+        or split_env_list("KRONOS_INTERNAL_API_KEYS")
+        or split_env_list("KRONOS_INTERNAL_API_KEY")
+    )
 
 
 @router.get("/health", response_model=HealthResponseOut)
@@ -46,6 +56,7 @@ def _build_health_response(request: Request, deep: bool) -> HealthResponseOut:
         runtime_mode=model_info["runtime_mode"],
         model_enabled=model_info["model_enabled"],
         deep_check=model_info["deep_check"],
+        site_api_configured=_site_api_configured(),
         capabilities=model_info["capabilities"],
         model_error=model_info["model_error"],
     )

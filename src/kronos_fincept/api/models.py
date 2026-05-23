@@ -219,6 +219,7 @@ class HealthResponseOut(BaseModel):
     runtime_mode: str = "standard"
     model_enabled: bool = True
     deep_check: bool = False
+    site_api_configured: bool = False
     capabilities: dict[str, bool] = Field(default_factory=dict)
     model_error: str | None = None
 
