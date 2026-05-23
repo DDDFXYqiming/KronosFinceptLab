@@ -118,6 +118,32 @@ export interface HealthResponse {
   model_error?: string | null;
 }
 
+export interface JobSubmitResponse {
+  ok: boolean;
+  job_id: string;
+  status: string;
+}
+
+export interface JobStatusResponse<T = any> {
+  ok: boolean;
+  job_id: string;
+  kind: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  steps: AgentStep[];
+  result?: T | null;
+  error?: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SecuritySummaryResponse {
+  ok: boolean;
+  started_at: number;
+  uptime_seconds: number;
+  counters: Record<string, number>;
+  rate_bucket_count: number;
+}
+
 export interface GlobalDataResponse {
   ok: boolean;
   symbol: string;

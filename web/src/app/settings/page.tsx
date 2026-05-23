@@ -14,7 +14,7 @@ import {
 import { MARKET_OPTIONS, type Market } from "@/lib/markets";
 import { downloadTextFile } from "@/lib/exportUtils";
 import { useAppStore } from "@/stores/app";
-import type { HealthResponse } from "@/types/api";
+import type { HealthResponse, SecuritySummaryResponse } from "@/types/api";
 
 function isSensitiveStorageKey(key: string): boolean {
   return /api[-_]?key|token|secret|authorization|cookie/i.test(key);
@@ -26,6 +26,8 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [securitySummary, setSecuritySummary] = useState<SecuritySummaryResponse | null>(null);
+  const [securityError, setSecurityError] = useState("");
 
   const refreshHealth = async () => {
     setError("");
@@ -76,6 +78,15 @@ export default function SettingsPage() {
     setApiKeySaved(false);
   };
 
+  const refreshSecuritySummary = async () => {
+    setSecurityError("");
+    try {
+      setSecuritySummary(await api.securitySummary());
+    } catch (exc) {
+      setSecurityError(formatApiError(exc, "安全摘要获取失败"));
+    }
+  };
+
   return (
     <div className="page-shell space-y-6">
       <SectionLabel>设置 / 诊断</SectionLabel>
@@ -117,6 +128,26 @@ export default function SettingsPage() {
           <Button variant="secondary" onClick={clearApiKey}>清除密钥</Button>
         </div>
         {apiKeySaved && <p className="mt-3 text-sm text-success">密钥已保存。</p>}
+      </Card>
+
+      <Card>
+        <CardTitle subtitle="需要 Admin API Key；只显示聚合计数，不包含请求体或密钥。">安全运维摘要</CardTitle>
+        <Button onClick={refreshSecuritySummary}>读取安全摘要</Button>
+        {securityError && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{securityError}</div>}
+        {securitySummary && (
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            {Object.entries(securitySummary.counters).length === 0 ? (
+              <p className="text-sm text-muted-foreground">当前启动周期暂无安全计数。</p>
+            ) : (
+              Object.entries(securitySummary.counters).map(([key, value]) => (
+                <div key={key} className="rounded-lg border border-border bg-muted p-3">
+                  <p className="break-all font-mono text-xs text-muted-foreground">{key}</p>
+                  <p className="mt-1 text-2xl font-bold">{value}</p>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </Card>
 
       <Card>

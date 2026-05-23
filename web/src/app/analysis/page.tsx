@@ -6,7 +6,9 @@ import { useIsFetching, useQueryClient, type QueryKey } from "@tanstack/react-qu
 import { Card, CardTitle, CardGrid } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { api, formatApiError } from "@/lib/api";
+import { demoAgentResult } from "@/lib/demoData";
 import { normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
@@ -656,6 +658,7 @@ function AnalysisContent() {
   const queryClient = useQueryClient();
   const symbolParam = searchParams.get("symbol");
   const marketParam = searchParams.get("market");
+  const demoMode = searchParams.get("demo") === "1";
   const normalizedMarketParam: Market | undefined = marketParam ? normalizeMarket(marketParam) : undefined;
   const normalizedSymbolParam = symbolParam ? normalizeSymbol(symbolParam) : undefined;
   const initialQuestion = symbolParam
@@ -725,6 +728,17 @@ function AnalysisContent() {
     setResult(entry);
     appendHistory(entry);
     setQuestion(entry.question);
+    if (typeof window !== "undefined") {
+      const key = entry.symbol && entry.market ? `kronos-research-summary-${entry.market}:${entry.symbol}` : "";
+      if (key) {
+        window.localStorage.setItem(key, JSON.stringify({
+          conclusion: cleanUserVisibleText(entry.report?.conclusion || entry.final_report).slice(0, 180),
+          recommendation: entry.recommendation,
+          risk_level: entry.risk_level,
+          timestamp: entry.timestamp,
+        }));
+      }
+    }
     setError("");
     setActiveRun(null);
   }, [appendHistory, setActiveRun, setError, setQuestion, setResult]);
@@ -841,6 +855,15 @@ function AnalysisContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!demoMode) return;
+    setQuestion(demoAgentResult.question);
+    setResult(demoAgentResult);
+    setHistory([demoAgentResult]);
+    setError("");
+    setActiveRun(null);
+  }, [demoMode, setActiveRun, setError, setHistory, setQuestion, setResult]);
+
   const report = result?.report;
   const assetResults = result ? getAssetResults(result) : [];
 
@@ -848,6 +871,12 @@ function AnalysisContent() {
     <div className="page-shell space-y-6">
       <SectionLabel>AI 分析</SectionLabel>
       <h1 className="page-title">智能深度分析</h1>
+      <ApiKeyNotice />
+      {demoMode && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          当前展示固定演示报告，不调用 LLM、行情或 Kronos 模型。
+        </div>
+      )}
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-4">

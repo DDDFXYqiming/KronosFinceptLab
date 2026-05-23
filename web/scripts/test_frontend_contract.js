@@ -39,8 +39,23 @@ for (const needle of [
   "request_id",
   "macroAnalyze",
   "/v1/analyze/macro",
+  "submitForecastJob",
+  "/jobs/forecast",
+  "securitySummary",
+  "/admin/security/summary",
+  "需要配置 Kronos API Key",
 ]) {
   assertIncludes(api, needle, "api client contract");
+}
+
+const demoData = read("src/lib/demoData.ts");
+for (const needle of ["demoHistoricalRows", "demoForecastRows", "demoAgentResult", "demoMacroResult", "演示数据，不构成投资建议"]) {
+  assertIncludes(demoData, needle, "demo data contract");
+}
+
+const apiKeyNotice = read("src/components/ui/ApiKeyNotice.tsx");
+for (const needle of ["getConfiguredApiKey", "预测、AI 分析、回测和告警需要 API Key", "查看演示"]) {
+  assertIncludes(apiKeyNotice, needle, "api key notice contract");
 }
 
 const markets = read("src/lib/markets.ts");
@@ -98,6 +113,8 @@ for (const needle of [
   "cleanUserVisibleText",
   "依据与工具调用",
   "auto-cols-[minmax(9.5rem,1fr)]",
+  "demoAgentResult",
+  "kronos-research-summary-",
 ]) {
   assertIncludes(analysis, needle, "analysis workspace contract");
 }
@@ -124,8 +141,20 @@ for (const needle of [
   "auto-cols-[minmax(9.5rem,1fr)]",
   "sm:hidden",
   "独立维度",
+  "demoMacroResult",
+  "ApiKeyNotice",
 ]) {
   assertIncludes(macro, needle, "macro workspace contract");
+}
+
+const settings = read("src/app/settings/page.tsx");
+for (const needle of ["安全运维摘要", "securitySummary", "Admin API Key", "不包含请求体或密钥"]) {
+  assertIncludes(settings, needle, "settings security summary contract");
+}
+
+const watchlist = read("src/app/watchlist/page.tsx");
+for (const needle of ["kronos-research-summary-", "风险:", "高波动", "/alerts?symbol="]) {
+  assertIncludes(watchlist, needle, "watchlist research workflow contract");
 }
 
 console.log("Frontend contract tests passed.");

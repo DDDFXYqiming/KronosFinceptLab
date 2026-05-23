@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Card, CardTitle, CardStat, CardGrid } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
+import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/stores/app";
 import { formatDuration } from "@/lib/utils";
@@ -79,6 +80,8 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </motion.div>
+
+      <ApiKeyNotice />
 
       {/* ── Stats ── */}
       <CardGrid className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 lg:gap-4">
