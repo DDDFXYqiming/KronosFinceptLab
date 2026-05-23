@@ -37,6 +37,9 @@ def test_dockerfile_installs_deploy_extra_and_fetches_kronos_source():
     dockerfile = read("Dockerfile")
 
     assert "git ca-certificates" in dockerfile
+    assert "AS backend-builder" in dockerfile
+    assert "AS backend" in dockerfile
+    assert "--index-url https://download.pytorch.org/whl/cpu" in dockerfile
     assert 'pip install --no-cache-dir -e ".[deploy]"' in dockerfile
     assert "KRONOS_REPO_PATH=/app/external/Kronos" in dockerfile
     assert "ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git" in dockerfile
@@ -44,6 +47,7 @@ def test_dockerfile_installs_deploy_extra_and_fetches_kronos_source():
     assert 'git -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF"' in dockerfile
     assert 'test "$(git -C external/Kronos rev-parse HEAD)" = "$KRONOS_REPO_REF"' in dockerfile
     assert "test -f external/Kronos/model/__init__.py" in dockerfile
+    assert "rm -rf external/Kronos/.git" in dockerfile
     assert "HF_HOME=/app/.cache/huggingface" in dockerfile
 
 

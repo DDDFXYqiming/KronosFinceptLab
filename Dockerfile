@@ -36,14 +36,49 @@ RUN npm run build:zeabur \
     && test -d public \
     && find .next -maxdepth 2 -type d | sort
 
-# Stage 2: Python backend + Next standalone runtime
-FROM node:22-bookworm-slim AS backend
+# Stage 2: Build Python backend runtime with CPU-only Kronos deps.
+FROM node:22-bookworm-slim AS backend-builder
 WORKDIR /app
 
-# Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv build-essential curl git ca-certificates \
     && python3 -m venv /opt/venv \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git
+ARG KRONOS_REPO_REF=67b630e67f6a18c9e9be918d9b4337c960db1e9a
+ARG INSTALL_KRONOS_RUNTIME=1
+ARG PYTORCH_CPU_VERSION=2.3.1+cpu
+
+COPY pyproject.toml requirements.txt ./
+COPY src/ src/
+RUN pip install --no-cache-dir --upgrade pip \
+    && if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then \
+        pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==$PYTORCH_CPU_VERSION"; \
+        pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -e ".[deploy,kronos]"; \
+    else \
+        pip install --no-cache-dir -e ".[deploy]"; \
+    fi
+
+RUN mkdir -p external/Kronos \
+    && git -C external/Kronos init \
+    && git -C external/Kronos remote add origin "$KRONOS_REPO_URL" \
+    && git -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF" \
+    && git -C external/Kronos checkout --detach FETCH_HEAD \
+    && test "$(git -C external/Kronos rev-parse HEAD)" = "$KRONOS_REPO_REF" \
+    && test -f external/Kronos/model/__init__.py \
+    && rm -rf external/Kronos/.git
+
+# Stage 3: Python backend + Next standalone runtime. Keep build tools out.
+FROM node:22-bookworm-slim AS backend
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # KRONOS_MODEL_ID options: NeoQuasar/Kronos-base (default), NeoQuasar/Kronos-mini (fastest)
@@ -67,9 +102,6 @@ ENV PATH="/opt/venv/bin:$PATH" \
     NUMEXPR_MAX_THREADS=1 \
     TOKENIZERS_PARALLELISM=false
 
-ARG KRONOS_REPO_URL=https://github.com/shiyu-coder/Kronos.git
-ARG KRONOS_REPO_REF=67b630e67f6a18c9e9be918d9b4337c960db1e9a
-ARG INSTALL_KRONOS_RUNTIME=1
 ARG KRONOS_APP_VERSION=v10.8.9
 ARG KRONOS_BUILD_COMMIT=unknown
 ARG KRONOS_BUILD_REF=unknown
@@ -80,24 +112,9 @@ ENV KRONOS_APP_VERSION=$KRONOS_APP_VERSION \
     KRONOS_BUILD_REF=$KRONOS_BUILD_REF \
     KRONOS_BUILD_SOURCE=$KRONOS_BUILD_SOURCE
 
-# Install Python deps
-COPY pyproject.toml requirements.txt ./
-COPY src/ src/
-RUN pip install --no-cache-dir --upgrade pip \
-    && if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then \
-        pip install --no-cache-dir -e ".[deploy,kronos]"; \
-    else \
-        pip install --no-cache-dir -e ".[deploy]"; \
-    fi
-
-# Fetch upstream Kronos source code for real inference. Model weights stay out of git/image.
-RUN mkdir -p external/Kronos \
-    && git -C external/Kronos init \
-    && git -C external/Kronos remote add origin "$KRONOS_REPO_URL" \
-    && git -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF" \
-    && git -C external/Kronos checkout --detach FETCH_HEAD \
-    && test "$(git -C external/Kronos rev-parse HEAD)" = "$KRONOS_REPO_REF" \
-    && test -f external/Kronos/model/__init__.py
+COPY --from=backend-builder /opt/venv /opt/venv
+COPY --from=backend-builder /app/src src/
+COPY --from=backend-builder /app/external/Kronos external/Kronos
 
 # Copy frontend build
 COPY --from=frontend-builder /app/web/.next/standalone web/
