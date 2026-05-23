@@ -32,11 +32,13 @@ def test_dockerfile_copies_existing_next_outputs_and_starts_both_services():
     assert "test -d .next/standalone" in dockerfile
     assert "COPY --from=frontend-builder /app/web/.next/standalone web/" in dockerfile
     assert "COPY --from=frontend-builder /app/web/public web/public" in dockerfile
+    assert "FROM node:22-bookworm-slim AS backend-builder" in dockerfile
     assert "FROM node:22-bookworm-slim AS backend" in dockerfile
     assert "scripts/zeabur_start.sh" in dockerfile
     assert "EXPOSE 3000" in dockerfile
     assert "EXPOSE 8000" not in dockerfile
     assert "KRONOS_REPO_REF" in dockerfile
+    assert "rm -rf external/Kronos/.git" in dockerfile
     assert 'CMD ["./scripts/zeabur_start.sh"]' in dockerfile
 
 

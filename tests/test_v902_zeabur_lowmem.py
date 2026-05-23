@@ -23,8 +23,11 @@ def test_dockerfile_defaults_to_single_kronos_base_runtime_with_light_health():
     assert "KRONOS_ALLOW_DRY_RUN=0" in dockerfile
     assert "KRONOS_PREWARM_ON_STARTUP=1" in dockerfile
     assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
+    assert "ARG PYTORCH_CPU_VERSION=2.3.1+cpu" in dockerfile
+    assert "--index-url https://download.pytorch.org/whl/cpu" in dockerfile
+    assert "--extra-index-url https://download.pytorch.org/whl/cpu" in dockerfile
     assert 'pip install --no-cache-dir -e ".[deploy]"' in dockerfile
-    assert 'pip install --no-cache-dir -e ".[deploy,kronos]"' in dockerfile
+    assert '-e ".[deploy,kronos]"' in dockerfile
     assert "pip install --no-cache-dir -e ." not in dockerfile.replace(".[deploy,kronos]", "").replace(".[deploy]", "")
 
     for env_name in [
@@ -35,6 +38,18 @@ def test_dockerfile_defaults_to_single_kronos_base_runtime_with_light_health():
         "TOKENIZERS_PARALLELISM=false",
     ]:
         assert env_name in dockerfile
+
+
+def test_final_backend_stage_excludes_build_tools_and_git_metadata():
+    dockerfile = read("Dockerfile")
+    final_stage = dockerfile.split("# Stage 3: Python backend + Next standalone runtime. Keep build tools out.", 1)[1]
+
+    assert "build-essential" not in final_stage
+    assert " git " not in final_stage
+    assert "rm -rf /var/lib/apt/lists/*" in final_stage
+    assert "COPY --from=backend-builder /opt/venv /opt/venv" in final_stage
+    assert "COPY --from=backend-builder /app/external/Kronos external/Kronos" in final_stage
+    assert "external/Kronos/.git" not in final_stage
 
 
 def test_deploy_extra_is_lowmem_and_kronos_extra_keeps_model_runtime():
