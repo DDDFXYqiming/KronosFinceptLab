@@ -134,6 +134,7 @@ def test_health_reports_current_build_info_and_real_uptime(monkeypatch):
     assert data["app_version"] == "v-test"
     assert data["build_commit"] == "abcdef123456"
     assert data["build_ref"] == "main"
+    assert data["site_api_configured"] is True
     assert 0 <= data["uptime_seconds"] < 3600
 
 
@@ -201,3 +202,12 @@ def test_next_proxy_does_not_forward_user_auth_or_cookie_headers():
     assert "new Headers(request.headers)" not in route
     assert 'headers.set("X-Kronos-Internal-Key"' in route
     assert '"Cookie"' not in route
+
+
+def test_next_proxy_supports_site_owner_mode_without_exposing_admin():
+    route = (ROOT / "web/src/app/api/[...path]/route.ts").read_text(encoding="utf-8")
+
+    assert "function hasSiteOwnerKey()" in route
+    assert "hasSiteOwnerKey() && !requiresAdmin(path)" in route
+    assert "const role = keyRole(key)" in route
+    assert "Invalid API key" in route

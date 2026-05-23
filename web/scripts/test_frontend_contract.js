@@ -54,7 +54,7 @@ for (const needle of ["demoHistoricalRows", "demoForecastRows", "demoAgentResult
 }
 
 const apiKeyNotice = read("src/components/ui/ApiKeyNotice.tsx");
-for (const needle of ["getConfiguredApiKey", "预测、AI 分析、回测和告警需要 API Key", "查看演示"]) {
+for (const needle of ["api.health", "site_api_configured", "站点未配置服务端调用 key", "查看演示"]) {
   assertIncludes(apiKeyNotice, needle, "api key notice contract");
 }
 
@@ -148,7 +148,7 @@ for (const needle of [
 }
 
 const settings = read("src/app/settings/page.tsx");
-for (const needle of ["安全运维摘要", "securitySummary", "Admin API Key", "不包含请求体或密钥"]) {
+for (const needle of ["API 访问密钥（可选）", "站点已配置服务端 key", "安全运维摘要", "securitySummary", "Admin API Key", "不包含请求体或密钥"]) {
   assertIncludes(settings, needle, "settings security summary contract");
 }
 

@@ -70,12 +70,19 @@ function chooseInternalKey(): string | null {
   );
 }
 
+function hasSiteOwnerKey(): boolean {
+  return chooseInternalKey() !== null;
+}
+
 function checkProxyAuth(request: Request, path: string[] | undefined): AuthDecision {
   if (isPublicPath(path)) return { allowed: true, status: 200 };
   if (envFlag("KRONOS_AUTH_DISABLED")) return { allowed: true, status: 200 };
 
   const key = extractClientKey(request);
   if (!key) {
+    if (hasSiteOwnerKey() && !requiresAdmin(path)) {
+      return { allowed: true, status: 200 };
+    }
     return { allowed: false, status: 401, error: "API key is required", type: "auth_required" };
   }
   const role = keyRole(key);

@@ -114,6 +114,7 @@ export interface HealthResponse {
   runtime_mode: string;
   model_enabled: boolean;
   deep_check: boolean;
+  site_api_configured?: boolean;
   capabilities?: Record<string, boolean>;
   model_error?: string | null;
 }

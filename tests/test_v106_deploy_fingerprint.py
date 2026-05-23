@@ -97,6 +97,7 @@ def test_v106_health_endpoint_returns_build_metadata_without_deep_model_check(mo
     assert payload["build_commit"] == "abcdef1234567890"
     assert payload["build_ref"] == "main"
     assert payload["build_source"] == "local-test"
+    assert payload["site_api_configured"] is False
     assert payload["version"] == "2.0.0"
 
 

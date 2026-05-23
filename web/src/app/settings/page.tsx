@@ -109,7 +109,7 @@ export default function SettingsPage() {
       </Card>
 
       <Card>
-        <CardTitle subtitle="受保护 API 会自动附带此 key；健康检查仍保持公开。">API 访问密钥</CardTitle>
+        <CardTitle subtitle="站点已配置服务端 key 时无需填写；仅在你想使用自己的调用 key 覆盖站点默认配置时保存。">API 访问密钥（可选）</CardTitle>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
           <div>
             <label className="field-label" htmlFor={KRONOS_API_KEY_STORAGE_KEY}>Kronos API Key</label>
@@ -122,7 +122,11 @@ export default function SettingsPage() {
               autoComplete="off"
               placeholder="X-Kronos-Api-Key"
             />
-            <p className="mt-2 text-xs text-muted-foreground">密钥只保存在本机浏览器，不会出现在导出的本地状态中。</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {health?.site_api_configured
+                ? "当前站点已配置服务端 key，普通预测/分析无需浏览器保存密钥；这里的密钥只保存在本机浏览器。"
+                : "当前站点未配置服务端 key；保存浏览器本地 key 后才能调用受保护 API。"}
+            </p>
           </div>
           <Button onClick={saveApiKey}>保存密钥</Button>
           <Button variant="secondary" onClick={clearApiKey}>清除密钥</Button>

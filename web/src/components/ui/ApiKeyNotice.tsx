@@ -2,27 +2,39 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getConfiguredApiKey } from "@/lib/api";
+import { api, getConfiguredApiKey } from "@/lib/api";
 
 interface ApiKeyNoticeProps {
   compact?: boolean;
 }
 
 export function ApiKeyNotice({ compact = false }: ApiKeyNoticeProps) {
-  const [hasKey, setHasKey] = useState(true);
+  const [hasAccess, setHasAccess] = useState(true);
 
   useEffect(() => {
-    setHasKey(Boolean(getConfiguredApiKey()));
+    let active = true;
+    if (getConfiguredApiKey()) {
+      setHasAccess(true);
+      return () => { active = false; };
+    }
+    api.health()
+      .then((health) => {
+        if (active) setHasAccess(Boolean(health.site_api_configured));
+      })
+      .catch(() => {
+        if (active) setHasAccess(false);
+      });
+    return () => { active = false; };
   }, []);
 
-  if (hasKey) return null;
+  if (hasAccess) return null;
 
   return (
     <div className={`rounded-xl border border-amber-200 bg-amber-50 text-amber-900 ${compact ? "p-3" : "p-4"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">预测、AI 分析、回测和告警需要 API Key。</p>
-          <p className="mt-1 text-xs text-amber-800">未配置时只展示公开页面和固定演示样例，不会调用模型或 LLM。</p>
+          <p className="mt-1 text-xs text-amber-800">站点未配置服务端调用 key 时，只展示公开页面和固定演示样例，不会调用模型或 LLM。</p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Link href="/settings" className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white">
