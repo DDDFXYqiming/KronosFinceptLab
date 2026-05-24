@@ -16,6 +16,7 @@ export interface ForecastRequest {
   dry_run?: boolean;
   model_id?: string;
   tokenizer_id?: string;
+  sample_count?: number;
   temperature?: number;
   top_k?: number;
   top_p?: number;
@@ -113,10 +114,38 @@ export interface HealthResponse {
   uptime_seconds: number;
   runtime_mode: string;
   model_enabled: boolean;
+  default_model_id?: string;
+  supported_model_ids?: string[];
   deep_check: boolean;
   site_api_configured?: boolean;
   capabilities?: Record<string, boolean>;
   model_error?: string | null;
+}
+
+export interface RssFeed {
+  id?: string | null;
+  title?: string | null;
+  url: string;
+}
+
+export interface RssFetchRequest {
+  feeds: RssFeed[];
+  limit_per_feed?: number;
+}
+
+export interface RssItem {
+  feed_id: string;
+  feed_title: string;
+  title: string;
+  url: string;
+  published_at?: string | null;
+  summary?: string | null;
+}
+
+export interface RssFetchResponse {
+  ok: boolean;
+  items: RssItem[];
+  errors: Record<string, string>;
 }
 
 export interface JobSubmitResponse {

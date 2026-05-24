@@ -27,6 +27,49 @@ export function toCsv(headers: string[], rows: CsvCell[][]): string {
     .join("\n");
 }
 
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (inQuotes) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (char !== "\r") {
+      cell += char;
+    }
+  }
+
+  if (cell || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
 export function makeDatedFilename(scope: string, symbols: string | string[], startDate?: string, endDate?: string, ext = "csv") {
   const symbolText = Array.isArray(symbols) ? symbols.join("_") : symbols;
   const safeSymbols = symbolText.replace(/[^a-zA-Z0-9_+-]+/g, "_").slice(0, 80) || "all";

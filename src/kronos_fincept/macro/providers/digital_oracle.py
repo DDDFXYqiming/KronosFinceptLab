@@ -37,10 +37,18 @@ BIS_BULK_DOWNLOADS = {
 TREASURY_RATES_CSV_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv"
 )
+TREASURY_FISCALDATA_BASE_URL = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od"
 TREASURY_CURVE_TYPES = {
     "nominal": "daily_treasury_yield_curve",
     "real": "daily_treasury_real_yield_curve",
 }
+TREASURY_FX_CURRENCY_HINTS = (
+    (r"人民币|cny|yuan|china|中国", "China-CNY"),
+    (r"日元|jpy|yen|japan|日本", "Japan-JPY"),
+    (r"欧元|eur|euro|eurozone|欧洲", "Euro Zone-EUR"),
+    (r"英镑|gbp|sterling|uk|英国", "United Kingdom-GBP"),
+    (r"瑞郎|chf|franc|swiss|瑞士", "Switzerland-CHF"),
+)
 YAHOO_ASSET_SYMBOLS = (
     (r"黄金|gold|xau|gc=/?f", "GC=F", "黄金期货"),
     (r"白银|silver|xag|si=/?f", "SI=F", "白银期货"),
@@ -55,6 +63,24 @@ CFTC_COMMODITY_PATTERNS = (
     (r"原油|石油|wti|crude|oil|cl=/?f|brent|布伦特|bz=/?f", "CRUDE"),
     (r"铜|copper|hg=/?f", "COPPER"),
 )
+STOOQ_SYMBOL_MAP = {
+    "BZ=F": "cb.c",
+    "CL=F": "cl.c",
+    "EURUSD=X": "eurusd",
+    "GBPUSD=X": "gbpusd",
+    "GC=F": "xauusd",
+    "HG=F": "hg.c",
+    "NG=F": "ng.c",
+    "SI=F": "xagusd",
+    "USDCHF=X": "usdchf",
+    "USDCNY=X": "usdcny",
+    "USDJPY=X": "usdjpy",
+    "USDRUB=X": "usdrub",
+    "USDTWD=X": "usdtwd",
+    "ZC=F": "zc.c",
+    "ZS=F": "zs.c",
+    "ZW=F": "zw.c",
+}
 
 
 _HTTP_USER_AGENT = "Mozilla/5.0 (compatible; KronosFinceptLab/10.5; +https://github.com/DDDFXYqiming/KronosFinceptLab)"
@@ -176,6 +202,30 @@ def _infer_cftc_commodity(query: MacroQuery, *, default: str = "GOLD") -> str:
         if re.search(pattern, text, flags=re.IGNORECASE):
             return commodity
     return default
+
+
+def _infer_treasury_fx_desc(query: MacroQuery) -> str | None:
+    text = _query_text(query)
+    for pattern, desc in TREASURY_FX_CURRENCY_HINTS:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return desc
+    for raw_symbol in query.symbols or ():
+        symbol = str(raw_symbol).strip().upper()
+        for _, desc in TREASURY_FX_CURRENCY_HINTS:
+            if symbol in desc.upper():
+                return desc
+    return None
+
+
+def _build_fiscaldata_filter(*, country_currency_desc: str | None) -> str | None:
+    if not country_currency_desc:
+        return None
+    return f"country_currency_desc:eq:{country_currency_desc}"
+
+
+def _to_stooq_symbol(symbol: str) -> str:
+    normalized = symbol.strip().upper()
+    return STOOQ_SYMBOL_MAP.get(normalized, normalized.lower())
 
 
 def _soql_like(value: str) -> str:
@@ -349,7 +399,7 @@ class KalshiProvider(MacroProvider):
 class USTreasuryProvider(MacroProvider):
     provider_id = "us_treasury"
     display_name = "U.S. Treasury"
-    capabilities = ("yield_curve", "rates", "real_yields", "breakeven_inflation")
+    capabilities = ("yield_curve", "rates", "real_yields", "breakeven_inflation", "fiscal_exchange_rates")
 
     def _fetch_curve_rows(self, year: int, *, timeout_seconds: float) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, str]]:
         errors: dict[str, str] = {}
@@ -363,6 +413,21 @@ class USTreasuryProvider(MacroProvider):
             except Exception as exc:
                 errors[curve_type] = str(exc)
         return rows["nominal"], rows["real"], errors
+
+    def _fetch_exchange_rate_rows(self, query: MacroQuery) -> list[dict[str, Any]]:
+        desc = _infer_treasury_fx_desc(query)
+        payload = _get_json(
+            f"{TREASURY_FISCALDATA_BASE_URL}/rates_of_exchange",
+            params={
+                "fields": "record_date,country,currency,country_currency_desc,exchange_rate",
+                "filter": _build_fiscaldata_filter(country_currency_desc=desc),
+                "sort": "-record_date",
+                "page[size]": max(1, min(query.limit, 10)),
+            },
+            timeout=8,
+        )
+        rows = payload.get("data") if isinstance(payload, dict) else []
+        return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         year = date.today().year
@@ -416,6 +481,33 @@ class USTreasuryProvider(MacroProvider):
                     metadata={"10y_nominal": nominal_10y, "10y_real": real_10y, "degraded_errors": errors},
                 )
             )
+        wants_fx = bool(re.search(r"汇率|fx|exchange|currency|美元|人民币|欧元|日元|英镑|瑞郎", _query_text(query), flags=re.IGNORECASE))
+        remaining = max(0, query.limit - len(signals))
+        if remaining > 0 and (wants_fx or query.limit > len(signals)):
+            try:
+                for row in self._fetch_exchange_rate_rows(query)[:remaining]:
+                    rate = _row_number(row, "exchange_rate")
+                    desc = str(row.get("country_currency_desc") or row.get("currency") or "")
+                    signals.append(
+                        _signal(
+                            source=self.provider_id,
+                            signal_type="treasury_fx_exchange_rate",
+                            value=rate,
+                            interpretation=f"美国财政部官方 {desc} 汇率记录，用于观察美元相对主要货币的跨境定价压力。",
+                            time_horizon="short",
+                            confidence=0.66 if rate is not None else 0.4,
+                            observed_at=str(row.get("record_date") or ""),
+                            source_url="https://fiscaldata.treasury.gov/datasets/treasury-reporting-rates-exchange/treasury-reporting-rates-of-exchange",
+                            metadata={
+                                "country": row.get("country"),
+                                "currency": row.get("currency"),
+                                "country_currency_desc": desc,
+                                "data_quality": "official_us_treasury_fiscaldata",
+                            },
+                        )
+                    )
+            except Exception as exc:
+                errors["fiscal_exchange_rates"] = str(exc)
         return signals
 
 
@@ -1310,7 +1402,7 @@ class DBnomicsProvider(MacroProvider):
             except Exception:
                 continue
             docs = payload.get("series") if isinstance(payload, dict) else {}
-            if not isinstance(docs, {}):
+            if not isinstance(docs, dict):
                 docs = {}
             series = docs.get("docs") if isinstance(docs, dict) else []
             if not isinstance(series, list) or not series:
@@ -1401,6 +1493,8 @@ class StooqProvider(MacroProvider):
 
         try:
             # Stooq CSV API
+            source_symbol = symbol
+            symbol = _to_stooq_symbol(symbol)
             url = f"https://stooq.com/q/l/?s={urllib.parse.quote(symbol)}&f=sd2t2ohlcv&h&e=csv"
             text_response = _get_text(url, timeout=8)
             if not text_response or "\n" not in text_response:
@@ -1433,6 +1527,7 @@ class StooqProvider(MacroProvider):
                         source_url=f"https://stooq.com/q/?s={symbol}",
                         metadata={
                             "symbol": symbol,
+                            "source_symbol": source_symbol,
                             "label": label,
                             "close": close_val,
                             "open": open_val,

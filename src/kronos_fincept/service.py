@@ -65,12 +65,13 @@ def _build_forecast_response(
     inference_wait_ms: int = 0,
 ) -> dict[str, Any]:
     """Build the standard forecast API response."""
+    effective_model_id = _effective_model_id(request.model_id)
     resp: dict[str, Any] = {
         "ok": True,
         "symbol": request.symbol,
         "timeframe": request.timeframe,
-        "model_id": _effective_model_id(request.model_id),
-        "tokenizer_id": request.tokenizer_id,
+        "model_id": effective_model_id,
+        "tokenizer_id": resolve_tokenizer_id(effective_model_id),
         "pred_len": request.pred_len,
         "forecast": _frame_to_records(frame),
         "metadata": {
@@ -215,8 +216,13 @@ def batch_forecast_from_requests(
     # Check if we should use batch prediction
     # Use batch when all requests are single-sample (not probabilistic)
     use_batch = (
-        not requests[0].dry_run
+        all(not req.dry_run for req in requests)
         and all(req.sample_count == 1 for req in requests)
+        and all(req.pred_len == requests[0].pred_len for req in requests)
+        and all(_effective_model_id(req.model_id) == _effective_model_id(requests[0].model_id) for req in requests)
+        and all(req.temperature == requests[0].temperature for req in requests)
+        and all(req.top_k == requests[0].top_k for req in requests)
+        and all(req.top_p == requests[0].top_p for req in requests)
         and len(requests) > 1
     )
 

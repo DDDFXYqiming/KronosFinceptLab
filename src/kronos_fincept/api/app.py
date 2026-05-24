@@ -15,7 +15,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from kronos_fincept.api.routes import admin, backtest, batch, data, forecast, health, analyze, ai_analyze, alert, jobs, suggestions
+from kronos_fincept.api.routes import admin, backtest, batch, data, forecast, health, analyze, ai_analyze, alert, jobs, suggestions, news
 from kronos_fincept.api.security import api_docs_enabled, check_request_security, max_body_bytes, record_security_decision
 from kronos_fincept.config import settings
 from kronos_fincept.logging_config import (
@@ -282,6 +282,7 @@ def create_app() -> FastAPI:
     app.include_router(analyze.router, tags=["analysis"])
     app.include_router(ai_analyze.router, tags=["analysis"])
     app.include_router(alert.router, prefix="/api", tags=["alert"])
+    app.include_router(news.router, prefix="/api", tags=["news"])
     app.include_router(suggestions.router, tags=["suggestions"])
     app.include_router(jobs.router, prefix="/api", tags=["jobs"])
     app.include_router(admin.router, prefix="/api", tags=["admin"])

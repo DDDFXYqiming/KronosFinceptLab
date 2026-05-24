@@ -2,24 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { t } from "@/lib/i18n";
 import { useAppStore } from "@/stores/app";
 
 export const navItems = [
-  { href: "/", label: "仪表盘" },
-  { href: "/forecast", label: "预测" },
-  { href: "/analysis", label: "分析" },
-  { href: "/macro", label: "宏观洞察" },
-  { href: "/watchlist", label: "自选股" },
-  { href: "/batch", label: "批量对比" },
-  { href: "/backtest", label: "回测" },
-  { href: "/data", label: "数据" },
-  { href: "/settings", label: "设置" },
-  { href: "/alerts", label: "告警" },
-];
+  { href: "/", labelKey: "nav.dashboard" },
+  { href: "/forecast", labelKey: "nav.forecast" },
+  { href: "/analysis", labelKey: "nav.analysis" },
+  { href: "/macro", labelKey: "nav.macro" },
+  { href: "/news", labelKey: "nav.news" },
+  { href: "/watchlist", labelKey: "nav.watchlist" },
+  { href: "/batch", labelKey: "nav.batch" },
+  { href: "/backtest", labelKey: "nav.backtest" },
+  { href: "/data", labelKey: "nav.data" },
+  { href: "/settings", labelKey: "nav.settings" },
+  { href: "/alerts", labelKey: "nav.alerts" },
+] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { sidebarOpen } = useAppStore();
+  const { sidebarOpen, preferences } = useAppStore();
 
   return (
     <aside
@@ -41,6 +43,7 @@ export function Sidebar() {
       <nav className="mt-4 px-2 space-y-1">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
+          const label = t(preferences.language, item.labelKey);
           return (
             <Link
               key={item.href}
@@ -52,7 +55,7 @@ export function Sidebar() {
               }`}
             >
               <span className="text-sm font-medium">
-                {sidebarOpen ? item.label : item.label.charAt(0)}
+                {sidebarOpen ? label : label.charAt(0)}
               </span>
             </Link>
           );
@@ -63,7 +66,7 @@ export function Sidebar() {
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
           <div className="text-xs text-muted-foreground text-center font-mono">
-            v10.8.8 — 仅供研究
+            v10.8.8 - {t(preferences.language, "common.researchOnly")}
           </div>
         </div>
       )}
