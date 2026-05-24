@@ -18,6 +18,8 @@ import type {
   JobStatusResponse,
   JobSubmitResponse,
   MacroAnalyzeRequest,
+  RssFetchRequest,
+  RssFetchResponse,
   SearchResult,
   SecuritySummaryResponse,
 } from "@/types/api";
@@ -54,6 +56,10 @@ export type {
   MacroProbabilityScenario,
   MacroSignal,
   RankedSignal,
+  RssFeed,
+  RssFetchRequest,
+  RssFetchResponse,
+  RssItem,
   SearchResult,
   SecuritySummaryResponse,
 } from "@/types/api";
@@ -293,6 +299,9 @@ function del<T>(path: string, options?: ApiClientOptions): Promise<T> {
 
 export const api = {
   health: (options?: ApiClientOptions) => get<HealthResponse>("/health", options),
+
+  fetchRss: (req: RssFetchRequest, options?: ApiClientOptions) =>
+    post<RssFetchResponse>("/news/rss", req, options),
 
   forecast: (req: ForecastRequest, options?: ApiClientOptions) =>
     post<ForecastResponse>("/forecast", req, options),

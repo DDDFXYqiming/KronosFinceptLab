@@ -112,3 +112,84 @@ def test_v1081_macro_manager_marks_configured_provider_unavailable() -> None:
     assert result.ok is True
     assert result.provider_results["needs_key"].status == "unavailable"
     assert result.provider_results["needs_key"].metadata["reason"] == "unavailable"
+
+
+def test_us_treasury_provider_adds_fiscaldata_exchange_rates(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_curve_row(year: int, curve_type: str, *, timeout: float):
+        if curve_type == "nominal":
+            return {"Date": "2026-05-20", "10 Yr": "4.50", "2 Yr": "4.00"}
+        return {"Date": "2026-05-20", "10 Yr": "2.00"}
+
+    captured: dict[str, object] = {}
+
+    def fake_get_json(url: str, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        return {
+            "data": [
+                {
+                    "record_date": "2026-03-31",
+                    "country": "China",
+                    "currency": "Yuan",
+                    "country_currency_desc": "China-CNY",
+                    "exchange_rate": "7.18",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(digital_oracle, "_latest_curve_row_with_retry", fake_curve_row)
+    monkeypatch.setattr(digital_oracle, "_get_json", fake_get_json)
+
+    signals = digital_oracle.USTreasuryProvider().fetch_signals(MacroQuery("人民币汇率", limit=4))
+
+    fx = [item for item in signals if item.signal_type == "treasury_fx_exchange_rate"]
+    assert fx
+    assert fx[0].value == 7.18
+    assert fx[0].metadata["data_quality"] == "official_us_treasury_fiscaldata"
+    assert str(captured["url"]).endswith("/rates_of_exchange")
+    assert captured["params"]["filter"] == "country_currency_desc:eq:China-CNY"
+
+
+def test_dbnomics_provider_accepts_dict_series_docs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        digital_oracle.DBnomicsProvider,
+        "_DBNOMICS_SERIES",
+        (("IMF", "WEO", "USA.NGDP_RPCH.pcent", "IMF 美国 GDP 增速"),),
+    )
+    monkeypatch.setattr(
+        digital_oracle,
+        "_get_json",
+        lambda *args, **kwargs: {
+            "series": {
+                "docs": [
+                    {
+                        "period": {"value": "2.8", "period": "2026"},
+                        "period_start_day": "2026-01-01",
+                    }
+                ]
+            }
+        },
+    )
+
+    signals = digital_oracle.DBnomicsProvider().fetch_signals(MacroQuery("美国 GDP", limit=1))
+
+    assert len(signals) == 1
+    assert signals[0].value == 2.8
+    assert signals[0].metadata["data_quality"] == "official_imf"
+
+
+def test_stooq_provider_maps_yfinance_symbols_to_stooq(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_get_text(url: str, **kwargs) -> str:
+        captured["url"] = url
+        return "Symbol,Date,Time,Open,High,Low,Close,Volume\nEURUSD,2026-05-20,22:00:00,1.10,1.12,1.09,1.11,1000\n"
+
+    monkeypatch.setattr(digital_oracle, "_get_text", fake_get_text)
+
+    signals = digital_oracle.StooqProvider().fetch_signals(MacroQuery("EURUSD", symbols=("EURUSD=X",), limit=1))
+
+    assert len(signals) == 1
+    assert "s=eurusd" in captured["url"]
+    assert signals[0].metadata["symbol"] == "eurusd"
+    assert signals[0].metadata["source_symbol"] == "EURUSD=X"

@@ -16,6 +16,7 @@ const quickLinks = [
   { href: "/forecast", label: "预测", desc: "单标的 Kronos 预测" },
   { href: "/analysis", label: "分析", desc: "AI 深度分析" },
   { href: "/macro", label: "宏观洞察", desc: "宏观信号与证据" },
+  { href: "/news", label: "新闻", desc: "RSS 聚合" },
   { href: "/watchlist", label: "自选股", desc: "研究工作台" },
   { href: "/batch", label: "批量对比", desc: "多标的排序" },
   { href: "/backtest", label: "回测", desc: "组合策略验证" },
@@ -88,7 +89,7 @@ export default function Dashboard() {
         <Card index={0}><CardStat label="API 状态" value={isOnline ? "在线" : "离线"} color={isOnline ? "text-success" : "text-error"} /></Card>
         <Card index={1}><CardStat label="部署版本" value={deployedVersion} /><p className="mt-1 font-mono text-xs text-muted-foreground">{health?.build_ref || "-"} &middot; {health?.build_source || "-"}</p></Card>
         <Card index={2}><CardStat label="提交" value={shortCommit} /></Card>
-        <Card index={3}><CardStat label="模型" value={health?.model_id?.split("/").pop() || "-"} /></Card>
+        <Card index={3}><CardStat label="模型" value={(health?.model_id || health?.default_model_id)?.split("/").pop() || "-"} /></Card>
         <Card index={4}><CardStat label="设备" value={health?.device || "-"} /></Card>
         <Card index={5}><CardStat label="运行时间" value={health ? formatDuration(health.uptime_seconds) : "-"} /></Card>
       </CardGrid>

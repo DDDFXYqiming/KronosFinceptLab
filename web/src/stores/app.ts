@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { DEFAULT_MODEL_ID } from "@/lib/defaults";
+import { normalizeLanguage, type Language } from "@/lib/i18n";
 import type { Market } from "@/lib/markets";
 
 export interface WatchlistItem {
@@ -12,9 +14,11 @@ export interface WatchlistItem {
 
 export interface AppPreferences {
   theme: "system" | "dark" | "light";
+  language: Language;
   defaultMarket: Market;
   defaultRange: "3m" | "1y" | "custom";
   defaultPredLen: number;
+  defaultModelId: string;
 }
 
 interface AppState {
@@ -33,9 +37,11 @@ interface AppState {
 
 const DEFAULT_PREFERENCES: AppPreferences = {
   theme: "system",
+  language: "zh-CN",
   defaultMarket: "cn",
   defaultRange: "1y",
   defaultPredLen: 5,
+  defaultModelId: DEFAULT_MODEL_ID,
 };
 
 function normalizeItem(item: WatchlistItem): WatchlistItem {
@@ -72,7 +78,16 @@ function loadPreferences(): AppPreferences {
   if (typeof window === "undefined") return DEFAULT_PREFERENCES;
   try {
     const raw = localStorage.getItem("kronos-preferences");
-    return raw ? { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) } : DEFAULT_PREFERENCES;
+    if (!raw) return DEFAULT_PREFERENCES;
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_PREFERENCES,
+      ...parsed,
+      language: normalizeLanguage(parsed?.language),
+      defaultModelId: typeof parsed?.defaultModelId === "string" && parsed.defaultModelId.trim()
+        ? parsed.defaultModelId
+        : DEFAULT_MODEL_ID,
+    };
   } catch {
     return DEFAULT_PREFERENCES;
   }

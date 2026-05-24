@@ -28,6 +28,7 @@ COMMANDS = {
     "alert": ("kronos_fincept.cli.commands.alert", "alert_group"),
     "health": ("kronos_fincept.cli.commands.health", "health_cmd"),
     "suggestions": ("kronos_fincept.cli.commands.suggestions", "suggestions_cmd"),
+    "model": ("kronos_fincept.cli.commands.model", "model_group"),
 }
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/Button";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
+import { DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS } from "@/lib/defaults";
 import { DEFAULT_MARKET, MARKET_OPTIONS, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { toCandlestickSeriesData, toForecastLineData } from "@/lib/chartData";
 import { useSessionState } from "@/lib/useSessionState";
+import { useAppStore } from "@/stores/app";
 import type { DataResponse, ForecastResponse, ForecastRow } from "@/types/api";
 import {
   createChart,
@@ -62,6 +64,7 @@ function ForecastEmptyState({ symbol }: { symbol: string }) {
 function ForecastContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const { preferences, setPreferences } = useAppStore();
   const symbolParam = searchParams.get("symbol");
   const marketParam = searchParams.get("market");
   const hasMarketParam = marketParam !== null;
@@ -77,6 +80,11 @@ function ForecastContent() {
   );
   const [startDate, setStartDate] = useSessionState("kronos-forecast-start-date", "20250101");
   const [endDate, setEndDate] = useSessionState("kronos-forecast-end-date", "20260430");
+  const [modelId, setModelId] = useSessionState(
+    "kronos-forecast-model-id",
+    preferences.defaultModelId || DEFAULT_MODEL_ID
+  );
+  const [availableModelIds, setAvailableModelIds] = useState<string[]>([...SUPPORTED_MODEL_IDS]);
   const [data, setData] = useSessionState<ForecastRow[]>("kronos-forecast-data", []);
   const [prediction, setPrediction] = useSessionState<ForecastRow[] | null>("kronos-forecast-prediction", null);
   const [loading, setLoading] = useState(false);
@@ -89,6 +97,20 @@ function ForecastContent() {
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const hasChartData = data.length > 0;
   const demoMode = searchParams.get("demo") === "1";
+  const modelOptions = useMemo(() => {
+    return Array.from(new Set([...availableModelIds, preferences.defaultModelId, modelId].filter(Boolean)));
+  }, [availableModelIds, modelId, preferences.defaultModelId]);
+
+  useEffect(() => {
+    void queryClient.fetchQuery({
+      queryKey: queryKeys.health(),
+      queryFn: ({ signal }) => api.health({ signal }),
+      staleTime: 60000,
+    }).then((health) => {
+      if (health.supported_model_ids?.length) setAvailableModelIds(health.supported_model_ids);
+      if (!modelId && health.default_model_id) setModelId(health.default_model_id);
+    }).catch(() => undefined);
+  }, [modelId, queryClient, setModelId]);
 
   const clearForecastState = useCallback(() => {
     setData([]);
@@ -298,6 +320,7 @@ function ForecastContent() {
       symbol: requestSymbol,
       market,
       predLen: 5,
+      modelId,
       rowCount: data.length,
       lastTimestamp: data[data.length - 1]?.timestamp,
       dryRun: false,
@@ -320,6 +343,7 @@ function ForecastContent() {
           api.forecast({
             symbol: requestSymbol,
             pred_len: 5,
+            model_id: modelId,
             rows: data,
             dry_run: false,
           }, { signal }),
@@ -399,6 +423,23 @@ function ForecastContent() {
               className="app-input mt-1 font-mono"
               placeholder="YYYYMMDD"
             />
+          </div>
+          <div>
+            <label className="field-label">模型</label>
+            <select
+              value={modelId}
+              onChange={(e) => {
+                setModelId(e.target.value);
+                setPreferences({ defaultModelId: e.target.value });
+              }}
+              className="app-input mt-1"
+            >
+              {modelOptions.map((id) => (
+                <option key={id} value={id}>
+                  {id.replace("NeoQuasar/", "")}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex items-end">
             <Button
