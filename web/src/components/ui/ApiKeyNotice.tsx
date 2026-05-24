@@ -33,8 +33,8 @@ export function ApiKeyNotice({ compact = false }: ApiKeyNoticeProps) {
     <div className={`rounded-xl border border-amber-200 bg-amber-50 text-amber-900 ${compact ? "p-3" : "p-4"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-semibold">预测、AI 分析、回测和告警需要 API Key。</p>
-          <p className="mt-1 text-xs text-amber-800">站点未配置服务端调用 key 时，只展示公开页面和固定演示样例，不会调用模型或 LLM。</p>
+          <p className="text-sm font-semibold">当前站点未开放默认 API 调用。</p>
+          <p className="mt-1 text-xs text-amber-800">如需使用预测、AI 分析、回测或告警，请在设置页保存自己的 Kronos API Key；演示模式不会调用模型或 LLM。</p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Link href="/settings" className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white">

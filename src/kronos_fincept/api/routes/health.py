@@ -9,14 +9,15 @@ from fastapi import APIRouter, Request
 from kronos_fincept.api.models import HealthResponseOut
 from kronos_fincept.api.deps import get_model_info
 from kronos_fincept.build_info import get_build_info
-from kronos_fincept.security_utils import split_env_list
+from kronos_fincept.security_utils import env_bool, split_env_list
 
 router = APIRouter()
 
 
 def _site_api_configured() -> bool:
     return bool(
-        split_env_list("KRONOS_API_KEYS")
+        env_bool("KRONOS_AUTH_DISABLED", False)
+        or split_env_list("KRONOS_API_KEYS")
         or split_env_list("KRONOS_ADMIN_API_KEYS")
         or split_env_list("KRONOS_INTERNAL_API_KEYS")
         or split_env_list("KRONOS_INTERNAL_API_KEY")

@@ -54,7 +54,7 @@ for (const needle of ["demoHistoricalRows", "demoForecastRows", "demoAgentResult
 }
 
 const apiKeyNotice = read("src/components/ui/ApiKeyNotice.tsx");
-for (const needle of ["api.health", "site_api_configured", "站点未配置服务端调用 key", "查看演示"]) {
+for (const needle of ["api.health", "site_api_configured", "当前站点未开放默认 API 调用", "查看演示"]) {
   assertIncludes(apiKeyNotice, needle, "api key notice contract");
 }
 
