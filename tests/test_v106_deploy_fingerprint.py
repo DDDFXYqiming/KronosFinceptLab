@@ -75,6 +75,11 @@ def test_v106_health_endpoint_returns_build_metadata_without_deep_model_check(mo
     monkeypatch.setenv("KRONOS_BUILD_COMMIT", "abcdef1234567890")
     monkeypatch.setenv("KRONOS_BUILD_REF", "main")
     monkeypatch.setenv("KRONOS_BUILD_SOURCE", "local-test")
+    monkeypatch.delenv("KRONOS_AUTH_DISABLED", raising=False)
+    monkeypatch.delenv("KRONOS_API_KEYS", raising=False)
+    monkeypatch.delenv("KRONOS_ADMIN_API_KEYS", raising=False)
+    monkeypatch.delenv("KRONOS_INTERNAL_API_KEYS", raising=False)
+    monkeypatch.delenv("KRONOS_INTERNAL_API_KEY", raising=False)
 
     from kronos_fincept.api.routes import health as health_route
     from kronos_fincept.api.app import create_app
@@ -99,6 +104,20 @@ def test_v106_health_endpoint_returns_build_metadata_without_deep_model_check(mo
     assert payload["build_source"] == "local-test"
     assert payload["site_api_configured"] is False
     assert payload["version"] == "2.0.0"
+
+
+def test_v106_health_marks_site_api_configured_when_auth_disabled(monkeypatch):
+    monkeypatch.setenv("KRONOS_AUTH_DISABLED", "1")
+
+    from kronos_fincept.api.routes import health as health_route
+    from kronos_fincept.api.app import create_app
+
+    monkeypatch.setattr(health_route, "get_model_info", _fake_model_info)
+    client = TestClient(create_app())
+
+    payload = client.get("/api/health").json()
+
+    assert payload["site_api_configured"] is True
 
 
 def test_v106_deep_health_endpoint_keeps_same_build_metadata(monkeypatch):
