@@ -9,6 +9,7 @@ import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { ReturnComparisonChart } from "@/components/charts/ReturnComparisonChart";
 import { ApiError, api, formatApiError } from "@/lib/api";
+import { DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS } from "@/lib/defaults";
 import { DEFAULT_MARKET, MARKET_OPTIONS, getMarketLabel, type Market } from "@/lib/markets";
 import { DEFAULT_BATCH_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
@@ -87,11 +88,13 @@ function BatchContent() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const activeAbortRef = useRef<AbortController | null>(null);
-  const { watchlist, addToWatchlist } = useAppStore();
+  const { watchlist, addToWatchlist, preferences, setPreferences } = useAppStore();
   const [poolPreset, setPoolPreset] = useSessionState<PoolPreset>("kronos-batch-pool-preset", "custom");
   const [input, setInput] = useSessionState("kronos-batch-input", DEFAULT_BATCH_SYMBOLS);
   const [market, setMarket] = useSessionState<Market>("kronos-batch-market", DEFAULT_MARKET);
   const [predLen, setPredLen] = useSessionState("kronos-batch-pred-len", 5);
+  const [modelId, setModelId] = useSessionState("kronos-batch-model-id", preferences.defaultModelId || DEFAULT_MODEL_ID);
+  const [availableModelIds, setAvailableModelIds] = useState<string[]>([...SUPPORTED_MODEL_IDS]);
   const [sortKey, setSortKey] = useSessionState<SortKey>("kronos-batch-sort-key", "rank");
   const [results, setResults] = useSessionState<RankedSignal[]>("kronos-batch-results", []);
   const [failures, setFailures] = useSessionState<BatchFailure[]>("kronos-batch-failures", []);
@@ -107,7 +110,19 @@ function BatchContent() {
     }
   }, [searchParams, setInput, setPoolPreset]);
 
+  useEffect(() => {
+    void queryClient.fetchQuery({
+      queryKey: queryKeys.health(),
+      queryFn: ({ signal }) => api.health({ signal }),
+      staleTime: 60000,
+    }).then((health) => {
+      if (health.supported_model_ids?.length) setAvailableModelIds(health.supported_model_ids);
+      if (!modelId && health.default_model_id) setModelId(health.default_model_id);
+    }).catch(() => undefined);
+  }, [modelId, queryClient, setModelId]);
+
   const selectedSymbols = useMemo(() => normalizeSymbols(input), [input]);
+  const modelOptions = useMemo(() => Array.from(new Set([...availableModelIds, preferences.defaultModelId, modelId].filter(Boolean))), [availableModelIds, modelId, preferences.defaultModelId]);
   const chartData = useMemo(() => results.map((item) => ({
     name: item.symbol,
     return: +(item.predicted_return * 100).toFixed(2),
@@ -159,7 +174,7 @@ function BatchContent() {
 
     const assets: ForecastRequest[] = dataOutcomes
       .filter((item): item is { symbol: string; rows: ForecastRow[] } => Boolean(item))
-      .map((item) => ({ symbol: item.symbol, pred_len: predLen, rows: item.rows.slice(-120), dry_run: false }));
+      .map((item) => ({ symbol: item.symbol, pred_len: predLen, model_id: modelId, rows: item.rows.slice(-120), dry_run: false }));
     if (assets.length === 0) return { results: [], failures: failuresNext, progress: { total: symbols.length, completed: symbols.length, success: 0, failed: failuresNext.length, skipped: Math.max(0, symbols.length - dataOutcomes.length), running: [] } };
 
     try {
@@ -183,7 +198,7 @@ function BatchContent() {
   const handleCompare = async (forceRefresh = false, overrideSymbols?: string[]) => {
     const symbols = normalizeSymbols(overrideSymbols || input);
     if (symbols.length === 0) { setError("请至少输入一个股票代码。"); return; }
-    const key = queryKeys.batch({ symbols, market, predLen });
+    const key = queryKeys.batch({ symbols, market, predLen, modelId });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<BatchRunSnapshot>(key);
     if (cached) {
       setResults(cached.results);
@@ -243,11 +258,12 @@ function BatchContent() {
       <h1 className="page-title">批量对比</h1>
       <Card>
         <CardTitle subtitle="支持常用股票池、自选股、排序、导出和失败重试。">多标的对比</CardTitle>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div><label className="field-label">股票池</label><select value={poolPreset} onChange={(e) => applyPoolPreset(e.target.value as PoolPreset)} className="app-input mt-1">{POOL_PRESETS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
           <div className="md:col-span-2"><label className="field-label">股票代码（逗号分隔）</label><input value={input} onChange={(e) => { setPoolPreset("custom"); setInput(e.target.value); }} className="app-input mt-1 font-mono" placeholder={DEFAULT_BATCH_SYMBOLS} /></div>
           <div><label className="field-label">市场</label><select value={market} onChange={(e) => setMarket(e.target.value as Market)} className="app-input mt-1">{MARKET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
           <div><label className="field-label">预测天数</label><input type="number" value={predLen} onChange={(e) => setPredLen(Math.max(1, Number(e.target.value)))} className="app-input mt-1" min={1} max={60} /></div>
+          <div><label className="field-label">模型</label><select value={modelId} onChange={(e) => { setModelId(e.target.value); setPreferences({ defaultModelId: e.target.value }); }} className="app-input mt-1">{modelOptions.map((id) => <option key={id} value={id}>{id.replace("NeoQuasar/", "")}</option>)}</select></div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap"><Button onClick={() => handleCompare(false)} loading={loading}>开始对比</Button><Button variant="secondary" onClick={() => handleCompare(true)} disabled={loading}>刷新对比</Button>{loading && <Button variant="danger" onClick={handleCancel}>取消任务</Button>}<Button variant="secondary" onClick={downloadBatchCsv} disabled={results.length === 0}>导出 CSV</Button><Button variant="secondary" onClick={retryFailed} disabled={failures.length === 0 || loading}>重试失败项</Button><Link className="btn-secondary flex h-12 items-center justify-center rounded-xl px-6 text-sm font-medium" href={`/backtest?symbols=${selectedSymbols.join(",")}`}>组合回测</Link></div>
       </Card>

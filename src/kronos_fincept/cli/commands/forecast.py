@@ -31,6 +31,7 @@ from kronos_fincept.cli.output import (
 @click.option("--start", type=str, default=None, help="Start date YYYYMMDD (optional)")
 @click.option("--end", type=str, default=None, help="End date YYYYMMDD (optional)")
 @click.option("--dry-run", is_flag=True, default=False, help="Use mock predictor")
+@click.option("--model-id", type=str, default=None, help="Kronos model ID, e.g. NeoQuasar/Kronos-mini")
 @click.option("--input", "input_file", type=click.Path(exists=True),
               help="Read request from JSON file instead of fetching data")
 @click.option("--temperature", type=float, default=1.0, help="Sampling temperature")
@@ -45,6 +46,7 @@ def forecast_cmd(
     start: str | None,
     end: str | None,
     dry_run: bool,
+    model_id: str | None,
     input_file: str | None,
     temperature: float,
     top_k: int,
@@ -74,6 +76,7 @@ def forecast_cmd(
             "pred_len": pred_len,
             "rows": rows,
             "dry_run": dry_run,
+            **({"model_id": model_id} if model_id else {}),
             "temperature": temperature,
             "top_k": top_k,
             "top_p": top_p,

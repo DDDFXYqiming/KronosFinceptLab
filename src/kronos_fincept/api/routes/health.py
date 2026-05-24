@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from kronos_fincept.api.models import HealthResponseOut
 from kronos_fincept.api.deps import get_model_info
 from kronos_fincept.build_info import get_build_info
+from kronos_fincept.schemas import DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS
 from kronos_fincept.security_utils import env_bool, split_env_list
 
 router = APIRouter()
@@ -52,6 +53,8 @@ def _build_health_response(request: Request, deep: bool) -> HealthResponseOut:
         model_loaded=model_info["model_loaded"],
         model_id=model_info["model_id"],
         tokenizer_id=model_info["tokenizer_id"],
+        default_model_id=DEFAULT_MODEL_ID,
+        supported_model_ids=list(SUPPORTED_MODEL_IDS),
         device=model_info["device"],
         uptime_seconds=round(uptime, 1),
         runtime_mode=model_info["runtime_mode"],

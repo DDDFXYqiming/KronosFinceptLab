@@ -23,6 +23,8 @@ _KRONOS_MODEL_VARIANTS: dict[str, dict[str, str | int]] = {
     "NeoQuasar/Kronos-base": {"tokenizer": "NeoQuasar/Kronos-Tokenizer-base", "max_context": 512},
 }
 
+SUPPORTED_MODEL_IDS = tuple(_KRONOS_MODEL_VARIANTS)
+
 RESEARCH_WARNING = "Research forecast only; not trading advice."
 
 
@@ -157,9 +159,9 @@ class ForecastRequest:
             pred_len=pred_len,
             rows=[ForecastRow.from_dict(row) for row in rows_payload],
             model_id=validate_kronos_model_id(str(payload.get("model_id", DEFAULT_MODEL_ID))),
-            tokenizer_id=str(payload.get("tokenizer_id", DEFAULT_TOKENIZER_ID)),
+            tokenizer_id=str(payload.get("tokenizer_id") or resolve_tokenizer_id(str(payload.get("model_id", DEFAULT_MODEL_ID)))),
             dry_run=bool(payload.get("dry_run", False)),
-            max_context=int(payload.get("max_context", 512)),
+            max_context=int(payload.get("max_context") or resolve_max_context(str(payload.get("model_id", DEFAULT_MODEL_ID)))),
             temperature=float(payload.get("temperature", 1.0)),
             top_k=int(payload.get("top_k", 0)),
             top_p=float(payload.get("top_p", 0.9)),
@@ -169,15 +171,27 @@ class ForecastRequest:
     @classmethod
     def from_pydantic(cls, pydantic_req: Any) -> "ForecastRequest":
         """Convert a Pydantic ForecastRequestIn to a dataclass ForecastRequest."""
+        model_id = validate_kronos_model_id(getattr(pydantic_req, "model_id", None) or DEFAULT_MODEL_ID)
+        fields_set = getattr(pydantic_req, "model_fields_set", set())
+        tokenizer_id = (
+            getattr(pydantic_req, "tokenizer_id", None)
+            if "tokenizer_id" in fields_set and getattr(pydantic_req, "tokenizer_id", None)
+            else resolve_tokenizer_id(model_id)
+        )
+        max_context = (
+            pydantic_req.max_context
+            if "max_context" in fields_set and pydantic_req.max_context
+            else resolve_max_context(model_id)
+        )
         return cls(
             symbol=pydantic_req.symbol,
             timeframe=pydantic_req.timeframe,
             pred_len=pydantic_req.pred_len,
             rows=[ForecastRow.from_pydantic(r) for r in pydantic_req.rows],
-            model_id=DEFAULT_MODEL_ID,
-            tokenizer_id=DEFAULT_TOKENIZER_ID,
+            model_id=model_id,
+            tokenizer_id=tokenizer_id,
             dry_run=pydantic_req.dry_run,
-            max_context=pydantic_req.max_context,
+            max_context=max_context,
             temperature=pydantic_req.temperature,
             top_k=pydantic_req.top_k,
             top_p=pydantic_req.top_p,
@@ -206,10 +220,10 @@ class ForecastRequest:
             timeframe=timeframe,
             pred_len=pred_len,
             rows=[ForecastRow.from_pydantic(r) for r in rows],
-            model_id=DEFAULT_MODEL_ID,
-            tokenizer_id=DEFAULT_TOKENIZER_ID,
+            model_id=validate_kronos_model_id(model_id or DEFAULT_MODEL_ID),
+            tokenizer_id=tokenizer_id or resolve_tokenizer_id(model_id or DEFAULT_MODEL_ID),
             dry_run=dry_run,
-            max_context=max_context if max_context is not None else 512,
+            max_context=max_context if max_context is not None else resolve_max_context(model_id or DEFAULT_MODEL_ID),
             temperature=temperature if temperature is not None else 1.0,
             top_k=top_k if top_k is not None else 0,
             top_p=top_p if top_p is not None else 0.9,

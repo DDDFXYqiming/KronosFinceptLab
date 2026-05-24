@@ -21,3 +21,8 @@ export {
 
 export const DEFAULT_MODEL_ID = "NeoQuasar/Kronos-base";
 export const DEFAULT_TOKENIZER_ID = "NeoQuasar/Kronos-Tokenizer-base";
+export const SUPPORTED_MODEL_IDS = [
+  "NeoQuasar/Kronos-mini",
+  "NeoQuasar/Kronos-small",
+  "NeoQuasar/Kronos-base",
+] as const;

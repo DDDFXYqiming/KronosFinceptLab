@@ -528,7 +528,7 @@ def _call_structured_llm_json(
                     response_body=str(getattr(response, "text", ""))[:500],
                 )
                 continue
-            content = _deepseek_message_content(response_payload)
+            content = _strip_think_blocks(_deepseek_message_content(response_payload))
             parsed = _extract_json_object(content)
             if not isinstance(parsed, dict) or not parsed:
                 if purpose == "report":
@@ -568,6 +568,14 @@ def _call_structured_llm_json(
             )
             continue
     return None
+
+
+def _strip_think_blocks(content: str) -> str:
+    """Remove model reasoning blocks while preserving text around incomplete tags."""
+    text = str(content or "")
+    text = re.sub(r"<think\b[^>]*>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<think\b[^>]*>.*$", "", text, flags=re.IGNORECASE | re.DOTALL)
+    return text.strip()
 
 
 def _llm_provider_circuit_open(provider: LLMChatProvider) -> bool:

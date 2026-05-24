@@ -21,6 +21,7 @@ export const queryKeys = {
     predLen: number;
     rowCount: number;
     lastTimestamp?: string;
+    modelId?: string;
     dryRun?: boolean;
   }) =>
     [
@@ -29,17 +30,19 @@ export const queryKeys = {
       normalizeSymbol(params.symbol),
       params.market || "cn",
       params.predLen,
+      params.modelId || "",
       params.rowCount,
       params.lastTimestamp || "",
       Boolean(params.dryRun),
     ] as const,
-  batch: (params: { symbols: string[] | string; market: Market | string; predLen: number }) =>
+  batch: (params: { symbols: string[] | string; market: Market | string; predLen: number; modelId?: string }) =>
     [
       ...queryKeys.all,
       "batch",
       normalizeSymbols(params.symbols).join(","),
       params.market,
       params.predLen,
+      params.modelId || "",
     ] as const,
   backtest: (params: {
     symbols: string[] | string;

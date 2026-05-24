@@ -50,8 +50,9 @@ def _write_csv(path: str, rankings: list[dict[str, Any]], failures: list[dict[st
 @click.option("--pred-len", "-p", type=int, default=5, help="Prediction length (bars)")
 @click.option("--csv", "csv_path", type=str, default=None, help="Write rankings and failures to CSV")
 @click.option("--dry-run", is_flag=True, default=False, help="Use mock predictor")
+@click.option("--model-id", type=str, default=None, help="Kronos model ID, e.g. NeoQuasar/Kronos-mini")
 @click.pass_context
-def batch_cmd(ctx: click.Context, symbols: str, market: str, pred_len: int, csv_path: str | None, dry_run: bool) -> None:
+def batch_cmd(ctx: click.Context, symbols: str, market: str, pred_len: int, csv_path: str | None, dry_run: bool, model_id: str | None) -> None:
     """Run batch forecast on multiple assets and rank by predicted return."""
     output_format = ctx.obj.get("output_format", "json")
     symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
@@ -59,7 +60,7 @@ def batch_cmd(ctx: click.Context, symbols: str, market: str, pred_len: int, csv_
         click.echo("Error: --symbols cannot be empty", err=True)
         raise SystemExit(1)
 
-    from kronos_fincept.schemas import ForecastRequest, ForecastRow
+    from kronos_fincept.schemas import DEFAULT_MODEL_ID, ForecastRequest, ForecastRow
     from kronos_fincept.service import batch_forecast_from_requests
 
     requests: list[ForecastRequest] = []
@@ -70,7 +71,16 @@ def batch_cmd(ctx: click.Context, symbols: str, market: str, pred_len: int, csv_
             if not rows:
                 raise ValueError("no OHLCV rows returned")
             req_rows = [ForecastRow.from_dict(r) for r in rows]
-            requests.append(ForecastRequest(symbol=sym, timeframe="1d", pred_len=pred_len, rows=req_rows, dry_run=dry_run))
+            requests.append(
+                ForecastRequest(
+                    symbol=sym,
+                    timeframe="1d",
+                    pred_len=pred_len,
+                    rows=req_rows,
+                    model_id=model_id or DEFAULT_MODEL_ID,
+                    dry_run=dry_run,
+                )
+            )
         except Exception as exc:
             failures.append({"symbol": sym, "market": market, "stage": "data", "error": str(exc)})
             click.echo(f"Warning: Failed to fetch {sym}: {exc}", err=True)
