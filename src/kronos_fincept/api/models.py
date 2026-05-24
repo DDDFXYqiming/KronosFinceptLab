@@ -214,6 +214,8 @@ class HealthResponseOut(BaseModel):
     model_loaded: bool
     model_id: str
     tokenizer_id: str | None = None
+    default_model_id: str = DEFAULT_MODEL_ID
+    supported_model_ids: list[str] = Field(default_factory=list)
     device: str
     uptime_seconds: float
     runtime_mode: str = "standard"

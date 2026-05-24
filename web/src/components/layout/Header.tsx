@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { t } from "@/lib/i18n";
 import { queryKeys } from "@/lib/queryKeys";
 import { navItems } from "@/components/layout/Sidebar";
 
@@ -17,7 +18,7 @@ function compactModelName(modelId?: string): string {
 
 export function Header() {
   const pathname = usePathname();
-  const { sidebarOpen, toggleSidebar } = useAppStore();
+  const { sidebarOpen, toggleSidebar, preferences } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerHidden, setHeaderHidden] = useState(false);
   const [headerFloating, setHeaderFloating] = useState(false);
@@ -171,7 +172,7 @@ export function Header() {
                 </button>
                 <div className="min-w-0">
                   <div className="font-display text-lg gradient-text">KronosFinceptLab</div>
-                  <div className="mt-0.5 text-xs font-mono text-muted-foreground">{VERSION} — 仅供研究</div>
+                  <div className="mt-0.5 text-xs font-mono text-muted-foreground">{VERSION} - {t(preferences.language, "common.researchOnly")}</div>
                 </div>
               </div>
             </div>
@@ -179,6 +180,7 @@ export function Header() {
             <nav className="flex-1 space-y-1 overflow-y-auto p-3">
               {navItems.map((item) => {
                 const isActive = pathname === item.href;
+                const label = t(preferences.language, item.labelKey);
                 return (
                   <Link
                     key={item.href}
@@ -189,7 +191,7 @@ export function Header() {
                         : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                     }`}
                   >
-                    {item.label}
+                    {label}
                   </Link>
                 );
               })}

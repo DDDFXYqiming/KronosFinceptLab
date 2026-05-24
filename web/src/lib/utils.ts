@@ -17,6 +17,14 @@ export function formatNumber(value: number, decimals = 2): string {
   });
 }
 
+export function formatCompactNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat("zh-CN", {
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "-";
   const totalMinutes = Math.floor(seconds / 60);

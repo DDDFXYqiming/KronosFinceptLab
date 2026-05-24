@@ -134,6 +134,26 @@ def validate_webhook_url(webhook_url: str) -> str:
     return text
 
 
+def validate_public_https_url(url: str, *, dns_env_key: str = "KRONOS_VALIDATE_PUBLIC_URL_DNS") -> str:
+    """Validate a user-supplied outbound URL for public HTTPS fetches."""
+    text = str(url or "").strip()
+    parsed = urlparse(text)
+    if parsed.scheme != "https":
+        raise ValueError("url must use https")
+    if parsed.username or parsed.password:
+        raise ValueError("url must not include credentials")
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        raise ValueError("url host is required")
+    if _is_forbidden_hostname(host):
+        raise ValueError("url host is not allowed")
+    if env_bool(dns_env_key, True):
+        for _, _, _, _, sockaddr in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM):
+            if _is_forbidden_ip(sockaddr[0]):
+                raise ValueError("url resolves to a forbidden address")
+    return text
+
+
 def _is_forbidden_hostname(host: str) -> bool:
     lowered = host.lower().rstrip(".")
     if lowered in {"localhost", "metadata.google.internal"} or lowered.endswith(".local"):
