@@ -4,7 +4,7 @@ Version: v10.8 — research-only quantitative finance cockpit.
 
 > Your local-first quantitative finance cockpit.
 
-An integrated quantitative finance analytics platform combining **market data, AI-powered forecasting, technical analysis, macroeconomic signals, and an AI investment advisor** — all running locally on your machine with automatic data source fallback. Accessible via CLI, API, Web UI, and MCP.
+An integrated quantitative finance analytics platform combining **market data, AI-powered forecasting, technical analysis, macroeconomic signals, AI investment research, news monitoring, alerts, and MCP integration** — all running locally on your machine with automatic data source fallback. Accessible via CLI, API, Web UI, and MCP.
 
 ---
 
@@ -13,30 +13,44 @@ An integrated quantitative finance analytics platform combining **market data, A
 | Capability | Description |
 |------------|-------------|
 | Market Data | OHLCV data for A-shares, HK stocks, US stocks, crypto, commodities and more across multiple exchanges with auto-fallback |
-| AI K-line Forecasting | Future K-line prediction powered by the Kronos foundation model, supporting single-asset, batch, and probabilistic sampling |
+| AI K-line Forecasting | Future K-line prediction powered by the Kronos foundation model, supporting single-asset, batch, probabilistic sampling, and async jobs |
 | Technical Analysis | SMA, EMA, RSI, MACD, Bollinger, KDJ, ATR, OBV and other common indicators |
-| AI Investment Advisor | Natural-language stock Q&A, investment analysis reports, risk assessment with conversational context |
-| Macroeconomic Signals | Aggregation of 17+ signal types including interest rates, CFTC COT, on-chain data, SEC/EDGAR, BIS, WorldBank, fear & greed index, and more |
+| AI Investment Advisor | Natural-language stock Q&A, investment analysis reports, risk assessment, DCF, portfolio optimization, derivatives pricing, and conversational context |
+| Macroeconomic Signals | Digital Oracle style aggregation of 17+ signal types including interest rates, CFTC COT, on-chain data, SEC/EDGAR, BIS, WorldBank, fear & greed index, and web-enriched research |
 | Strategy Backtest | Multi-symbol ranking backtest with HTML report generation |
-| Valuation & Portfolio | DCF valuation, risk analysis, portfolio optimization, derivatives pricing |
-| Smart Alerts | Rule-based monitoring for price changes, indicator triggers, with webhook/email delivery |
+| Watchlist & News | Watchlist research workspace, CSV import/export, quote summaries, risk tags, and HTTPS RSS/Atom news aggregation |
+| Smart Alerts | Rule-based monitoring for price changes, indicator triggers, prediction deviation, volume spikes, webhook/email delivery, and continuous monitoring |
+| Security & Deployment | API key roles, rate limits, request-size budgets, API docs gating, SSRF-safe URL handling, and combined Web/API Docker runtime |
+| MCP Integration | MCP server exposing forecast, data, indicator, backtest, agent, macro, suggestions, and health tools |
 
 ## Capabilities Matrix
 
-| Capability | Web | API | CLI |
-|------------|-----|-----|-----|
-| Natural-language agent analysis | Analysis page | `POST /api/v1/analyze/agent` | `kronos analyze agent` |
-| Forecasting | Forecast page | `POST /api/forecast` | `kronos forecast` |
-| Macro signals | Macro page | `POST /api/v1/analyze/macro` | `kronos analyze macro` |
-| Batch ranking | Batch page | `POST /api/batch` | `kronos batch` |
+| Capability | Web | API | CLI | MCP |
+|------------|-----|-----|-----|-----|
+| Dashboard | Dashboard page | `GET /api/health` | `kronos health` | `health_check` |
+| Forecasting | Forecast page | `POST /api/forecast` | `kronos forecast` | `forecast_ohlcv` |
+| Async forecast/analyze jobs | Forecast/analysis clients | `POST /api/jobs/forecast`, `POST /api/jobs/analyze`, `GET /api/jobs/{job_id}` | API-only | API-only |
+| Batch ranking | Batch page | `POST /api/batch` | `kronos batch` | `batch_forecast_ohlcv` |
+| Market data | Data page, Watchlist page | `GET /api/data/*` | `kronos data fetch/search/indicator` | `fetch_a_stock`, `search_stocks`, `calculate_indicators` |
+| Backtest | Backtest page | `POST /api/backtest/ranking`, `POST /api/backtest/report` | `kronos backtest ranking/report` | `run_ranking_backtest`, `generate_backtest_report` |
+| Natural-language agent analysis | Analysis page | `POST /api/v1/analyze/agent` | `kronos analyze agent` | `analyze_agent` |
+| Macro signals | Macro page | `POST /api/v1/analyze/macro` | `kronos analyze macro` | `analyze_macro` |
+| AI stock report | Analysis page | `POST /api/v1/analyze/ai` | `kronos analyze ai-analyze` | Via agent tools |
+| Valuation, risk, portfolio, derivatives | Analysis page | `POST /api/v1/analyze/dcf`, `/risk`, `/portfolio`, `/derivative` | `kronos analyze dcf/risk/portfolio/derivative` | API/CLI only |
+| Suggestions | Analysis/Macro pages | `GET /api/v1/suggestions` | `kronos suggestions` | `generate_suggestions` |
+| Alerts | Alerts page | `POST/GET/DELETE /api/alert/*` | `kronos alert add/list/remove/check/monitor` | API/CLI only |
+| News/RSS | News page | `POST /api/news/rss` | API-only | API-only |
+| Watchlist | Watchlist page | Uses data/analyze APIs | API-backed | API-backed |
+| Model utilities | CLI-only | N/A | `kronos model finetune-csv` | N/A |
+| Admin security summary | Settings/admin clients | `GET /api/admin/security/summary` | API-only | API-only |
 
 ## What Makes It Unique
 
-- **Local-first** — All core capabilities run offline with no cloud dependency lock-in
-- **Unified multi-entry** — CLI (`kronos`), REST API (`kronos serve`), Web UI, and MCP server all share the same analysis engine
-- **Data source circuit breaking** — BaoStock -> AkShare -> Yahoo Finance -> Binance/OKX, automatic fallback when one fails
-- **AI-native** — Built-in Kronos K-line model inference + LLM natural language analysis, no external orchestration needed
-- **Observable** — JSON Lines structured logging with `request_id` for full request tracing, production-ready
+- **Local-first** — Core capabilities can run locally with no cloud lock-in; external data/LLM/search providers are optional and degrade gracefully.
+- **Unified multi-entry** — CLI (`kronos`), REST API (`kronos serve`), Web UI, and MCP server share the same analysis and forecasting engines.
+- **Data source circuit breaking** — BaoStock, AkShare, Yahoo/Stooq, Binance/OKX, Treasury, BIS, SEC/EDGAR, CFTC, and web-search enrichment are used with fallback and timeout handling.
+- **AI-native** — Built-in Kronos K-line model inference plus LLM synthesis. The current shared LLM chain prioritizes DeepSeek and falls back to OpenRouter when configured.
+- **Observable and deployable** — JSON Lines structured logging with `request_id`, build fingerprints, API key roles, rate limits, request budgets, and Docker/Zeabur-friendly startup.
 
 ---
 
@@ -49,7 +63,7 @@ cd KronosFinceptLab
 
 # Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate   # Windows
+.venv\Scriptsctivate   # Windows
 # source .venv/bin/activate  # Linux/Mac
 
 # Install with optional extras
@@ -68,8 +82,9 @@ kronos forecast --symbol 600036 --pred-len 5 --sample-count 10
 # Batch forecast
 kronos batch --symbols 600036,000858,000001 --pred-len 5
 
-# Fetch market data
+# Fetch market data and indicators
 kronos data fetch --symbol 600036 --start 20240101 --end 20260429
+kronos data indicator --symbol 600036 --indicator rsi
 
 # Strategy backtest
 kronos backtest ranking --symbols 600036,000858 --start 20240101 --end 20260429
@@ -77,14 +92,19 @@ kronos backtest ranking --symbols 600036,000858 --start 20240101 --end 20260429
 # AI analysis (A-shares)
 kronos analyze ai-analyze --symbol 600036 --market cn
 
-# Natural-language agent analysis
+# Natural-language agent and macro analysis
 kronos analyze agent --question "Is China Merchants Bank a good buy right now?"
+kronos analyze macro --question "How do US yields and the dollar affect gold?" --symbols GC=F,DXY
 
-# Add alert rule
+# Suggested analysis prompts
+kronos suggestions --type analysis
+
+# Add alert rule and start continuous monitoring
 kronos alert add --type price_change --symbol 600036 --threshold 3.0
-
-# Start continuous monitoring
 kronos alert monitor --interval 5
+
+# Wrap upstream Kronos finetune_csv scripts (dry run by default)
+kronos model finetune-csv --config configs/finetune.yaml --stage sequential
 ```
 
 ### API Service
@@ -93,6 +113,8 @@ kronos alert monitor --interval 5
 kronos serve --host 0.0.0.0 --port 8000
 # Swagger docs: http://localhost:8000/docs (requires KRONOS_ENABLE_API_DOCS=1)
 ```
+
+Most `/api/*` endpoints require an API key unless `KRONOS_AUTH_DISABLED=1` is set for local development. Send the key as `X-Kronos-Api-Key` or `Authorization: Bearer <key>`.
 
 ### Web Frontend
 
@@ -103,6 +125,21 @@ npm run dev
 # Open http://localhost:3000
 ```
 
+The Web UI contains dashboard, forecast, batch, data, analysis, macro, backtest, alerts, news, watchlist, and settings pages. API keys are read from `localStorage` (`kronos_api_key`) or `NEXT_PUBLIC_KRONOS_API_KEY`.
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| `docs/ARCHITECTURE.md` | Current architecture, module boundaries, data/LLM flows, and security/deployment notes |
+| `docs/API.md` | REST endpoint inventory, auth, error format, and feature flags |
+| `docs/CLI.md` | CLI command tree and examples |
+| `docs/DEPLOYMENT.md` | Local, Docker, and Zeabur deployment notes |
+| `START_GUIDE.md` | Quick startup instructions |
+| `kronos_mcp/README.md` | MCP server tools and client configuration |
+
 ---
 
 ## CLI Parameters
@@ -112,10 +149,10 @@ npm run dev
 | `symbol` | string | required | Asset symbol |
 | `timeframe` | string | `"1d"` | K-line timeframe |
 | `pred_len` | int | required | Number of predicted K-lines |
-| `dry_run` | bool | false | Use dry-run predictor |
-| `model_id` | string | `NeoQuasar/Kronos-base` | Model ID |
+| `dry_run` | bool | false | Use dry-run predictor when allowed |
+| `model_id` | string | `NeoQuasar/Kronos-base` | Model ID; supported families include mini, small, and base |
 | `temperature` | float | 1.0 | Sampling temperature |
-| `sample_count` | int | 1 | Number of parallel samples |
+| `sample_count` | int | 1 | Number of parallel forecast samples |
 
 ---
 
@@ -142,13 +179,20 @@ Key environment variables (see `.env.example` for full reference):
 
 | Variable | Purpose |
 |----------|---------|
-| `KRONOS_MODEL_ID` | Kronos model ID |
-| `KRONOS_REPO_PATH` | Kronos repo path |
-| `HF_HUB_CACHE` | HuggingFace cache directory |
-| `KRONOS_API_KEYS` | API authentication keys |
-| `KRONOS_AUTH_DISABLED` | Disable API auth (default: enabled) |
+| `KRONOS_MODEL_ID` | Kronos model ID, default `NeoQuasar/Kronos-base` |
+| `KRONOS_REPO_PATH` | Upstream Kronos repo path |
+| `HF_HOME` / `HF_HUB_CACHE` | HuggingFace cache/model weights directory |
+| `KRONOS_ENABLE_REAL_MODEL` | Enable real Kronos inference backend |
+| `KRONOS_PREWARM_ON_STARTUP` | Preload model during API startup |
+| `KRONOS_API_KEYS` | User API authentication keys |
+| `KRONOS_ADMIN_API_KEYS` / `KRONOS_INTERNAL_API_KEY` | Admin/internal API keys for alert/admin operations |
+| `KRONOS_AUTH_DISABLED` | Disable API auth for local development only |
+| `KRONOS_ENABLE_API_DOCS` | Enable `/docs`, `/redoc`, and `/openapi.json` |
 | `KRONOS_RATE_LIMIT_*` | Per-category rate limiting |
-| `WEB_SEARCH_PROVIDER` / `WEB_SEARCH_API_KEY` | Web search configuration |
+| `DEEPSEEK_API_KEY` | Primary LLM provider key for the shared analysis chain |
+| `OPENROUTER_API_KEY` | Optional fallback LLM provider key |
+| `WEB_SEARCH_PROVIDER` / `WEB_SEARCH_API_KEY` | Generic web search configuration |
+| `ANYSEARCH_ENABLED` | Optional anonymous AnySearch enrichment toggle |
 | `PORT` / `API_PORT` | Web/API ports |
 
 ---
@@ -158,7 +202,7 @@ Key environment variables (see `.env.example` for full reference):
 | Component | Requirement |
 |-----------|-------------|
 | Python | >= 3.11 |
-| Node.js | >= 18 (frontend) |
+| Node.js | >= 18 for local frontend; Docker build uses Node 22 |
 
 **Upstream projects**: [Kronos](https://github.com/shiyu-coder/Kronos) · [FinceptTerminal](https://github.com/Fincept-Corporation/FinceptTerminal) · [Digital Oracle](https://github.com/komako-workshop/digital-oracle)
 
