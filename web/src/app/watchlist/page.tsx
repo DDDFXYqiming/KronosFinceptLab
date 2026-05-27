@@ -10,7 +10,7 @@ import { useAppStore, type WatchlistItem } from "@/stores/app";
 import { DEFAULT_MARKET, MARKET_OPTIONS, getMarketLabel, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
 import { api, formatApiError } from "@/lib/api";
-import { downloadTextFile, parseCsv, toCsv } from "@/lib/exportUtils";
+import { downloadTextFile, makeDatedFilename, parseCsv, toCsv } from "@/lib/exportUtils";
 import { formatCompactNumber, formatNumber } from "@/lib/utils";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
@@ -248,7 +248,7 @@ export default function WatchlistPage() {
       ["symbol", "market", "name", "note", "tags", "addedAt"],
       watchlist.map((item) => [item.symbol, item.market, item.name || "", item.note || "", (item.tags || []).join("|"), item.addedAt])
     );
-    downloadTextFile("kronos_watchlist.csv", csv);
+    downloadTextFile(makeDatedFilename("watchlist", watchlist.map((item) => item.symbol)), csv);
   };
 
   const handleImportWatchlist = async (event: ChangeEvent<HTMLInputElement>) => {
