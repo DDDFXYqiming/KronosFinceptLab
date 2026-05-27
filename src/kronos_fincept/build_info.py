@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 import os
 
 
-DEFAULT_APP_VERSION = "v10.8.9"
+DEFAULT_APP_VERSION = "v10.9.0"
 UNKNOWN = "unknown"
 _MAX_FIELD_LENGTH = 160
 

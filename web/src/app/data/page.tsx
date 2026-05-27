@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
@@ -60,7 +61,23 @@ export default function DataPage() {
   const [indicators, setIndicators] = useSessionState<IndicatorResponse | null>("kronos-data-indicators", null);
   const [loading, setLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [indicatorError, setIndicatorError] = useSessionState("kronos-data-indicator-error", "");
   const [error, setError] = useSessionState("kronos-data-error", "");
+  const params = useSearchParams();
+  const handleFetchRef = useRef<(() => Promise<void>) | null>(null);
+
+  // URL deep linking: read symbol/market from query params on mount
+  useEffect(() => {
+    const urlSymbol = params.get("symbol");
+    const urlMarket = params.get("market");
+    if (urlSymbol) setSymbol(normalizeSymbol(urlSymbol));
+    if (urlMarket && MARKET_OPTIONS.some((opt) => opt.value === urlMarket)) setMarket(urlMarket as Market);
+    if (urlSymbol) {
+      // Auto-fetch if symbol is provided in URL
+      const timer = setTimeout(() => handleFetchRef.current?.(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const summary = useMemo(() => {
     const rows = data?.rows || [];
@@ -143,7 +160,7 @@ export default function DataPage() {
         queryClient.fetchQuery({
           queryKey: indicatorKey,
           queryFn: ({ signal }) => api.getIndicators(requestSymbol, market, { signal }),
-        }).catch(() => null),
+        }).catch((e) => { setIndicatorError(formatApiError(e, "指标获取失败")); return null; }),
       ]);
       setData({ ...res, market });
       setIndicators(indicatorRes);
@@ -153,6 +170,9 @@ export default function DataPage() {
       setLoading(false);
     }
   };
+
+  // Expose handleFetch to ref for URL deep linking auto-fetch
+  useEffect(() => { handleFetchRef.current = handleFetch; });
 
   const downloadDataCsv = () => {
     if (!data) return;
@@ -202,7 +222,7 @@ export default function DataPage() {
         </div>
       </Card>
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
-      {data && summary && <><div className="grid grid-cols-2 gap-4 md:grid-cols-5"><Card><p className="text-sm text-muted-foreground">数据摘要</p><p className="text-xl font-bold">{getMarketLabel(data.market || market)} / {data.count}条</p></Card><Card><p className="text-sm text-muted-foreground">最新收盘</p><p className="text-xl font-bold">{formatNumber(summary.last.close, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间收益</p><p className={summary.returnPct >= 0 ? "text-xl font-bold text-accent-green" : "text-xl font-bold text-accent-red"}>{(summary.returnPct * 100).toFixed(2)}%</p></Card><Card><p className="text-sm text-muted-foreground">区间最高</p><p className="text-xl font-bold">{formatNumber(summary.high, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间最低</p><p className="text-xl font-bold">{formatNumber(summary.low, 2)}</p></Card></div><Card><CardTitle>收盘价走势</CardTitle><PriceLineChart rows={data.rows} /></Card><Card><CardTitle>技术指标</CardTitle><div className="grid grid-cols-2 gap-4 md:grid-cols-4"><div><p className="text-sm text-muted-foreground">RSI</p><p className="text-xl font-bold">{rsi === null ? "-" : formatNumber(rsi, 2)}</p></div><div><p className="text-sm text-muted-foreground">MACD</p><p className="text-xl font-bold">{macd === null ? "-" : formatNumber(macd, 4)}</p></div><div><p className="text-sm text-muted-foreground">Signal</p><p className="text-xl font-bold">{signal === null ? "-" : formatNumber(signal, 4)}</p></div><div><p className="text-sm text-muted-foreground">指标样本</p><p className="text-xl font-bold">{indicators?.data_points || "-"}</p></div></div></Card><Card><CardTitle>{data.symbol} — 行情明细</CardTitle><div className="table-scroll max-h-96 overflow-y-auto"><table className="min-w-[48rem] w-full text-sm"><thead className="sticky top-0 bg-surface-raised"><tr className="border-b border-gray-700 text-gray-400"><th className="py-2 text-left">日期</th><th className="py-2 text-right">开盘</th><th className="py-2 text-right">最高</th><th className="py-2 text-right">最低</th><th className="py-2 text-right">收盘</th><th className="py-2 text-right">成交量</th></tr></thead><tbody>{data.rows.slice(-120).map((row) => <tr key={`${data.symbol}-${row.timestamp}`} className="border-b border-gray-800 hover:bg-surface-overlay"><td className="py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td><td className="py-1.5 text-right">{row.open.toFixed(2)}</td><td className="py-1.5 text-right">{row.high.toFixed(2)}</td><td className="py-1.5 text-right">{row.low.toFixed(2)}</td><td className="py-1.5 text-right font-semibold">{row.close.toFixed(2)}</td><td className="py-1.5 text-right text-gray-400">{(row.volume || 0).toLocaleString()}</td></tr>)}</tbody></table></div></Card></>}
+      {data && summary && <><div className="grid grid-cols-2 gap-4 md:grid-cols-5"><Card><p className="text-sm text-muted-foreground">数据摘要</p><p className="text-xl font-bold">{getMarketLabel(data.market || market)} / {data.count}条</p></Card><Card><p className="text-sm text-muted-foreground">最新收盘</p><p className="text-xl font-bold">{formatNumber(summary.last.close, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间收益</p><p className={summary.returnPct >= 0 ? "text-xl font-bold text-accent-green" : "text-xl font-bold text-accent-red"}>{(summary.returnPct * 100).toFixed(2)}%</p></Card><Card><p className="text-sm text-muted-foreground">区间最高</p><p className="text-xl font-bold">{formatNumber(summary.high, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间最低</p><p className="text-xl font-bold">{formatNumber(summary.low, 2)}</p></Card></div><Card><CardTitle>收盘价走势</CardTitle><PriceLineChart rows={data.rows} /></Card><Card><CardTitle>技术指标</CardTitle><div className="grid grid-cols-2 gap-4 md:grid-cols-4"><div><p className="text-sm text-muted-foreground">RSI</p><p className="text-xl font-bold">{rsi === null ? "-" : formatNumber(rsi, 2)}</p></div><div><p className="text-sm text-muted-foreground">MACD</p><p className="text-xl font-bold">{macd === null ? "-" : formatNumber(macd, 4)}</p></div><div><p className="text-sm text-muted-foreground">Signal</p><p className="text-xl font-bold">{signal === null ? "-" : formatNumber(signal, 4)}</p></div><div><p className="text-sm text-muted-foreground">指标样本</p><p className="text-xl font-bold">{indicators?.data_points || "-"}</p></div></div>{indicatorError && <p className="mt-3 text-sm text-amber-400">⚠ {indicatorError}</p>}</Card><Card><CardTitle>{data.symbol} — 行情明细</CardTitle><div className="table-scroll max-h-96 overflow-y-auto"><table className="min-w-[48rem] w-full text-sm"><thead className="sticky top-0 bg-surface-raised"><tr className="border-b border-gray-700 text-gray-400"><th className="py-2 text-left">日期</th><th className="py-2 text-right">开盘</th><th className="py-2 text-right">最高</th><th className="py-2 text-right">最低</th><th className="py-2 text-right">收盘</th><th className="py-2 text-right">成交量</th></tr></thead><tbody>{data.rows.slice(-120).map((row) => <tr key={`${data.symbol}-${row.timestamp}`} className="border-b border-gray-800 hover:bg-surface-overlay"><td className="py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td><td className="py-1.5 text-right">{row.open.toFixed(2)}</td><td className="py-1.5 text-right">{row.high.toFixed(2)}</td><td className="py-1.5 text-right">{row.low.toFixed(2)}</td><td className="py-1.5 text-right font-semibold">{row.close.toFixed(2)}</td><td className="py-1.5 text-right text-gray-400">{(row.volume || 0).toLocaleString()}</td></tr>)}</tbody></table></div></Card></>}
     </div>
   );
 }

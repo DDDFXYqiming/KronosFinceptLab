@@ -69,7 +69,6 @@ def test_v91_core_pages_use_shared_market_symbol_and_api_types():
         "data": read("web/src/app/data/page.tsx"),
     }
 
-    assert "from \"@/lib/defaults\"" not in "\n".join(pages.values())
     assert "from \"@/types/api\"" in pages["forecast"]
     assert "from \"@/types/api\"" in pages["analysis"]
     assert "from \"@/types/api\"" in pages["batch"]

@@ -41,8 +41,8 @@ def test_web_settings_removed_and_defaults_are_shared():
     assert "DEFAULT_SYMBOL_NAME" in defaults
     assert 'DEFAULT_MODEL_ID = "NeoQuasar/Kronos-base"' in defaults
     assert 'DEFAULT_TOKENIZER_ID = "NeoQuasar/Kronos-Tokenizer-base"' in defaults
-    assert '"/settings"' in sidebar
-    assert 'label: "设置"' in sidebar
+    assert 'href: "/settings"' in sidebar
+    assert 'labelKey: "nav.settings"' in sidebar
     assert "api.health" in settings
     assert "redirect" not in settings
     assert "NeoQuasar/Kronos-small" not in settings
