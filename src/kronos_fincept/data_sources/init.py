@@ -12,6 +12,7 @@ from .akshare_source import AkShareSource
 from .baostock_source import BaoStockSource
 from .yahoo_source import YahooFinanceSource
 from .binance_source import BinanceSource
+from .stooq_source import StooqSource
 from .okx_source import OKXSource
 
 
@@ -19,6 +20,7 @@ def init_data_sources(cache_dir: str = ".cache",
                       enable_akshare: bool = True,
                       enable_baostock: bool = True,
                       enable_yahoo: bool = True,
+                      enable_stooq: bool = True,
                       enable_binance: bool = True,
                       enable_okx: bool = True) -> DataSourceManager:
     """
@@ -60,6 +62,13 @@ def init_data_sources(cache_dir: str = ".cache",
             manager.register(yahoo_source)
         except Exception as e:
             logger.debug(f"Yahoo Finance 注册失败: {e}")
+
+    if enable_stooq:
+        try:
+            stooq_source = StooqSource(priority=4)
+            manager.register(stooq_source)
+        except Exception as e:
+            logger.debug(f"Stooq 注册失败: {e}")
 
     if enable_binance:
         try:
