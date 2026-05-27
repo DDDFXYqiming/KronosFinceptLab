@@ -73,8 +73,8 @@ export function parseCsv(text: string): string[][] {
 export function makeDatedFilename(scope: string, symbols: string | string[], startDate?: string, endDate?: string, ext = "csv") {
   const symbolText = Array.isArray(symbols) ? symbols.join("_") : symbols;
   const safeSymbols = symbolText.replace(/[^a-zA-Z0-9_+-]+/g, "_").slice(0, 80) || "all";
-  const range = startDate && endDate ? `_${startDate}_${endDate}` : "";
-  return `${scope}_${safeSymbols}${range}.${ext}`;
+  const range = startDate && endDate ? `_${startDate}-${endDate}` : "";
+  return `kronos_${scope}_${safeSymbols}${range}.${ext}`;
 }
 
 export function downloadTextFile(filename: string, content: string, mime = "text/csv;charset=utf-8") {

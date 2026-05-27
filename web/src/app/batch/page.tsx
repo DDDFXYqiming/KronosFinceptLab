@@ -249,7 +249,7 @@ function BatchContent() {
       ["rank", "symbol", "market", "last_close", "predicted_close", "predicted_return", "risk_label"],
       sortedResults.map((item) => [item.rank, item.symbol, item.market || market, item.last_close, item.predicted_close, item.predicted_return, item.risk_label || riskLabel(item.predicted_return)])
     );
-    downloadTextFile(makeDatedFilename("batch", selectedSymbols), csv);
+    downloadTextFile(makeDatedFilename("batch", selectedSymbols, BATCH_START_DATE, BATCH_END_DATE), csv);
   };
 
   return (
