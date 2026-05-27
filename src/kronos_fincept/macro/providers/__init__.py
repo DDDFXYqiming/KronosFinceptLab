@@ -1,6 +1,7 @@
 """Macro provider registry."""
 
 from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderError, MacroProviderUnavailable
+from kronos_fincept.macro.providers.dbnomics import DBnomicsProvider
 from kronos_fincept.macro.providers.digital_oracle import (
     AnySearchProvider,
     BisProvider,
@@ -8,7 +9,6 @@ from kronos_fincept.macro.providers.digital_oracle import (
     CftcCotProvider,
     CoinGeckoProvider,
     CurrencyProvider,
-    DBnomicsProvider,
     DeribitProvider,
     EdgarProvider,
     FearGreedProvider,

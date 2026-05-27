@@ -3505,11 +3505,12 @@ Digital Oracle 5 条铁规则：
 JSON 字段：
 conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties, recommendation, confidence, risk_level, disclaimer,
 如果 trusted_project_context.macro 存在，还必须输出：
-macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions。
+macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions, time_layered_conclusions。
 宏观问题的 conclusion 和 macro_analysis 第一字符起必须直接回答用户问题，格式为“结论：……”。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
 宏观问题每个文字字段最多 2 句，避免长篇解释导致 JSON 被截断。
 macro_signals 可省略或最多返回 5 条最关键摘要；后端会用真实 provider 结构化信号补齐。每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
-time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。信号分层规则：短期（3-12个月）= 期权、VIX、预测市场近月、价格动量、FOMC概率；中期（1-3年）= 收益率曲线、CFTC持仓、信用周期、GDP预测；长期（3-10年）= BIS信用缺口、世界银行GDP、设备订单、人口结构等。
+time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。时间分层规则：S-短期（天到周）关注预测市场近月、价格动量、VIX、期权 skew、FOMC实时概率；M-中期（周到月）关注收益率曲线变化、CFTC持仓变动、信用利差、宏观数据发布；L-长期（月到季度）关注信用周期拐点、GDP预测修正、BIS信用缺口、行业库存周期。每层必须给出独立的 judgment 和该层的 confidence，不同层的 confidence 可以不同。
+time_layered_conclusions 为数组，每项包含 tier（S/M/L）、label（短期/中期/长期）、time_range（对应时间范围的中文描述）、judgment（该时间层的核心判断）、confidence（该层的数值置信度，0到1之间）。至少输出 S/M/L 三层；某层无足够信号时 judgment 写"信号暂时不足"并设 confidence≤0.25。
 cross_validation 和 contradictions 合起来视为“信号一致性评估”区块：前者写共振信号，后者写矛盾信号及原因。
 probability_scenarios 为数组，每项包含 scenario, probability, basis。必须读取 trusted_project_context.macro.dimension_coverage；只有 sufficient_evidence=true 才能输出高置信度方向判断。少于 3 个独立宏观维度时必须明确说明缺口，不要编造，confidence 不得超过 0.45，recommendation 使用“观察”或“需更多证据”。概率总和应接近 1。
 monitoring_signals 为数组，每项包含 signal, current_value, threshold, meaning；至少给出 3 条可操作监控项（不足时说明原因）。
@@ -3768,6 +3769,7 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
             "probability_scenarios": _default_probability_scenarios(signals),
             "monitoring_signals": _default_monitoring_signals(signals, errors),
             "time_stratified_sub_conclusions": _default_time_stratified_sub_conclusions(signals),
+            "time_layered_conclusions": _default_time_layered_conclusions(signals),
             "macro_evidence": coverage,
         }
         ),
@@ -3786,6 +3788,7 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
         "probability_scenarios",
         "monitoring_signals",
         "time_stratified_sub_conclusions",
+        "time_layered_conclusions",
     ]:
         if not merged.get(key):
             merged[key] = fallback.get(key)
@@ -3991,6 +3994,59 @@ def _default_time_stratified_sub_conclusions(signals: list[dict[str, Any]]) -> l
     return sub_conclusions
 
 
+def _default_time_layered_conclusions(signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build default time-layered conclusions (S/M/L tiers) from signal time_horizon fields."""
+    horizon_groups: dict[str, list[str]] = {"short": [], "medium": [], "long": []}
+    tier_signal_counts: dict[str, int] = {"S": 0, "M": 0, "L": 0}
+    for item in signals[:12]:
+        horizon = str(item.get("time_horizon") or "mixed").strip().lower()
+        source = str(item.get("source") or "")
+        interpretation = str(item.get("interpretation") or "")
+        text = f"{source}: {interpretation[:80]}"
+        if horizon == "short":
+            horizon_groups["short"].append(text)
+            tier_signal_counts["S"] += 1
+        elif horizon == "long":
+            horizon_groups["long"].append(text)
+            tier_signal_counts["L"] += 1
+        else:
+            horizon_groups["medium"].append(text)
+            tier_signal_counts["M"] += 1
+
+    tier_defs: list[tuple[str, str, str, str]] = [
+        ("S", "短期", "天到周", "短期（天到周）关注预测市场近月、价格动量、VIX、期权 skew、FOMC实时概率等快变量信号"),
+        ("M", "中期", "周到月", "中期（周到月）关注收益率曲线变化、CFTC持仓变动、信用利差、宏观数据发布等中频信号"),
+        ("L", "长期", "月到季度", "长期（月到季度）关注信用周期拐点、GDP预测修正、BIS信用缺口、行业库存周期等慢变量信号"),
+    ]
+    conclusions: list[dict[str, Any]] = []
+    for tier, label, time_range, default_desc in tier_defs:
+        if tier == "S":
+            items = horizon_groups["short"]
+        elif tier == "L":
+            items = horizon_groups["long"]
+        else:
+            items = horizon_groups["medium"]
+
+        count = tier_signal_counts[tier]
+        if items:
+            judgment = "；".join(items[:3]) if items else f"{label}暂无可用信号。"
+            base = 0.35 + count * 0.08
+            confidence = min(0.85, base)
+        else:
+            judgment = f"{label}信号暂时不足，无法给出独立判断。"
+            confidence = 0.20
+        conclusions.append(
+            {
+                "tier": tier,
+                "label": label,
+                "time_range": time_range,
+                "judgment": judgment,
+                "confidence": round(confidence, 2),
+            }
+        )
+    return conclusions
+
+
 def _normalize_probability_scenarios(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
@@ -4064,6 +4120,50 @@ def _normalize_time_stratified_sub_conclusions(value: Any) -> list[dict[str, Any
     return rows
 
 
+def _normalize_time_layered_conclusions(value: Any) -> list[dict[str, Any]]:
+    """Normalize the time_layered_conclusions field from LLM output.
+
+    Expected items:
+      tier: "S" | "M" | "L"
+      label: str
+      time_range: str
+      judgment: str
+      confidence: float (0-1)
+    """
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        tier = str(item.get("tier") or "").strip().upper()
+        if tier not in ("S", "M", "L"):
+            continue
+        label = str(item.get("label") or "").strip()
+        time_range = str(item.get("time_range") or "").strip()
+        judgment = str(item.get("judgment") or "").strip()
+        if not judgment:
+            continue
+        raw_confidence = item.get("confidence", 0.3)
+        try:
+            confidence = float(raw_confidence)
+            if confidence > 1:
+                confidence = confidence / 100
+        except (TypeError, ValueError):
+            confidence = 0.3
+        confidence = max(0.0, min(1.0, confidence))
+        rows.append(
+            {
+                "tier": tier,
+                "label": label,
+                "time_range": time_range,
+                "judgment": judgment,
+                "confidence": confidence,
+            }
+        )
+    return rows
+
+
 def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     confidence = payload.get("confidence", 0.5)
     try:
@@ -4104,6 +4204,9 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     time_stratified = _normalize_time_stratified_sub_conclusions(payload.get("time_stratified_sub_conclusions"))
     if time_stratified:
         normalized["time_stratified_sub_conclusions"] = time_stratified
+    time_layered = _normalize_time_layered_conclusions(payload.get("time_layered_conclusions"))
+    if time_layered:
+        normalized["time_layered_conclusions"] = time_layered
     if isinstance(payload.get("macro_evidence"), dict):
         normalized["macro_evidence"] = payload["macro_evidence"]
     return normalized
@@ -4159,6 +4262,7 @@ def _format_report(report: dict[str, Any]) -> str:
         ("信号一致性评估", report.get("cross_validation")),
         ("矛盾分析", report.get("contradictions")),
         ("概率估计（概率场景）", _format_probability_scenarios(report.get("probability_scenarios"))),
+        ("时间分层结论", _format_time_layered_conclusions(report.get("time_layered_conclusions"))),
         ("待监控信号", _format_monitoring_signals(report.get("monitoring_signals"))),
         ("关键不确定性", report.get("uncertainties")),
         ("非投资建议声明", report.get("disclaimer") or RESEARCH_DISCLAIMER),
@@ -4206,6 +4310,25 @@ def _format_monitoring_signals(value: Any) -> str:
         meaning = item.get("meaning")
         lines.append(f"{signal}: 当前 {current_value}，阈值 {threshold}，含义：{meaning}")
     return "\n".join(line for line in lines if line.strip())
+
+
+def _format_time_layered_conclusions(value: Any) -> str:
+    """Format time_layered_conclusions for text output."""
+    if not isinstance(value, list):
+        return ""
+    lines = []
+    for item in value[:3]:
+        if not isinstance(item, dict):
+            continue
+        tier = item.get("tier", "")
+        label = item.get("label", "")
+        time_range = item.get("time_range", "")
+        judgment = item.get("judgment", "")
+        confidence = item.get("confidence", "")
+        header = f"[{tier}/{label}] {time_range}"
+        conf_str = f"{confidence:.0%}" if isinstance(confidence, (int, float)) else str(confidence)
+        lines.append(f"{header}：{judgment}（置信度：{conf_str}）")
+    return "\n".join(lines)
 
 
 def _rejection_result(question: str, reason: str, timestamp: str) -> AgentAnalysisResult:

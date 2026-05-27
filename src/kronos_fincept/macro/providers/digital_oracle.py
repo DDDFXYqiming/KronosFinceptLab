@@ -23,6 +23,7 @@ from typing import Any
 
 from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderUnavailable
 from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
+from kronos_fincept.macro.providers.dbnomics import DBnomicsProvider
 from kronos_fincept.web_search import AnySearchClient, WebSearchClient
 
 
@@ -1366,74 +1367,6 @@ class DeribitProvider(MacroProvider):
             )
         return signals
 
-
-class DBnomicsProvider(MacroProvider):
-    """Macro-economic indicators via DBnomics API (IMF, FRED, OECD, Eurostat).
-
-    DBnomics aggregates 100+ official statistical sources. This provider fetches
-    the latest observation for key macro series using the free v22 API.
-    Zero API key, zero dependencies.
-    """
-
-    provider_id = "dbnomics"
-    display_name = "DBnomics"
-    capabilities = ("macro_economy", "growth", "inflation", "labor_market")
-
-    _DBNOMICS_SERIES: tuple[tuple[str, str, str, str], ...] = (
-        # (provider, dataset, series_key, label)
-        ("IMF", "WEO:2025-04", "USA.NGDPRPPPPC.pcent", "IMF 美国 GDP 增速预测"),
-        ("IMF", "WEO:2025-04", "USA.PCPIPCH.pcent", "IMF 美国通胀率预测"),
-        ("IMF", "WEO:2025-04", "USA.LUR.pcent", "IMF 美国失业率预测"),
-        ("IMF", "WEO:2025-04", "CHN.NGDPRPPPPC.pcent", "IMF 中国 GDP 增速预测"),
-        ("IMF", "WEO:2025-04", "CHN.PCPIPCH.pcent", "IMF 中国通胀率预测"),
-        ("OECD", "EO/EO147", "USA.GDPV_ANNPCT.pcent", "OECD 美国 GDP 增速"),
-        ("OECD", "EO/EO147", "USA.CPI.pcent", "OECD 美国通胀率"),
-    )
-
-    def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
-        signals: list[MacroSignal] = []
-        text = _query_text(query)
-        for provider, dataset, series_key, label in self._DBNOMICS_SERIES:
-            if len(signals) >= max(1, query.limit):
-                break
-            url = f"https://api.db.nomics.world/v22/series/{provider}/{dataset}/{series_key}"
-            try:
-                payload = _get_json(url, params={"observations": "1"}, timeout=8)
-            except Exception:
-                continue
-            docs = payload.get("series") if isinstance(payload, dict) else {}
-            if not isinstance(docs, dict):
-                docs = {}
-            series = docs.get("docs") if isinstance(docs, dict) else []
-            if not isinstance(series, list) or not series:
-                continue
-            data = series[0]
-            period_data = data.get("period") if isinstance(data, dict) else {}
-            if not isinstance(period_data, dict):
-                continue
-            value = _number(period_data.get("value"))
-            period = str(period_data.get("period") or data.get("period_start_day") or "")
-            signals.append(
-                _signal(
-                    source=self.provider_id,
-                    signal_type=f"macro_{provider.lower()}_{series_key.rsplit('.', 1)[0].lower().replace('.', '_')}",
-                    value=value,
-                    interpretation=f"{label} 最新观测值，来自 {provider} 官方统计。",
-                    time_horizon="long",
-                    confidence=0.7 if value is not None else 0.4,
-                    observed_at=period or None,
-                    source_url=f"https://db.nomics.world/{provider}/{dataset}/{series_key}",
-                    metadata={
-                        "provider": provider,
-                        "dataset": dataset,
-                        "series": series_key,
-                        "label": label,
-                        "period": period,
-                        "data_quality": f"official_{provider.lower()}",
-                    },
-                )
-            )
-        return signals
 
 
 class StooqProvider(MacroProvider):

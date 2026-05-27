@@ -151,25 +151,31 @@ def test_us_treasury_provider_adds_fiscaldata_exchange_rates(monkeypatch: pytest
 
 
 def test_dbnomics_provider_accepts_dict_series_docs(monkeypatch: pytest.MonkeyPatch) -> None:
+    from kronos_fincept.macro.providers import dbnomics as dbnomics_mod
+
     monkeypatch.setattr(
-        digital_oracle.DBnomicsProvider,
-        "_DBNOMICS_SERIES",
-        (("IMF", "WEO", "USA.NGDP_RPCH.pcent", "IMF 美国 GDP 增速"),),
+        dbnomics_mod,
+        "SERIES_CATALOG",
+        (("IMF", "WEO", "USA_NGDP_RPCH", "pcent", "USA", "gdp", "IMF US GDP growth"),),
     )
-    monkeypatch.setattr(
-        digital_oracle,
-        "_get_json",
-        lambda *args, **kwargs: {
-            "series": {
-                "docs": [
-                    {
-                        "period": {"value": "2.8", "period": "2026"},
-                        "period_start_day": "2026-01-01",
-                    }
-                ]
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return {
+                "series": {
+                    "docs": [
+                        {
+                            "period": {"value": "2.8", "period": "2026"},
+                            "period_start_day": "2026-01-01",
+                        }
+                    ]
+                }
             }
-        },
-    )
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(dbnomics_mod.requests, "get", lambda *a, **kw: FakeResp())
 
     signals = digital_oracle.DBnomicsProvider().fetch_signals(MacroQuery("美国 GDP", limit=1))
 
