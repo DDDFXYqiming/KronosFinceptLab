@@ -57,3 +57,4 @@ Thumbs.db
 # Next.js
 web/node_modules/
 web/.next/
+docs/spec_*.md

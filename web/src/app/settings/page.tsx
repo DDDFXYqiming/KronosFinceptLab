@@ -22,6 +22,20 @@ function isSensitiveStorageKey(key: string): boolean {
   return /api[-_]?key|token|secret|authorization|cookie/i.test(key);
 }
 
+function maskModelId(id: string | undefined | null): string {
+  if (!id) return "-";
+  const parts = id.split("/");
+  if (parts.length > 1) {
+    const provider = parts[0];
+    const model = parts.slice(1).join("/");
+    if (model.length <= 4) return `${provider}/${model[0]}***`;
+    return `${provider}/${model.slice(0, 2)}${"*".repeat(Math.min(6, model.length - 4))}${model.slice(-2)}`;
+  }
+  // Single-part model ID
+  if (id.length <= 4) return `${id[0]}***`;
+  return `${id.slice(0, 2)}${"*".repeat(Math.min(6, id.length - 4))}${id.slice(-2)}`;
+}
+
 export default function SettingsPage() {
   const { preferences, setPreferences, clearLocalState } = useAppStore();
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -106,12 +120,36 @@ export default function SettingsPage() {
           <div><p className="text-sm text-muted-foreground">模型</p><p className="truncate text-xl font-bold">{health?.model_id || health?.default_model_id || "-"}</p></div>
           <div><p className="text-sm text-muted-foreground">设备</p><p className="text-xl font-bold">{health?.device || "-"}</p></div>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div><p className="text-xs text-muted-foreground">构建提交</p><p className="font-mono text-sm font-bold">{health?.build_commit ? health.build_commit.slice(0, 7) : "-"}</p></div>
+          <div><p className="text-xs text-muted-foreground">构建源</p><p className="font-mono text-sm font-bold">{health?.build_source || "-"}</p></div>
+        </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row">
           <Button onClick={refreshHealth}>重新检查</Button>
           <Button variant="secondary" onClick={exportLocalState}>导出本地状态</Button>
           <Button variant="danger" onClick={clearLocalCaches}>清理本地缓存</Button>
         </div>
         {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{error}</div>}
+      </Card>
+
+      <Card>
+        <CardTitle subtitle="当前 LLM 配置状态">LLM 提供商 / 模型</CardTitle>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <p className="text-sm text-muted-foreground">提供商</p>
+            <p className="truncate text-xl font-bold">{health?.model_id ? health.model_id.split("/")[0] : health?.default_model_id?.split("/")[0] || "-"}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">模型</p>
+            <p className="truncate font-mono text-xl font-bold" title={health?.model_id || health?.default_model_id || "-"}>{maskModelId(health?.model_id || health?.default_model_id)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">模型加载状态</p>
+            <p className={`text-xl font-bold ${health?.model_loaded ? "text-success" : health?.model_error ? "text-error" : "text-muted-foreground"}`}>
+              {health?.model_loaded ? "已加载" : health?.model_error ? "加载失败" : health?.model_id ? "未知" : "未配置"}
+            </p>
+          </div>
+        </div>
       </Card>
 
       <Card>

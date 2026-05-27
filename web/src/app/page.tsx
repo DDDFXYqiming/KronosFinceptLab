@@ -46,6 +46,7 @@ export default function Dashboard() {
       : "unknown";
   const deployedVersion = health?.app_version || health?.version || "-";
   const isOnline = health?.status === "ok";
+  const isLlmConfigured = health?.model_loaded === true || Boolean(health?.model_id);
 
   return (
     <div className="page-shell space-y-8">
@@ -78,6 +79,9 @@ export default function Dashboard() {
             <span className="font-mono text-xs text-muted-foreground">{deployedVersion}</span>
             <span className="text-border select-none">|</span>
             <span className="font-mono text-xs text-muted-foreground">{health?.device || "cpu"}</span>
+            <span className="text-border select-none">|</span>
+            <span className={`h-2.5 w-2.5 rounded-full animate-pulse-dot ${isLlmConfigured ? "bg-success" : "bg-error"}`} />
+            <span className="text-muted-foreground">{isLlmConfigured ? "LLM 已配置" : "LLM 未配置"}</span>
           </div>
         </motion.div>
       </motion.div>
@@ -93,6 +97,28 @@ export default function Dashboard() {
         <Card index={4}><CardStat label="设备" value={health?.device || "-"} /></Card>
         <Card index={5}><CardStat label="运行时间" value={health ? formatDuration(health.uptime_seconds) : "-"} /></Card>
       </CardGrid>
+
+      {/* ── Data Source Availability ── */}
+      <Card>
+        <CardTitle subtitle="数据接入与模型状态">数据源可用性</CardTitle>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+            <span className={`h-3 w-3 rounded-full ${isOnline ? "bg-success" : "bg-error"}`} />
+            <span className="text-sm font-medium text-foreground">API 服务</span>
+            <span className="ml-auto text-xs text-muted-foreground">{isOnline ? "在线" : "离线"}</span>
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+            <span className={`h-3 w-3 rounded-full ${isLlmConfigured ? "bg-success" : "bg-error"}`} />
+            <span className="text-sm font-medium text-foreground">LLM 模型</span>
+            <span className="ml-auto text-xs text-muted-foreground">{isLlmConfigured ? "已配置" : "未配置"}</span>
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+            <span className={`h-3 w-3 rounded-full ${health?.site_api_configured ? "bg-success" : "bg-error"}`} />
+            <span className="text-sm font-medium text-foreground">站点 API Key</span>
+            <span className="ml-auto text-xs text-muted-foreground">{health?.site_api_configured ? "已配置" : "未配置"}</span>
+          </div>
+        </div>
+      </Card>
 
       {/* ── Quick Links ── */}
       <Card>

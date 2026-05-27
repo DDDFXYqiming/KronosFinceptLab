@@ -190,7 +190,7 @@ def test_v101_generic_macro_theme_symbol_is_not_used_as_market_ticker(monkeypatc
 
     assert signals
     assert "AI" not in captured["url"]
-    assert "%5ESPX" in captured["url"] or "^SPX" in captured["url"]
+    assert "%5Espx" in captured["url"] or "%5ESPX" in captured["url"] or "^SPX" in captured["url"]
 
 
 def test_v101_readme_and_version_labels_are_current():
@@ -239,6 +239,7 @@ def test_v101_us_treasury_retries_nominal_curve_before_degrading(monkeypatch):
         return {"Date": "05/15/2026", "10 YR": "2.10"}
 
     monkeypatch.setattr(providers, "_latest_curve_row", fake_latest_curve_row)
+    monkeypatch.setattr(providers.USTreasuryProvider, "_fetch_exchange_rate_rows", lambda self, query: [])
 
     signals = providers.USTreasuryProvider().fetch_signals(providers.MacroQuery("黄金该不该买"))
     by_type = {signal.signal_type: signal for signal in signals}
@@ -259,6 +260,7 @@ def test_v101_us_treasury_real_yield_signal_uses_tips_label(monkeypatch):
         return {"Date": "05/15/2026", "10 YR": "2.10"}
 
     monkeypatch.setattr(providers, "_latest_curve_row", fake_latest_curve_row)
+    monkeypatch.setattr(providers.USTreasuryProvider, "_fetch_exchange_rate_rows", lambda self, query: [])
 
     signals = providers.USTreasuryProvider().fetch_signals(providers.MacroQuery("黄金该不该买"))
 

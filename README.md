@@ -1,6 +1,6 @@
 # KronosFinceptLab
 
-Version: v10.8 — research-only quantitative finance cockpit.
+Version: v10.9 — research-only quantitative finance cockpit.
 
 > Your local-first quantitative finance cockpit.
 
@@ -50,7 +50,7 @@ An integrated quantitative finance analytics platform combining **market data, A
 - **Unified multi-entry** — CLI (`kronos`), REST API (`kronos serve`), Web UI, and MCP server share the same analysis and forecasting engines.
 - **Data source circuit breaking** — BaoStock, AkShare, Yahoo/Stooq, Binance/OKX, Treasury, BIS, SEC/EDGAR, CFTC, and web-search enrichment are used with fallback and timeout handling.
 - **AI-native** — Built-in Kronos K-line model inference plus LLM synthesis. The current shared LLM chain prioritizes DeepSeek and falls back to OpenRouter when configured.
-- **Observable and deployable** — JSON Lines structured logging with `request_id`, build fingerprints, API key roles, rate limits, request budgets, and Docker/Zeabur-friendly startup.
+- **Observable and deployable** — JSON Lines structured logging with `request_id`, build fingerprints, API key roles, rate limits, request budgets, and Docker-friendly startup.
 
 ---
 
@@ -136,7 +136,7 @@ The Web UI contains dashboard, forecast, batch, data, analysis, macro, backtest,
 | `docs/ARCHITECTURE.md` | Current architecture, module boundaries, data/LLM flows, and security/deployment notes |
 | `docs/API.md` | REST endpoint inventory, auth, error format, and feature flags |
 | `docs/CLI.md` | CLI command tree and examples |
-| `docs/DEPLOYMENT.md` | Local, Docker, and Zeabur deployment notes |
+| `docs/DEPLOYMENT.md` | Local and Docker deployment notes |
 | `START_GUIDE.md` | Quick startup instructions |
 | `kronos_mcp/README.md` | MCP server tools and client configuration |
 

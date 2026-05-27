@@ -310,4 +310,4 @@ def test_legacy_ai_analyze_uses_shared_agent_chain():
 
 def test_v904_version_labels_are_updated():
     assert re.search(r"Version: v10\.", read("README.md"))
-    assert re.search(r"v10\..*— 仅供研究", read("web/src/components/layout/Sidebar.tsx"))
+    assert re.search(r"v10\.\d+\.\d+.*common\.researchOnly", read("web/src/components/layout/Sidebar.tsx"))
