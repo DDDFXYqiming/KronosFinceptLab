@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
+import time
+import uuid
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from kronos_fincept.api.models import SYMBOL_PATTERN
+from kronos_fincept.api.models import MARKET_PATTERN, SYMBOL_PATTERN
+from kronos_fincept.runtime_store import get_runtime_store
 from kronos_fincept.schemas import RESEARCH_WARNING
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
+
+
+def _normalize_symbol_list(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for value in values:
+        symbol = str(value).strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        normalized.append(symbol)
+        seen.add(symbol)
+    return normalized
 
 
 class WatchlistRankingIn(BaseModel):
@@ -29,15 +44,46 @@ class WatchlistResearchRequest(BaseModel):
     @field_validator("symbols")
     @classmethod
     def _normalize_symbols(cls, values: list[str]) -> list[str]:
-        seen: set[str] = set()
-        normalized: list[str] = []
-        for value in values:
-            symbol = str(value).strip().upper()
-            if not symbol or symbol in seen:
-                continue
-            normalized.append(symbol)
-            seen.add(symbol)
-        return normalized
+        return _normalize_symbol_list(values)
+
+
+class WatchlistListIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    market: str = Field(default="cn", min_length=1, max_length=16, pattern=MARKET_PATTERN)
+    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    weights: dict[str, float] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("symbols")
+    @classmethod
+    def _normalize_symbols(cls, values: list[str]) -> list[str]:
+        return _normalize_symbol_list(values)
+
+
+class WatchlistListOut(BaseModel):
+    ok: bool = True
+    id: str
+    name: str
+    market: str
+    symbols: list[str]
+    weights: dict[str, float] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    note: str | None = None
+    created_at: float
+    updated_at: float
+
+
+class WatchlistCollectionOut(BaseModel):
+    ok: bool = True
+    watchlists: list[WatchlistListOut]
+    total: int
+
+
+class WatchlistDeleteOut(BaseModel):
+    ok: bool = True
+    id: str
+    deleted: bool
 
 
 class WatchlistResearchResponse(BaseModel):
@@ -108,3 +154,65 @@ def build_watchlist_research(req: WatchlistResearchRequest) -> WatchlistResearch
 async def watchlist_research(req: WatchlistResearchRequest) -> WatchlistResearchResponse:
     """Summarize watchlist forecast rankings into a weighted portfolio research view."""
     return build_watchlist_research(req)
+
+
+def _watchlist_payload(req: WatchlistListIn, watchlist_id: str | None = None, created_at: float | None = None) -> dict[str, Any]:
+    now = time.time()
+    return {
+        "id": watchlist_id or uuid.uuid4().hex,
+        "name": req.name,
+        "market": req.market,
+        "symbols": req.symbols,
+        "weights": {str(key).upper(): float(value) for key, value in req.weights.items() if float(value) >= 0},
+        "tags": [str(tag).strip() for tag in req.tags if str(tag).strip()],
+        "note": req.note,
+        "created_at": created_at or now,
+        "updated_at": now,
+    }
+
+
+def get_watchlist_snapshot(watchlist_id: str) -> dict[str, Any] | None:
+    return get_runtime_store().get_watchlist(watchlist_id)
+
+
+def _watchlist_out(item: dict[str, Any]) -> WatchlistListOut:
+    return WatchlistListOut(**item)
+
+
+@router.get("/lists", response_model=WatchlistCollectionOut)
+async def list_watchlists() -> WatchlistCollectionOut:
+    items = get_runtime_store().list_watchlists()
+    return WatchlistCollectionOut(watchlists=[_watchlist_out(item) for item in items], total=len(items))
+
+
+@router.post("/lists", response_model=WatchlistListOut)
+async def create_watchlist(req: WatchlistListIn) -> WatchlistListOut:
+    item = _watchlist_payload(req)
+    get_runtime_store().upsert_watchlist(item)
+    return _watchlist_out(item)
+
+
+@router.get("/lists/{watchlist_id}", response_model=WatchlistListOut)
+async def get_watchlist(watchlist_id: str) -> WatchlistListOut:
+    item = get_runtime_store().get_watchlist(watchlist_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    return _watchlist_out(item)
+
+
+@router.put("/lists/{watchlist_id}", response_model=WatchlistListOut)
+async def update_watchlist(watchlist_id: str, req: WatchlistListIn) -> WatchlistListOut:
+    existing = get_runtime_store().get_watchlist(watchlist_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    item = _watchlist_payload(req, watchlist_id=watchlist_id, created_at=float(existing.get("created_at", time.time())))
+    get_runtime_store().upsert_watchlist(item)
+    return _watchlist_out(item)
+
+
+@router.delete("/lists/{watchlist_id}", response_model=WatchlistDeleteOut)
+async def delete_watchlist(watchlist_id: str) -> WatchlistDeleteOut:
+    deleted = get_runtime_store().delete_watchlist(watchlist_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    return WatchlistDeleteOut(id=watchlist_id, deleted=True)

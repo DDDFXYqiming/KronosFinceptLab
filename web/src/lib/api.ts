@@ -19,6 +19,7 @@ import type {
   ForecastResponse,
   HealthResponse,
   IndicatorResponse,
+  JobHistoryResponse,
   JobStatusResponse,
   JobSubmitResponse,
   MacroAnalyzeRequest,
@@ -31,6 +32,9 @@ import type {
   RssFetchResponse,
   SearchResult,
   SecuritySummaryResponse,
+  WatchlistCollectionResponse,
+  WatchlistListItem,
+  WatchlistListRequest,
   WatchlistResearchRequest,
   WatchlistResearchResponse,
 } from "@/types/api";
@@ -66,6 +70,7 @@ export type {
   GlobalDataResponse,
   HealthResponse,
   IndicatorResponse,
+  JobHistoryResponse,
   JobStatusResponse,
   JobSubmitResponse,
   MacroAnalyzeRequest,
@@ -85,6 +90,9 @@ export type {
   RssItem,
   SearchResult,
   SecuritySummaryResponse,
+  WatchlistCollectionResponse,
+  WatchlistListItem,
+  WatchlistListRequest,
   WatchlistRankingInput,
   WatchlistResearchRequest,
   WatchlistResearchResponse,
@@ -320,6 +328,14 @@ function post<T>(path: string, body: unknown, options?: ApiClientOptions): Promi
   });
 }
 
+function put<T>(path: string, body: unknown, options?: ApiClientOptions): Promise<T> {
+  return fetchApi<T>(path, {
+    method: "PUT",
+    body: JSON.stringify(body),
+    ...options,
+  });
+}
+
 function del<T>(path: string, options?: ApiClientOptions): Promise<T> {
   return fetchApi<T>(path, { method: "DELETE", ...options });
 }
@@ -468,6 +484,27 @@ export const api = {
 
   getJob: <T = any>(jobId: string, options?: ApiClientOptions) =>
     get<JobStatusResponse<T>>(`/jobs/${encodeURIComponent(jobId)}`, options),
+
+  listJobs: <T = any>(options?: ApiClientOptions & { limit?: number; status?: string; kind?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.status) params.set("status", options.status);
+    if (options?.kind) params.set("kind", options.kind);
+    const qs = params.toString();
+    return get<JobHistoryResponse<T>>(`/jobs${qs ? `?${qs}` : ""}`, options);
+  },
+
+  watchlistList: (options?: ApiClientOptions) =>
+    get<WatchlistCollectionResponse>("/watchlist/lists", options),
+
+  watchlistCreate: (req: WatchlistListRequest, options?: ApiClientOptions) =>
+    post<WatchlistListItem>("/watchlist/lists", req, options),
+
+  watchlistUpdate: (id: string, req: WatchlistListRequest, options?: ApiClientOptions) =>
+    put<WatchlistListItem>(`/watchlist/lists/${encodeURIComponent(id)}`, req, options),
+
+  watchlistDelete: (id: string, options?: ApiClientOptions) =>
+    del<{ ok: boolean; id: string; deleted: boolean }>(`/watchlist/lists/${encodeURIComponent(id)}`, options),
 
   cancelJob: (jobId: string, options?: ApiClientOptions) =>
     post<{ ok: boolean; job_id: string; status: string }>(`/jobs/${encodeURIComponent(jobId)}/cancel`, {}, options),

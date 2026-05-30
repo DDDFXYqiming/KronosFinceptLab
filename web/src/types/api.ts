@@ -187,6 +187,34 @@ export interface WatchlistResearchResponse {
   metadata: Record<string, any>;
 }
 
+export interface WatchlistListRequest {
+  name: string;
+  market?: string;
+  symbols: string[];
+  weights?: Record<string, number>;
+  tags?: string[];
+  note?: string | null;
+}
+
+export interface WatchlistListItem {
+  ok: boolean;
+  id: string;
+  name: string;
+  market: string;
+  symbols: string[];
+  weights: Record<string, number>;
+  tags: string[];
+  note?: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface WatchlistCollectionResponse {
+  ok: boolean;
+  watchlists: WatchlistListItem[];
+  total: number;
+}
+
 export interface HealthResponse {
   status: string;
   version: string;
@@ -251,6 +279,12 @@ export interface JobStatusResponse<T = any> {
   error?: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface JobHistoryResponse<T = any> {
+  ok: boolean;
+  jobs: JobStatusResponse<T>[];
+  total: number;
 }
 
 export interface SecuritySummaryResponse {
