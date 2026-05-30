@@ -126,7 +126,64 @@ export interface BacktestResponse {
   top_k?: number;
   metrics: BacktestMetrics;
   equity_curve: { date: string; equity: number; return: number; selected: string[] }[];
-  metadata: { device: string; elapsed_ms: number; warning: string };
+  metadata: { device: string; elapsed_ms: number; warning: string; backend?: string };
+}
+
+export type StrategyName = "equal_weight" | "momentum" | "mean_reversion" | "top_k_ranking";
+
+export interface StrategyBacktestRequest extends BacktestJobRequest {
+  strategies?: StrategyName[];
+}
+
+export interface StrategyResult {
+  strategy: StrategyName | string;
+  metrics: BacktestMetrics;
+  equity_curve: { date: string; equity: number; return: number; selected: string[] }[];
+  metadata: Record<string, any>;
+}
+
+export interface StrategyBacktestResponse {
+  ok: boolean;
+  symbols: string[];
+  start_date: string;
+  end_date: string;
+  best_strategy: string;
+  results: StrategyResult[];
+  metadata: { device: string; elapsed_ms: number; warning: string; backend?: string };
+}
+
+export interface StrategyScanRequest extends BacktestJobRequest {
+  strategy: StrategyName;
+  top_k_values?: number[];
+  step_values?: number[];
+}
+
+export interface StrategyScanRow {
+  rank: number;
+  strategy: string;
+  params: Record<string, any>;
+  metrics: BacktestMetrics;
+  score: number;
+}
+
+export interface StrategyScanResponse {
+  ok: boolean;
+  best: StrategyScanRow;
+  results: StrategyScanRow[];
+  metadata: { device: string; elapsed_ms: number; warning: string; backend?: string };
+}
+
+export interface StrategyRollingRequest extends BacktestJobRequest {
+  strategy: StrategyName;
+  folds?: number;
+}
+
+export interface StrategyRollingResponse {
+  ok: boolean;
+  strategy: string;
+  folds: { fold: number; start_index: number; end_index: number; metrics: BacktestMetrics; score: number }[];
+  summary: Record<string, any>;
+  metadata: { device: string; elapsed_ms: number; warning: string; backend?: string };
 }
 
 export interface BacktestReportResponse {

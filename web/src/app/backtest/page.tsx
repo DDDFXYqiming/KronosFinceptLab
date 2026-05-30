@@ -12,7 +12,7 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { DEFAULT_BACKTEST_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
-import type { BacktestReportResponse, BacktestResponse } from "@/types/api";
+import type { BacktestReportResponse, BacktestResponse, StrategyBacktestResponse, StrategyName, StrategyRollingResponse, StrategyScanResponse } from "@/types/api";
 
 const CSV_HEADERS = "date,equity,return,selected";
 
@@ -31,6 +31,11 @@ export default function BacktestPage() {
   const [slippageBps, setSlippageBps] = useSessionState("kronos-backtest-slippage-bps", 1);
   const [result, setResult] = useSessionState<BacktestResponse | null>("kronos-backtest-result", null);
   const [report, setReport] = useSessionState<BacktestReportResponse | null>("kronos-backtest-report", null);
+  const [strategyResult, setStrategyResult] = useSessionState<StrategyBacktestResponse | null>("kronos-strategy-lab-result", null);
+  const [scanResult, setScanResult] = useSessionState<StrategyScanResponse | null>("kronos-strategy-lab-scan", null);
+  const [rollingResult, setRollingResult] = useSessionState<StrategyRollingResponse | null>("kronos-strategy-lab-rolling", null);
+  const [strategy, setStrategy] = useSessionState<StrategyName>("kronos-strategy-lab-strategy", "momentum");
+  const [strategyLoading, setStrategyLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-backtest-error", "");
@@ -112,6 +117,26 @@ export default function BacktestPage() {
     }
   };
 
+  const handleStrategyLab = async () => {
+    setStrategyLoading(true);
+    setError("");
+    try {
+      const base = requestPayload();
+      const [strategyRes, scanRes, rollingRes] = await Promise.all([
+        api.strategyBacktest({ ...base, strategies: ["equal_weight", "momentum", "mean_reversion", "top_k_ranking"] }),
+        api.strategyScan({ ...base, strategy, top_k_values: [1, Math.max(1, topK)], step_values: [Math.max(1, step), Math.max(1, step * 2)] }),
+        api.strategyRolling({ ...base, strategy, folds: 3 }),
+      ]);
+      setStrategyResult(strategyRes);
+      setScanResult(scanRes);
+      setRollingResult(rollingRes);
+    } catch (e: any) {
+      setError(formatApiError(e, "Portfolio Strategy Lab 运行失败"));
+    } finally {
+      setStrategyLoading(false);
+    }
+  };
+
   const downloadBacktestCsv = () => {
     if (!result) return;
     const content = toCsv(
@@ -187,6 +212,27 @@ export default function BacktestPage() {
           <Button variant="secondary" onClick={downloadBacktestCsv} disabled={!result} className="w-full md:w-auto">导出 CSV</Button>
           <Button variant="secondary" onClick={handleGenerateReport} loading={reportLoading} disabled={!result} className="w-full md:w-auto">生成 HTML 报告</Button>
         </div>
+      </Card>
+
+      <Card>
+        <CardTitle subtitle="多策略对比、参数扫描、rolling validation。">Portfolio Strategy Lab</CardTitle>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <label className="field-label">扫描策略</label>
+            <select value={strategy} onChange={(e) => setStrategy(e.target.value as StrategyName)} className="app-input mt-1">
+              <option value="equal_weight">Equal Weight</option>
+              <option value="momentum">Momentum</option>
+              <option value="mean_reversion">Mean Reversion</option>
+              <option value="top_k_ranking">Top-K Ranking</option>
+            </select>
+          </div>
+          <div className="md:col-span-2 flex items-end">
+            <Button onClick={handleStrategyLab} loading={strategyLoading}>运行策略实验室</Button>
+          </div>
+        </div>
+        {strategyResult && <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">{strategyResult.results.map((row) => <div key={row.strategy} className="rounded-lg border border-border p-3"><p className="font-semibold text-white">{row.strategy}</p><p className="text-sm text-muted-foreground">收益 {formatPercent(row.metrics.total_return)} · 夏普 {formatNumber(row.metrics.sharpe_ratio, 2)}</p><p className="text-xs text-muted-foreground">turnover {formatNumber(Number(row.metadata.turnover || 0), 2)}</p></div>)}</div>}
+        {scanResult && <div className="mt-4"><p className="text-sm text-muted-foreground">参数扫描最佳：Top K {scanResult.best.params.top_k} / Step {scanResult.best.params.step} / Score {formatNumber(scanResult.best.score, 4)}</p></div>}
+        {rollingResult && <div className="mt-2"><p className="text-sm text-muted-foreground">Rolling validation：{rollingResult.summary.folds} folds，平均收益 {formatPercent(Number(rollingResult.summary.avg_total_return || 0))}</p></div>}
       </Card>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
