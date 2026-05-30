@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Any
 from fastapi import APIRouter, HTTPException, Path, Query
+from pydantic import BaseModel, Field
 from kronos_fincept.api.models import DataResponseOut, MARKET_PATTERN, SearchResponseOut, SearchResultOut, SYMBOL_PATTERN
 from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
 
@@ -16,6 +17,31 @@ router = APIRouter()
 
 MAX_DATA_RANGE_DAYS = 800
 MAX_RETURN_ROWS = 1024
+
+
+class BatchDataRequestIn(BaseModel):
+    """POST /api/data/batch request body."""
+
+    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    market: str = Field(default="cn", min_length=1, max_length=16, pattern=MARKET_PATTERN)
+    start_date: str = Field(..., min_length=8, max_length=8)
+    end_date: str = Field(..., min_length=8, max_length=8)
+    adjust: str = Field(default="qfq", max_length=8, pattern=r"^(qfq|hfq)?$")
+
+
+class BatchDataItemOut(BaseModel):
+    symbol: str
+    market: str
+    count: int
+    rows: list[dict[str, Any]]
+
+
+class BatchDataResponseOut(BaseModel):
+    ok: bool
+    market: str
+    count: int
+    items: list[BatchDataItemOut]
+    errors: dict[str, str] = Field(default_factory=dict)
 
 
 def _validate_date_range(start_date: str, end_date: str) -> None:
@@ -32,6 +58,54 @@ def _validate_date_range(start_date: str, end_date: str) -> None:
 
 def _trim_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows[-MAX_RETURN_ROWS:] if len(rows) > MAX_RETURN_ROWS else rows
+
+
+def fetch_market_rows_for_batch(
+    symbol: str,
+    market: str,
+    start_date: str,
+    end_date: str,
+    adjust: str = "qfq",
+) -> list[dict[str, Any]]:
+    """Fetch OHLCV rows for one symbol using the same routing as data endpoints."""
+    if market == "cn":
+        return fetch_a_stock_ohlcv(symbol=symbol, start_date=start_date, end_date=end_date, adjust=adjust)
+    from kronos_fincept.financial import GlobalMarketSource
+
+    gms = GlobalMarketSource()
+    return gms.fetch_data(symbol, start_date, end_date, market=market)
+
+
+@router.post("/data/batch", response_model=BatchDataResponseOut)
+async def get_batch_market_data(req: BatchDataRequestIn) -> BatchDataResponseOut:
+    """Fetch OHLCV rows for multiple symbols and return per-symbol failures."""
+    _validate_date_range(req.start_date, req.end_date)
+    items: list[BatchDataItemOut] = []
+    errors: dict[str, str] = {}
+
+    async def _one(symbol: str) -> tuple[str, list[dict[str, Any]] | None, str | None]:
+        try:
+            rows = await asyncio.to_thread(
+                fetch_market_rows_for_batch,
+                symbol,
+                req.market,
+                req.start_date,
+                req.end_date,
+                req.adjust,
+            )
+            if not rows:
+                return symbol, None, "No data"
+            return symbol, _trim_rows(rows), None
+        except Exception as exc:
+            return symbol, None, str(exc)
+
+    for symbol, rows, error in await asyncio.gather(*[_one(symbol) for symbol in req.symbols]):
+        if error or rows is None:
+            errors[symbol] = error or "No data"
+            continue
+        items.append(BatchDataItemOut(symbol=symbol, market=req.market, count=len(rows), rows=rows))
+
+    return BatchDataResponseOut(ok=True, market=req.market, count=len(items), items=items, errors=errors)
 
 
 @router.get("/data/global/{symbol}", response_model=DataResponseOut)

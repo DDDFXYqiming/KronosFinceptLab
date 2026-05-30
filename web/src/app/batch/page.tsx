@@ -16,7 +16,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { downloadTextFile, makeDatedFilename, toCsv } from "@/lib/exportUtils";
 import { useSessionState } from "@/lib/useSessionState";
 import { useAppStore } from "@/stores/app";
-import type { ForecastRequest, ForecastRow, RankedSignal } from "@/types/api";
+import type { BatchJobResult, ForecastRequest, ForecastRow, JobStatusResponse, RankedSignal } from "@/types/api";
 
 const BATCH_CONCURRENCY = 4;
 const BATCH_START_DATE = "20250101";
@@ -100,6 +100,7 @@ function BatchContent() {
   const [failures, setFailures] = useSessionState<BatchFailure[]>("kronos-batch-failures", []);
   const [progress, setProgress] = useState<BatchProgress>(createInitialProgress());
   const [loading, setLoading] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [error, setError] = useSessionState("kronos-batch-error", "");
 
   useEffect(() => {
@@ -149,50 +150,47 @@ function BatchContent() {
   };
 
   const buildSnapshot = async (symbols: string[], signal: AbortSignal): Promise<BatchRunSnapshot> => {
-    const failuresNext: BatchFailure[] = [];
     setProgress(createInitialProgress(symbols.length));
-    const dataOutcomes = await runWithConcurrency(symbols, BATCH_CONCURRENCY, signal, async (symbol) => {
-      try {
-        setProgress((current) => ({ ...current, running: Array.from(new Set([...current.running, symbol])) }));
-        const dataKey = queryKeys.data({ symbol, market, startDate: BATCH_START_DATE, endDate: BATCH_END_DATE, adjust: "qfq" });
-        const dataRes = await queryClient.fetchQuery({
-          queryKey: dataKey,
-          queryFn: () => market === "cn"
-            ? api.getData(symbol, BATCH_START_DATE, BATCH_END_DATE, "qfq", { signal })
-            : api.getGlobalData(symbol, market, BATCH_START_DATE, BATCH_END_DATE, { signal }),
-        });
-        const rows = dataRes.rows || [];
-        if (rows.length === 0) throw new Error("没有可用行情数据");
-        setProgress((current) => ({ ...current, completed: current.completed + 1, success: current.success + 1, running: current.running.filter((item) => item !== symbol) }));
-        return { symbol, rows };
-      } catch (err) {
-        failuresNext.push(toFailure(symbol, "data", err));
-        setProgress((current) => ({ ...current, completed: current.completed + 1, failed: current.failed + 1, running: current.running.filter((item) => item !== symbol) }));
-        return null;
+    const submitted = await api.submitBatchJob({
+      symbols,
+      market,
+      start_date: BATCH_START_DATE,
+      end_date: BATCH_END_DATE,
+      adjust: "qfq",
+      pred_len: predLen,
+      model_id: modelId,
+      dry_run: false,
+    }, { signal, timeoutMs: 30000 });
+    setActiveJobId(submitted.job_id);
+
+    let lastStatus: JobStatusResponse<BatchJobResult> | null = null;
+    while (!signal.aborted) {
+      const status = await api.getJob<BatchJobResult>(submitted.job_id, { signal, timeoutMs: 30000 });
+      lastStatus = status;
+      const jobProgress = status.result?.progress;
+      if (jobProgress) {
+        setProgress({ ...jobProgress, skipped: 0 });
+      } else {
+        const completedSteps = status.steps.filter((step) => step.status === "completed").length;
+        setProgress((current) => ({ ...current, total: symbols.length, completed: Math.min(current.completed, symbols.length), skipped: 0, running: status.status === "running" ? [`${completedSteps}/${status.steps.length}`] : [] }));
       }
-    });
-
-    const assets: ForecastRequest[] = dataOutcomes
-      .filter((item): item is { symbol: string; rows: ForecastRow[] } => Boolean(item))
-      .map((item) => ({ symbol: item.symbol, pred_len: predLen, model_id: modelId, rows: item.rows.slice(-120), dry_run: false }));
-    if (assets.length === 0) return { results: [], failures: failuresNext, progress: { total: symbols.length, completed: symbols.length, success: 0, failed: failuresNext.length, skipped: Math.max(0, symbols.length - dataOutcomes.length), running: [] } };
-
-    try {
-      const response = await api.batch(assets, predLen, false, { signal, timeoutMs: 120000 });
-      const returnedSymbols = new Set(response.rankings.map((item) => item.symbol));
-      assets.forEach((asset) => {
-        if (!returnedSymbols.has(asset.symbol)) {
-          failuresNext.push({ symbol: asset.symbol, stage: "forecast", message: "后端批量预测未返回该标的结果。", requestId: null, retryable: true });
-        }
-      });
-      const ranked = [...response.rankings]
-        .sort((a, b) => b.predicted_return - a.predicted_return)
-        .map((item, index) => ({ ...item, rank: index + 1, market, risk_label: item.risk_label || riskLabel(item.predicted_return) }));
-      return { results: ranked, failures: failuresNext, progress: { total: symbols.length, completed: symbols.length, success: ranked.length, failed: failuresNext.length, skipped: 0, running: [] } };
-    } catch (err) {
-      assets.forEach((asset) => failuresNext.push(toFailure(asset.symbol, "forecast", err)));
-      return { results: [], failures: failuresNext, progress: { total: symbols.length, completed: symbols.length, success: 0, failed: failuresNext.length, skipped: 0, running: [] } };
+      if (["completed", "failed", "cancelled"].includes(status.status)) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
     }
+
+    if (signal.aborted) return { results: [], failures: [], progress: { total: symbols.length, completed: 0, success: 0, failed: 0, skipped: 0, running: [] } };
+    if (!lastStatus) throw new Error("批量任务没有返回状态。");
+    if (lastStatus.status === "cancelled") throw new Error("任务已取消");
+    if (lastStatus.status === "failed") throw new Error(lastStatus.error || "批量任务失败");
+    const result = lastStatus.result;
+    if (!result) throw new Error("批量任务没有返回结果。");
+
+    const ranked = [...result.rankings]
+      .sort((a, b) => b.predicted_return - a.predicted_return)
+      .map((item, index) => ({ ...item, rank: index + 1, market: item.market || market, risk_label: item.risk_label || riskLabel(item.predicted_return) }));
+    const progressNext = { ...result.progress, skipped: 0 };
+    const failuresNext = (result.failures || []).map((failure) => ({ ...failure, requestId: failure.requestId ?? null }));
+    return { results: ranked, failures: failuresNext, progress: progressNext };
   };
 
   const handleCompare = async (forceRefresh = false, overrideSymbols?: string[]) => {
@@ -230,11 +228,13 @@ function BatchContent() {
       setError(abortController.signal.aborted ? "任务已取消" : formatApiError(err, "批量对比失败"));
     } finally {
       activeAbortRef.current = null;
+      setActiveJobId(null);
       setLoading(false);
     }
   };
 
   const handleCancel = () => {
+    if (activeJobId) void api.cancelJob(activeJobId).catch(() => undefined);
     activeAbortRef.current?.abort();
     setProgress((current) => ({ ...current, running: [] }));
   };

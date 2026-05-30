@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import json
 import asyncio
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -77,6 +77,7 @@ class MacroAnalyzeRequest(BaseModel):
     symbols: list[str] = Field(default_factory=list, max_length=20, description="Optional related symbols")
     market: str | None = Field(default=None, max_length=16, description="Optional market hint")
     provider_ids: list[str] | None = Field(default=None, max_length=20, description="Optional provider id override")
+    mode: Literal["fast", "complete"] = Field(default="fast", description="fast uses dashboard timeouts; complete uses longer provider collection")
     context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
 
     @field_validator("context")
@@ -185,13 +186,14 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
     try:
         from kronos_fincept.agent import analyze_macro_question
 
+        context = {**(req.context or {}), "macro_mode": req.mode}
         result = await asyncio.to_thread(
             analyze_macro_question,
             req.question,
             symbols=req.symbols,
             market=req.market,
             provider_ids=req.provider_ids,
-            context=req.context,
+            context=context,
         )
         return AgentAnalyzeResponse(**result.to_dict())
     except Exception as exc:
@@ -224,6 +226,15 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
             timestamp=datetime.now().isoformat(),
             error=str(exc),
         )
+
+
+@router.get("/macro/providers/status")
+async def macro_provider_status(mode: Literal["fast", "complete"] = Query("fast")) -> dict[str, Any]:
+    """Return macro provider operational status without running LLM synthesis."""
+    from kronos_fincept.agent import _create_macro_data_manager
+
+    manager = _create_macro_data_manager(fast_mode=(mode == "fast"))
+    return {"ok": True, "mode": mode, "providers": manager.provider_status()}
 
 
 @router.post("/ai", response_model=AIAnalyzeResponse)
