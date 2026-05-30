@@ -32,6 +32,12 @@ import type {
   RssFetchResponse,
   SearchResult,
   SecuritySummaryResponse,
+  StrategyBacktestRequest,
+  StrategyBacktestResponse,
+  StrategyRollingRequest,
+  StrategyRollingResponse,
+  StrategyScanRequest,
+  StrategyScanResponse,
   WatchlistCollectionResponse,
   WatchlistListItem,
   WatchlistListRequest,
@@ -90,6 +96,14 @@ export type {
   RssItem,
   SearchResult,
   SecuritySummaryResponse,
+  StrategyBacktestRequest,
+  StrategyBacktestResponse,
+  StrategyName,
+  StrategyResult,
+  StrategyRollingRequest,
+  StrategyRollingResponse,
+  StrategyScanRequest,
+  StrategyScanResponse,
   WatchlistCollectionResponse,
   WatchlistListItem,
   WatchlistListRequest,
@@ -404,6 +418,15 @@ export const api = {
     },
     options?: ApiClientOptions
   ) => post<BacktestReportResponse>("/backtest/report", params, options),
+
+  strategyBacktest: (req: StrategyBacktestRequest, options?: ApiClientOptions) =>
+    post<StrategyBacktestResponse>("/backtest/strategy", req, options),
+
+  strategyScan: (req: StrategyScanRequest, options?: ApiClientOptions) =>
+    post<StrategyScanResponse>("/backtest/strategy/scan", req, options),
+
+  strategyRolling: (req: StrategyRollingRequest, options?: ApiClientOptions) =>
+    post<StrategyRollingResponse>("/backtest/strategy/rolling", req, options),
 
   getGlobalData: (
     symbol: string,

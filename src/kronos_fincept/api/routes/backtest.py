@@ -7,10 +7,11 @@ import logging
 import math
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from kronos_fincept.api.models import (
     BacktestMetricsOut,
@@ -29,6 +30,62 @@ router = APIRouter()
 
 MAX_BACKTEST_RANGE_DAYS = 800
 MAX_BACKTEST_WORK_UNITS = 5000
+StrategyName = Literal["equal_weight", "momentum", "mean_reversion", "top_k_ranking"]
+
+
+class StrategyBacktestRequestIn(BacktestRequestIn):
+    strategies: list[StrategyName] = Field(default_factory=lambda: ["equal_weight", "momentum", "mean_reversion", "top_k_ranking"], min_length=1, max_length=8)
+
+
+class StrategyResultOut(BaseModel):
+    strategy: str
+    metrics: BacktestMetricsOut
+    equity_curve: list[dict[str, Any]]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyBacktestResponseOut(BaseModel):
+    ok: bool = True
+    symbols: list[str]
+    start_date: str
+    end_date: str
+    best_strategy: str
+    results: list[StrategyResultOut]
+    metadata: ForecastMetadataOut
+
+
+class StrategyScanRequestIn(BacktestRequestIn):
+    strategy: StrategyName = "momentum"
+    top_k_values: list[int] = Field(default_factory=lambda: [1, 2, 3], min_length=1, max_length=8)
+    step_values: list[int] = Field(default_factory=lambda: [5, 10, 20], min_length=1, max_length=8)
+
+
+class StrategyScanRowOut(BaseModel):
+    rank: int
+    strategy: str
+    params: dict[str, Any]
+    metrics: BacktestMetricsOut
+    score: float
+
+
+class StrategyScanResponseOut(BaseModel):
+    ok: bool = True
+    best: StrategyScanRowOut
+    results: list[StrategyScanRowOut]
+    metadata: ForecastMetadataOut
+
+
+class StrategyRollingRequestIn(BacktestRequestIn):
+    strategy: StrategyName = "equal_weight"
+    folds: int = Field(default=3, ge=2, le=8)
+
+
+class StrategyRollingResponseOut(BaseModel):
+    ok: bool = True
+    strategy: str
+    folds: list[dict[str, Any]]
+    summary: dict[str, Any]
+    metadata: ForecastMetadataOut
 
 
 def _validate_backtest_request(req: BacktestRequestIn | BacktestReportRequestIn) -> None:
@@ -231,6 +288,194 @@ def _calculate_metrics(
         total_trades=total_trades,
         win_rate=round(win_rate, 4),
         avg_holding_days=avg_holding_days,
+    )
+
+
+def _score_metrics(metrics: BacktestMetricsOut) -> float:
+    return round(metrics.total_return + 0.03 * metrics.sharpe_ratio - 0.5 * metrics.max_drawdown, 8)
+
+
+def _strategy_rankings(strategy: str, dfs: dict[str, pd.DataFrame], symbols: list[str], index: int, window_size: int, predictor: DryRunPredictor | None, pred_len: int) -> list[tuple[str, float]]:
+    scores: list[tuple[str, float]] = []
+    for sym in symbols:
+        df = dfs[sym]
+        window = df.iloc[max(0, index - window_size): index]
+        if len(window) < 2:
+            continue
+        closes = [float(value) for value in window["close"].tolist()]
+        if strategy == "equal_weight":
+            score = 0.0
+        elif strategy == "momentum":
+            score = closes[-1] / closes[0] - 1.0 if closes[0] > 0 else 0.0
+        elif strategy == "mean_reversion":
+            avg = sum(closes) / len(closes)
+            score = avg / closes[-1] - 1.0 if closes[-1] > 0 else 0.0
+        elif strategy == "top_k_ranking":
+            last_close = closes[-1]
+            if predictor is None:
+                score = closes[-1] / closes[0] - 1.0 if closes[0] > 0 else 0.0
+            else:
+                ohlcv_df = window[["open", "high", "low", "close"]].astype(float)
+                timestamps = pd.Series(pd.to_datetime(window["timestamp"]))
+                pred = predictor.predict(df=ohlcv_df, x_timestamp=timestamps, pred_len=pred_len)
+                score = float(pred.frame.iloc[-1]["close"]) / last_close - 1.0 if last_close > 0 else 0.0
+        else:
+            raise ValueError(f"unsupported strategy: {strategy}")
+        scores.append((sym, score))
+    scores.sort(key=lambda item: item[1], reverse=True)
+    return scores
+
+
+def _run_named_strategy_backtest(
+    strategy: str,
+    dfs: dict[str, pd.DataFrame],
+    valid_symbols: list[str],
+    predictor: DryRunPredictor | None,
+    window_size: int,
+    pred_len: int,
+    step: int,
+    top_k: int,
+    initial_equity: float,
+    fee_bps: float,
+    slippage_bps: float,
+) -> tuple[list[dict[str, Any]], int, int, float]:
+    equity = initial_equity
+    equity_curve: list[dict[str, Any]] = []
+    total_trades = 0
+    winning_trades = 0
+    turnover = 0.0
+    min_len = min(len(df) for df in dfs.values())
+    prev_selected: set[str] = set()
+    i = window_size
+    while i + step <= min_len:
+        rankings = _strategy_rankings(strategy, dfs, valid_symbols, i, window_size, predictor, pred_len)
+        if not rankings:
+            i += step
+            continue
+        if strategy == "equal_weight":
+            selected = [(sym, 0.0) for sym in valid_symbols[: max(1, min(len(valid_symbols), top_k))]]
+        else:
+            selected = rankings[: max(1, min(len(rankings), top_k))]
+        selected_symbols = [sym for sym, _ in selected]
+        current = set(selected_symbols)
+        if prev_selected:
+            turnover += len(current.symmetric_difference(prev_selected)) / max(1, len(current | prev_selected))
+        prev_selected = current
+        end_idx = min(i + step, min_len)
+        portfolio_return = 0.0
+        for sym in selected_symbols:
+            df = dfs[sym]
+            entry_price = float(df.iloc[i]["close"])
+            exit_price = float(df.iloc[end_idx - 1]["close"])
+            ret = (exit_price / entry_price - 1.0) if entry_price > 0 else 0.0
+            ret -= 2 * (fee_bps + slippage_bps) / 10000.0
+            portfolio_return += ret / len(selected_symbols)
+            total_trades += 1
+            if ret > 0:
+                winning_trades += 1
+        equity *= 1 + portfolio_return
+        equity_curve.append({
+            "date": str(dfs[valid_symbols[0]].iloc[i]["timestamp"]),
+            "equity": round(equity, 2),
+            "return": round(portfolio_return, 6),
+            "selected": selected_symbols,
+        })
+        i += step
+    return equity_curve, total_trades, winning_trades, round(turnover, 4)
+
+
+def _build_strategy_result(strategy: str, dfs: dict[str, pd.DataFrame], symbols: list[str], req: BacktestRequestIn) -> StrategyResultOut:
+    predictor = DryRunPredictor() if req.dry_run else None
+    curve, trades, wins, turnover = _run_named_strategy_backtest(
+        strategy, dfs, symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
+        req.initial_equity, req.fee_bps, req.slippage_bps,
+    )
+    metrics = _calculate_metrics(curve, trades, wins)
+    return StrategyResultOut(strategy=strategy, metrics=metrics, equity_curve=curve, metadata={"turnover": turnover, "score": _score_metrics(metrics)})
+
+
+@router.post("/backtest/strategy", response_model=StrategyBacktestResponseOut)
+async def backtest_strategy(req: StrategyBacktestRequestIn) -> StrategyBacktestResponseOut:
+    """Run and compare multiple portfolio strategies on the same universe."""
+    _validate_backtest_request(req)
+    started = time.perf_counter()
+
+    def _run() -> tuple[list[str], list[StrategyResultOut]]:
+        dfs, symbols = _fetch_and_prepare_data(req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len)
+        results = [_build_strategy_result(strategy, dfs, symbols, req) for strategy in req.strategies]
+        return symbols, results
+
+    valid_symbols, results = await asyncio.to_thread(_run)
+    if not results:
+        raise HTTPException(status_code=400, detail="No strategy results generated")
+    best = max(results, key=lambda row: float(row.metadata.get("score", 0.0)))
+    return StrategyBacktestResponseOut(
+        symbols=valid_symbols,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        best_strategy=best.strategy,
+        results=results,
+        metadata=ForecastMetadataOut(device="cpu", elapsed_ms=int((time.perf_counter() - started) * 1000), backend="portfolio_strategy_lab", warning=RESEARCH_WARNING),
+    )
+
+
+@router.post("/backtest/strategy/scan", response_model=StrategyScanResponseOut)
+async def backtest_strategy_scan(req: StrategyScanRequestIn) -> StrategyScanResponseOut:
+    """Run a small parameter grid for one strategy and rank configurations."""
+    _validate_backtest_request(req)
+    started = time.perf_counter()
+
+    def _run() -> list[StrategyScanRowOut]:
+        dfs, symbols = _fetch_and_prepare_data(req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len)
+        rows: list[StrategyScanRowOut] = []
+        for top_k in req.top_k_values:
+            for step in req.step_values:
+                candidate = req.model_copy(update={"top_k": top_k, "step": step})
+                result = _build_strategy_result(req.strategy, dfs, symbols, candidate)
+                score = _score_metrics(result.metrics)
+                rows.append(StrategyScanRowOut(rank=0, strategy=req.strategy, params={"top_k": top_k, "step": step}, metrics=result.metrics, score=score))
+        rows.sort(key=lambda row: row.score, reverse=True)
+        return [row.model_copy(update={"rank": index + 1}) for index, row in enumerate(rows)]
+
+    results = await asyncio.to_thread(_run)
+    if not results:
+        raise HTTPException(status_code=400, detail="No scan results generated")
+    return StrategyScanResponseOut(
+        best=results[0],
+        results=results,
+        metadata=ForecastMetadataOut(device="cpu", elapsed_ms=int((time.perf_counter() - started) * 1000), backend="strategy_parameter_scan", warning=RESEARCH_WARNING),
+    )
+
+
+@router.post("/backtest/strategy/rolling", response_model=StrategyRollingResponseOut)
+async def backtest_strategy_rolling(req: StrategyRollingRequestIn) -> StrategyRollingResponseOut:
+    """Run walk-forward style rolling validation by splitting each symbol's aligned data."""
+    _validate_backtest_request(req)
+    started = time.perf_counter()
+
+    def _run() -> list[dict[str, Any]]:
+        dfs, symbols = _fetch_and_prepare_data(req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len)
+        min_len = min(len(df) for df in dfs.values())
+        fold_size = max(req.window_size + req.step + 1, min_len // req.folds)
+        folds: list[dict[str, Any]] = []
+        for index in range(req.folds):
+            start_idx = index * max(1, min_len // req.folds)
+            end_idx = min(min_len, start_idx + fold_size)
+            fold_dfs = {sym: df.iloc[start_idx:end_idx].reset_index(drop=True) for sym, df in dfs.items()}
+            if min(len(df) for df in fold_dfs.values()) < req.window_size + req.step:
+                fold_dfs = {sym: df.tail(req.window_size + req.step + 1).reset_index(drop=True) for sym, df in dfs.items()}
+            result = _build_strategy_result(req.strategy, fold_dfs, symbols, req)
+            folds.append({"fold": index + 1, "start_index": start_idx, "end_index": end_idx, "metrics": result.metrics.model_dump(), "score": _score_metrics(result.metrics)})
+        return folds
+
+    folds = await asyncio.to_thread(_run)
+    avg_return = sum(float(fold["metrics"]["total_return"]) for fold in folds) / len(folds) if folds else 0.0
+    avg_drawdown = sum(float(fold["metrics"]["max_drawdown"]) for fold in folds) / len(folds) if folds else 0.0
+    return StrategyRollingResponseOut(
+        strategy=req.strategy,
+        folds=folds,
+        summary={"folds": len(folds), "avg_total_return": round(avg_return, 6), "avg_max_drawdown": round(avg_drawdown, 6)},
+        metadata=ForecastMetadataOut(device="cpu", elapsed_ms=int((time.perf_counter() - started) * 1000), backend="rolling_strategy_validation", warning=RESEARCH_WARNING),
     )
 
 
