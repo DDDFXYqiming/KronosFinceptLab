@@ -38,6 +38,26 @@ class MacroDataManager:
     def describe_providers(self) -> list[dict]:
         return [provider.describe().to_dict() for provider in self.providers.values()]
 
+    def provider_status(self) -> list[dict]:
+        """Return provider runtime/cache/cooldown status for operational dashboards."""
+        now = time.time()
+        rows: list[dict] = []
+        for provider in self.providers.values():
+            provider_id = provider.provider_id
+            cached_entries = sum(1 for key in self._cache if key.startswith(f"{provider_id}|"))
+            suspended_until = self._suspended_until.get(provider_id)
+            remaining = int(max(0, suspended_until - now)) if suspended_until else 0
+            rows.append({
+                **provider.describe().to_dict(),
+                "status": "suspended" if remaining > 0 else "ready",
+                "failure_count": self._failure_counts.get(provider_id, 0),
+                "suspended_remaining_seconds": remaining,
+                "cached_entries": cached_entries,
+                "cache_ttl_seconds": self.cache_ttl_seconds,
+                "timeout_seconds": self.per_provider_timeout_seconds,
+            })
+        return rows
+
     def gather(
         self,
         query: str | MacroQuery | None = None,

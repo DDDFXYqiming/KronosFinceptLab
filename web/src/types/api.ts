@@ -59,6 +59,41 @@ export interface BatchResponse {
   metadata: { device: string; elapsed_ms: number; warning: string };
 }
 
+export interface BatchJobRequest {
+  symbols: string[];
+  market?: string;
+  start_date: string;
+  end_date: string;
+  adjust?: string;
+  pred_len: number;
+  model_id?: string;
+  dry_run?: boolean;
+  start_immediately?: boolean;
+}
+
+export interface BatchJobFailure {
+  symbol: string;
+  stage: "data" | "forecast";
+  message: string;
+  requestId?: string | null;
+  retryable: boolean;
+}
+
+export interface BatchJobProgress {
+  total: number;
+  completed: number;
+  success: number;
+  failed: number;
+  running: string[];
+}
+
+export interface BatchJobResult {
+  ok: boolean;
+  rankings: RankedSignal[];
+  failures: BatchJobFailure[];
+  progress: BatchJobProgress;
+}
+
 export interface DataResponse {
   ok: boolean;
   symbol: string;
@@ -98,6 +133,58 @@ export interface BacktestReportResponse {
   ok: boolean;
   html: string;
   filename: string;
+}
+
+export interface BacktestJobRequest {
+  symbols: string[];
+  start_date: string;
+  end_date: string;
+  top_k?: number;
+  pred_len?: number;
+  window_size?: number;
+  step?: number;
+  initial_equity?: number;
+  benchmark?: string;
+  fee_bps?: number;
+  slippage_bps?: number;
+  dry_run?: boolean;
+  start_immediately?: boolean;
+}
+
+export interface WatchlistRankingInput {
+  symbol: string;
+  predicted_return: number;
+  last_close?: number | null;
+  predicted_close?: number | null;
+}
+
+export interface WatchlistResearchRequest {
+  name?: string;
+  symbols: string[];
+  weights?: Record<string, number>;
+  rankings?: WatchlistRankingInput[];
+}
+
+export interface WatchlistResearchRow {
+  symbol: string;
+  weight: number;
+  predicted_return: number;
+  weighted_contribution: number;
+  last_close?: number | null;
+  predicted_close?: number | null;
+  covered: boolean;
+}
+
+export interface WatchlistResearchResponse {
+  ok: boolean;
+  name: string;
+  symbol_count: number;
+  expected_return: number;
+  weighted_return: number;
+  top_symbols: string[];
+  risk_flags: string[];
+  rows: WatchlistResearchRow[];
+  metadata: Record<string, any>;
 }
 
 export interface HealthResponse {
@@ -328,7 +415,46 @@ export interface MacroAnalyzeRequest {
   symbols?: string[];
   market?: string;
   provider_ids?: string[];
+  mode?: "fast" | "complete";
   context?: Record<string, any>;
+}
+
+export interface ModelCacheResponse {
+  ok: boolean;
+  cache: { size: number; keys: string[] };
+  checked_at: number;
+}
+
+export interface ModelCacheClearResponse {
+  ok: boolean;
+  before: { size: number; keys: string[] };
+  after: { size: number; keys: string[] };
+  checked_at: number;
+}
+
+export interface ModelPrewarmResponse {
+  ok: boolean;
+  result: Record<string, any>;
+  checked_at: number;
+}
+
+export interface MacroProviderStatusRow {
+  provider_id: string;
+  name?: string;
+  status: string;
+  dimensions?: string[];
+  description?: string;
+  failure_count: number;
+  suspended_remaining_seconds: number;
+  cached_entries: number;
+  cache_ttl_seconds: number;
+  timeout_seconds: number;
+}
+
+export interface MacroProviderStatusResponse {
+  ok: boolean;
+  mode: "fast" | "complete";
+  providers: MacroProviderStatusRow[];
 }
 
 export interface AgentAnalyzeResponse {
@@ -423,6 +549,19 @@ export interface AlertRule {
 
 export interface AlertRulesResponse {
   ok: boolean;
+  rules: AlertRule[];
+}
+
+export interface PredictionDeviationAlertPresetRequest {
+  symbols: string[];
+  deviation_pct?: number;
+  market?: string;
+  channel?: string;
+}
+
+export interface AlertPresetResponse {
+  ok: boolean;
+  created: number;
   rules: AlertRule[];
 }
 

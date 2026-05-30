@@ -117,6 +117,20 @@ class AlertDeleteOut(BaseModel):
     message: str
 
 
+class PredictionDeviationPresetIn(BaseModel):
+    """Create prediction-deviation rules for an entire watchlist."""
+    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    deviation_pct: float = Field(default=10.0, gt=0, le=100)
+    market: str = Field(default="cn", min_length=1, max_length=16, pattern=MARKET_PATTERN)
+    channel: str = Field(default="feishu", description="Notification channel: feishu, email")
+
+
+class AlertPresetOut(BaseModel):
+    ok: bool
+    created: int
+    rules: list[AlertRuleOut]
+
+
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -239,6 +253,34 @@ async def list_alert_rules() -> AlertRulesListOut:
         ok=True,
         rules=[_rule_to_out(r) for r in rules],
     )
+
+
+@router.post("/alert/presets/prediction-deviation", response_model=AlertPresetOut)
+async def create_prediction_deviation_preset(req: PredictionDeviationPresetIn) -> AlertPresetOut:
+    """Register prediction-deviation alert rules for every symbol in a watchlist."""
+    try:
+        channel = NotificationChannel(req.channel)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Unknown notification channel")
+
+    engine = _get_engine()
+    created: list[AlertRule] = []
+    seen: set[str] = set()
+    for raw_symbol in req.symbols:
+        symbol = str(raw_symbol).strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        rule = prediction_deviation_rule(
+            symbol=symbol,
+            deviation_pct=req.deviation_pct,
+            market=req.market,
+            channel=channel,
+        )
+        engine.register_rule(rule)
+        created.append(rule)
+
+    return AlertPresetOut(ok=True, created=len(created), rules=[_rule_to_out(rule) for rule in created])
 
 
 @router.delete("/alert/rules/{rule_id}", response_model=AlertDeleteOut)

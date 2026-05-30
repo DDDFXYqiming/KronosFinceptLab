@@ -14,7 +14,7 @@ def test_v92_batch_page_uses_limited_concurrency_and_backend_batch():
     assert "const BATCH_CONCURRENCY = 4" in page
     assert "runWithConcurrency" in page
     assert "Promise.allSettled" in page
-    assert "api.batch(" in page
+    assert "api.submitBatchJob(" in page
     assert "api.forecast(" not in page
     assert "queryKeys.batch" in page
     assert "queryClient.getQueryData<BatchRunSnapshot>" in page

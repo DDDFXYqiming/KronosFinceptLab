@@ -4,11 +4,15 @@ import type {
   AgentAnalyzeRequest,
   AgentAnalyzeResponse,
   AlertCheckResponse,
+  AlertPresetResponse,
   AlertRule,
   AlertRuleRequest,
   AlertRulesResponse,
+  BacktestJobRequest,
   BacktestReportResponse,
   BacktestResponse,
+  BatchJobRequest,
+  BatchJobResult,
   BatchResponse,
   DataResponse,
   ForecastRequest,
@@ -18,10 +22,17 @@ import type {
   JobStatusResponse,
   JobSubmitResponse,
   MacroAnalyzeRequest,
+  MacroProviderStatusResponse,
+  ModelCacheClearResponse,
+  ModelCacheResponse,
+  ModelPrewarmResponse,
+  PredictionDeviationAlertPresetRequest,
   RssFetchRequest,
   RssFetchResponse,
   SearchResult,
   SecuritySummaryResponse,
+  WatchlistResearchRequest,
+  WatchlistResearchResponse,
 } from "@/types/api";
 
 export type {
@@ -35,12 +46,18 @@ export type {
   AgentToolCall,
   AlertCheckResponse,
   AlertEvent,
+  AlertPresetResponse,
   AlertRule,
   AlertRuleRequest,
   AlertRulesResponse,
+  BacktestJobRequest,
   BacktestMetrics,
   BacktestReportResponse,
   BacktestResponse,
+  BatchJobFailure,
+  BatchJobProgress,
+  BatchJobRequest,
+  BatchJobResult,
   BatchResponse,
   DataResponse,
   ForecastRequest,
@@ -53,8 +70,14 @@ export type {
   JobSubmitResponse,
   MacroAnalyzeRequest,
   MacroMonitoringSignal,
+  MacroProviderStatusResponse,
+  MacroProviderStatusRow,
   MacroProbabilityScenario,
   MacroSignal,
+  ModelCacheClearResponse,
+  ModelCacheResponse,
+  ModelPrewarmResponse,
+  PredictionDeviationAlertPresetRequest,
   RankedSignal,
   RssFeed,
   RssFetchRequest,
@@ -62,6 +85,10 @@ export type {
   RssItem,
   SearchResult,
   SecuritySummaryResponse,
+  WatchlistRankingInput,
+  WatchlistResearchRequest,
+  WatchlistResearchResponse,
+  WatchlistResearchRow,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
@@ -392,6 +419,9 @@ export const api = {
       ...options,
     }),
 
+  macroProviderStatus: (mode: "fast" | "complete" = "fast", options?: ApiClientOptions) =>
+    get<MacroProviderStatusResponse>(`/v1/analyze/macro/providers/status?mode=${mode}`, options),
+
   analyzeDcf: (symbol: string, market: string, options?: ApiClientOptions) =>
     post<any>("/v1/analyze/dcf", { symbol, market }, options),
 
@@ -415,6 +445,9 @@ export const api = {
   alertCheck: (ruleId?: string | null, options?: ApiClientOptions) =>
     post<AlertCheckResponse>("/alert/check", ruleId ? { rule_id: ruleId } : {}, options),
 
+  alertCreatePredictionDeviationPreset: (req: PredictionDeviationAlertPresetRequest, options?: ApiClientOptions) =>
+    post<AlertPresetResponse>("/alert/presets/prediction-deviation", req, options),
+
   getSuggestions: (type: "analysis" | "macro" = "analysis", options?: ApiClientOptions) =>
     get<{ questions: string[]; generated_at: number; source: string }>(`/v1/suggestions?type=${type}`, options),
 
@@ -424,9 +457,30 @@ export const api = {
   submitAnalyzeJob: (req: AgentAnalyzeRequest, options?: ApiClientOptions) =>
     post<JobSubmitResponse>("/jobs/analyze", req, options),
 
+  submitBatchJob: (req: BatchJobRequest, options?: ApiClientOptions) =>
+    post<JobSubmitResponse>("/jobs/batch", req, options),
+
+  submitBacktestJob: (req: BacktestJobRequest, options?: ApiClientOptions) =>
+    post<JobSubmitResponse>("/jobs/backtest", req, options),
+
+  watchlistResearch: (req: WatchlistResearchRequest, options?: ApiClientOptions) =>
+    post<WatchlistResearchResponse>("/watchlist/research", req, options),
+
   getJob: <T = any>(jobId: string, options?: ApiClientOptions) =>
     get<JobStatusResponse<T>>(`/jobs/${encodeURIComponent(jobId)}`, options),
 
+  cancelJob: (jobId: string, options?: ApiClientOptions) =>
+    post<{ ok: boolean; job_id: string; status: string }>(`/jobs/${encodeURIComponent(jobId)}/cancel`, {}, options),
+
   securitySummary: (options?: ApiClientOptions) =>
     get<SecuritySummaryResponse>("/admin/security/summary", options),
+
+  modelCache: (options?: ApiClientOptions) =>
+    get<ModelCacheResponse>("/admin/model/cache", options),
+
+  modelClearCache: (options?: ApiClientOptions) =>
+    post<ModelCacheClearResponse>("/admin/model/clear-cache", {}, options),
+
+  modelPrewarm: (force = false, options?: ApiClientOptions) =>
+    post<ModelPrewarmResponse>("/admin/model/prewarm", { force }, { timeoutMs: AGENT_ANALYZE_TIMEOUT_MS, ...options }),
 };

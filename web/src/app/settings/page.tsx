@@ -16,7 +16,14 @@ import { LANGUAGE_OPTIONS, type Language } from "@/lib/i18n";
 import { MARKET_OPTIONS, type Market } from "@/lib/markets";
 import { downloadTextFile } from "@/lib/exportUtils";
 import { useAppStore } from "@/stores/app";
-import type { HealthResponse, SecuritySummaryResponse } from "@/types/api";
+import type {
+  HealthResponse,
+  MacroProviderStatusResponse,
+  ModelCacheClearResponse,
+  ModelCacheResponse,
+  ModelPrewarmResponse,
+  SecuritySummaryResponse,
+} from "@/types/api";
 
 function isSensitiveStorageKey(key: string): boolean {
   return /api[-_]?key|token|secret|authorization|cookie/i.test(key);
@@ -44,6 +51,13 @@ export default function SettingsPage() {
   const [apiKeySaved, setApiKeySaved] = useState(false);
   const [securitySummary, setSecuritySummary] = useState<SecuritySummaryResponse | null>(null);
   const [securityError, setSecurityError] = useState("");
+  const [modelCache, setModelCache] = useState<ModelCacheResponse | null>(null);
+  const [modelCacheResult, setModelCacheResult] = useState<ModelCacheClearResponse | ModelPrewarmResponse | null>(null);
+  const [modelError, setModelError] = useState("");
+  const [modelBusy, setModelBusy] = useState(false);
+  const [macroStatus, setMacroStatus] = useState<MacroProviderStatusResponse | null>(null);
+  const [macroMode, setMacroMode] = useState<"fast" | "complete">("fast");
+  const [macroStatusError, setMacroStatusError] = useState("");
 
   const refreshHealth = async () => {
     setError("");
@@ -57,6 +71,8 @@ export default function SettingsPage() {
   useEffect(() => {
     setApiKey(getConfiguredApiKey() || "");
     void refreshHealth();
+    void refreshModelCache();
+    void refreshMacroProviderStatus("fast");
   }, []);
 
   const exportLocalState = () => {
@@ -100,6 +116,52 @@ export default function SettingsPage() {
       setSecuritySummary(await api.securitySummary());
     } catch (exc) {
       setSecurityError(formatApiError(exc, "安全摘要获取失败"));
+    }
+  };
+
+  const refreshModelCache = async () => {
+    setModelError("");
+    try {
+      setModelCache(await api.modelCache());
+    } catch (exc) {
+      setModelError(formatApiError(exc, "模型缓存状态获取失败"));
+    }
+  };
+
+  const clearModelCache = async () => {
+    setModelBusy(true);
+    setModelError("");
+    try {
+      const res = await api.modelClearCache();
+      setModelCacheResult(res);
+      await refreshModelCache();
+    } catch (exc) {
+      setModelError(formatApiError(exc, "模型缓存清理失败"));
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
+  const prewarmModelCache = async (force = false) => {
+    setModelBusy(true);
+    setModelError("");
+    try {
+      const res = await api.modelPrewarm(force);
+      setModelCacheResult(res);
+      await refreshModelCache();
+    } catch (exc) {
+      setModelError(formatApiError(exc, "模型预热失败"));
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
+  const refreshMacroProviderStatus = async (mode = macroMode) => {
+    setMacroStatusError("");
+    try {
+      setMacroStatus(await api.macroProviderStatus(mode));
+    } catch (exc) {
+      setMacroStatusError(formatApiError(exc, "宏观 provider 状态获取失败"));
     }
   };
   const modelOptions = Array.from(new Set([
@@ -149,6 +211,85 @@ export default function SettingsPage() {
               {health?.model_loaded ? "已加载" : health?.model_error ? "加载失败" : health?.model_id ? "未知" : "未配置"}
             </p>
           </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle subtitle="读取/清理/预热后端进程内 Kronos predictor cache。">模型 Cache Admin</CardTitle>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="rounded-lg border border-border bg-muted p-3">
+            <p className="text-sm text-muted-foreground">缓存条目</p>
+            <p className="mt-1 font-mono text-2xl font-bold">{modelCache?.cache.size ?? "-"}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted p-3 md:col-span-2">
+            <p className="text-sm text-muted-foreground">缓存 Key</p>
+            <p className="mt-1 break-all font-mono text-xs text-foreground">
+              {modelCache?.cache.keys.length ? modelCache.cache.keys.join(" · ") : "当前无缓存条目"}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 md:flex-row">
+          <Button onClick={refreshModelCache} disabled={modelBusy}>刷新缓存状态</Button>
+          <Button variant="secondary" onClick={() => prewarmModelCache(false)} loading={modelBusy}>预热模型</Button>
+          <Button variant="danger" onClick={clearModelCache} disabled={modelBusy}>清理模型缓存</Button>
+        </div>
+        {modelError && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{modelError}</div>}
+        {modelCacheResult && (
+          <pre className="mt-4 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+            {JSON.stringify(modelCacheResult, null, 2)}
+          </pre>
+        )}
+      </Card>
+
+      <Card>
+        <CardTitle subtitle="不触发 LLM 汇总，只展示宏观 provider 的 ready/cooldown/cache/timeout。">宏观 Provider 状态</CardTitle>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end">
+          <div>
+            <label className="field-label">采集模式</label>
+            <select
+              value={macroMode}
+              onChange={(event) => {
+                const mode = event.target.value as "fast" | "complete";
+                setMacroMode(mode);
+                void refreshMacroProviderStatus(mode);
+              }}
+              className="app-input mt-1"
+            >
+              <option value="fast">fast：Web 快速超时</option>
+              <option value="complete">complete：完整采集超时</option>
+            </select>
+          </div>
+          <Button onClick={() => refreshMacroProviderStatus(macroMode)}>刷新 Provider 状态</Button>
+        </div>
+        {macroStatusError && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{macroStatusError}</div>}
+        <div className="mt-4 table-scroll">
+          <table className="min-w-[52rem] w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-muted-foreground">
+                <th className="py-2 text-left">Provider</th>
+                <th className="py-2 text-left">状态</th>
+                <th className="py-2 text-right">失败数</th>
+                <th className="py-2 text-right">冷却剩余</th>
+                <th className="py-2 text-right">缓存</th>
+                <th className="py-2 text-right">超时</th>
+                <th className="py-2 text-left">维度</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(macroStatus?.providers || []).map((row) => (
+                <tr key={row.provider_id} className="border-b border-border last:border-b-0">
+                  <td className="py-2 font-mono font-semibold text-foreground">{row.provider_id}</td>
+                  <td className={row.status === "ready" ? "py-2 text-success" : "py-2 text-error"}>{row.status}</td>
+                  <td className="py-2 text-right font-mono text-foreground">{row.failure_count}</td>
+                  <td className="py-2 text-right font-mono text-foreground">{row.suspended_remaining_seconds}s</td>
+                  <td className="py-2 text-right font-mono text-foreground">{row.cached_entries}</td>
+                  <td className="py-2 text-right font-mono text-foreground">{row.timeout_seconds}s</td>
+                  <td className="py-2 text-muted-foreground">{row.dimensions?.join(" / ") || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!macroStatus?.providers?.length && <p className="mt-3 text-sm text-muted-foreground">暂无 provider 状态。</p>}
         </div>
       </Card>
 

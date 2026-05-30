@@ -1,4 +1,4 @@
-"""In-process job endpoints for slow forecast and analysis operations."""
+"""In-process job endpoints for slow forecast, analysis, and batch operations."""
 
 from __future__ import annotations
 
@@ -10,10 +10,12 @@ from typing import Any, Literal
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
-from kronos_fincept.api.models import ForecastRequestIn
+from kronos_fincept.api.models import BacktestRequestIn, BatchForecastItemIn, BatchForecastRequestIn, ForecastRequestIn
 from kronos_fincept.api.routes.ai_analyze import AgentAnalyzeRequest
+from kronos_fincept.api.routes.batch import _item_to_forecast_request
+from kronos_fincept.api.routes.data import fetch_market_rows_for_batch
 from kronos_fincept.schemas import ForecastRequest
-from kronos_fincept.service import forecast_from_request
+from kronos_fincept.service import batch_forecast_from_requests, forecast_from_request
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -23,6 +25,12 @@ _JOBS: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
 
 
 class JobSubmitResponse(BaseModel):
+    ok: bool = True
+    job_id: str
+    status: str
+
+
+class JobCancelResponse(BaseModel):
     ok: bool = True
     job_id: str
     status: str
@@ -38,6 +46,22 @@ class JobStatusResponse(BaseModel):
     error: str | None = None
     created_at: float
     updated_at: float
+
+
+class BatchJobRequest(BaseModel):
+    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    market: str = Field(default="cn", min_length=1, max_length=16)
+    start_date: str = Field(default="20250101", min_length=8, max_length=8)
+    end_date: str = Field(..., min_length=8, max_length=8)
+    adjust: str = Field(default="qfq", max_length=8)
+    pred_len: int = Field(default=5, ge=1, le=60)
+    model_id: str | None = Field(default=None, max_length=64)
+    dry_run: bool = False
+    start_immediately: bool = True
+
+
+class BacktestJobRequest(BacktestRequestIn):
+    start_immediately: bool = True
 
 
 def _cleanup_jobs(now: float | None = None) -> None:
@@ -84,6 +108,16 @@ def _complete(job: dict[str, Any], result: dict[str, Any]) -> None:
     job["updated_at"] = time.time()
 
 
+def _cancel(job: dict[str, Any]) -> None:
+    job["status"] = "cancelled"
+    for step in job["steps"]:
+        if step["status"] in {"pending", "running"}:
+            step["status"] = "cancelled"
+            step["summary"] = step.get("summary") or "cancelled"
+            step["elapsed_ms"] = int((time.time() - job["created_at"]) * 1000)
+    job["updated_at"] = time.time()
+
+
 def _fail(job: dict[str, Any], exc: BaseException) -> None:
     message = f"{type(exc).__name__}: {exc}"
     for index, step in enumerate(job["steps"]):
@@ -98,6 +132,8 @@ def _fail(job: dict[str, Any], exc: BaseException) -> None:
 def _run_forecast_job(job_id: str, req: ForecastRequestIn) -> None:
     job = _JOBS[job_id]
     try:
+        if job.get("status") == "cancelled":
+            return
         job["status"] = "running"
         _set_step(job, 0, "running", "validating request")
         internal_req = ForecastRequest.from_pydantic(req)
@@ -117,6 +153,8 @@ def _run_agent_job(job_id: str, req: AgentAnalyzeRequest) -> None:
     try:
         from kronos_fincept.agent import analyze_investment_question
 
+        if job.get("status") == "cancelled":
+            return
         job["status"] = "running"
         _set_step(job, 0, "running", "understanding question")
         _set_step(job, 0, "completed", "question accepted")
@@ -130,6 +168,96 @@ def _run_agent_job(job_id: str, req: AgentAnalyzeRequest) -> None:
         ).to_dict()
         _set_step(job, 1, "completed", "analysis complete")
         _complete(job, result)
+    except BaseException as exc:
+        _fail(job, exc)
+
+
+def _run_batch_job(job_id: str, req: BatchJobRequest) -> None:
+    job = _JOBS[job_id]
+    try:
+        if job.get("status") == "cancelled":
+            return
+        job["status"] = "running"
+        progress = {"total": len(req.symbols), "completed": 0, "success": 0, "failed": 0, "running": []}
+        failures: list[dict[str, Any]] = []
+        assets: list[BatchForecastItemIn] = []
+
+        _set_step(job, 0, "running", "fetching market data")
+        for symbol in req.symbols:
+            if job.get("status") == "cancelled":
+                return
+            progress["running"] = [symbol]
+            try:
+                rows = fetch_market_rows_for_batch(symbol, req.market, req.start_date, req.end_date, req.adjust)
+                if not rows:
+                    raise ValueError("No data")
+                assets.append(BatchForecastItemIn(symbol=symbol, rows=rows[-1024:], model_id=req.model_id))
+                progress["success"] += 1
+            except Exception as exc:
+                progress["failed"] += 1
+                failures.append({"symbol": symbol, "stage": "data", "message": str(exc), "requestId": None, "retryable": True})
+            finally:
+                progress["completed"] += 1
+                progress["running"] = []
+        _set_step(job, 0, "completed", f"fetched {len(assets)} assets")
+
+        if not assets:
+            _set_step(job, 1, "cancelled", "no forecastable assets")
+            _complete(job, {"ok": True, "rankings": [], "failures": failures, "progress": progress})
+            return
+
+        _set_step(job, 1, "running", "running batch forecast")
+        batch_req = BatchForecastRequestIn(assets=assets[:20], pred_len=req.pred_len, dry_run=req.dry_run)
+        forecast_requests = [_item_to_forecast_request(item, batch_req.pred_len, batch_req.dry_run) for item in batch_req.assets]
+        signals = batch_forecast_from_requests(forecast_requests)
+        rankings = [
+            {
+                "rank": sig.rank,
+                "symbol": sig.symbol,
+                "market": req.market,
+                "last_close": sig.last_close,
+                "predicted_close": sig.predicted_close,
+                "predicted_return": sig.predicted_return,
+                "elapsed_ms": sig.elapsed_ms,
+            }
+            for sig in signals
+        ]
+        _set_step(job, 1, "completed", f"ranked {len(rankings)} assets")
+
+        _set_step(job, 2, "running", "building response")
+        result = {
+            "ok": True,
+            "rankings": rankings,
+            "failures": failures,
+            "progress": {
+                "total": len(req.symbols),
+                "completed": len(req.symbols),
+                "success": len(rankings),
+                "failed": len(failures),
+                "running": [],
+            },
+        }
+        _set_step(job, 2, "completed", "done")
+        _complete(job, result)
+    except BaseException as exc:
+        _fail(job, exc)
+
+
+async def _run_backtest_job(job_id: str, req: BacktestRequestIn) -> None:
+    job = _JOBS[job_id]
+    try:
+        if job.get("status") == "cancelled":
+            return
+        from kronos_fincept.api.routes.backtest import backtest_ranking
+
+        job["status"] = "running"
+        _set_step(job, 0, "running", "fetching aligned OHLCV data")
+        _set_step(job, 0, "completed", "request accepted")
+        _set_step(job, 1, "running", "running ranking strategy backtest")
+        result = await backtest_ranking(req)
+        _set_step(job, 1, "completed", "backtest complete")
+        _set_step(job, 2, "running", "serializing metrics")
+        _complete(job, result.model_dump())
     except BaseException as exc:
         _fail(job, exc)
 
@@ -148,6 +276,23 @@ async def submit_analyze_job(req: AgentAnalyzeRequest, background_tasks: Backgro
     return JobSubmitResponse(job_id=job_id, status="queued")
 
 
+@router.post("/batch", response_model=JobSubmitResponse)
+async def submit_batch_job(req: BatchJobRequest, background_tasks: BackgroundTasks) -> JobSubmitResponse:
+    job_id = _create_job("batch", ["行情数据", "批量预测", "结果整理"])
+    if req.start_immediately:
+        background_tasks.add_task(_run_batch_job, job_id, req)
+    return JobSubmitResponse(job_id=job_id, status="queued")
+
+
+@router.post("/backtest", response_model=JobSubmitResponse)
+async def submit_backtest_job(req: BacktestJobRequest, background_tasks: BackgroundTasks) -> JobSubmitResponse:
+    job_id = _create_job("backtest", ["行情数据", "回测执行", "指标汇总"])
+    if req.start_immediately:
+        payload = BacktestRequestIn(**req.model_dump(exclude={"start_immediately"}))
+        background_tasks.add_task(_run_backtest_job, job_id, payload)
+    return JobSubmitResponse(job_id=job_id, status="queued")
+
+
 @router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job(job_id: str) -> JobStatusResponse:
     _cleanup_jobs()
@@ -155,6 +300,18 @@ async def get_job(job_id: str) -> JobStatusResponse:
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     return JobStatusResponse(**job)
+
+
+@router.post("/{job_id}/cancel", response_model=JobCancelResponse)
+async def cancel_job(job_id: str) -> JobCancelResponse:
+    _cleanup_jobs()
+    job = _JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job["status"] in {"completed", "failed", "cancelled"}:
+        return JobCancelResponse(job_id=job_id, status=job["status"])
+    _cancel(job)
+    return JobCancelResponse(job_id=job_id, status="cancelled")
 
 
 def clear_jobs() -> None:

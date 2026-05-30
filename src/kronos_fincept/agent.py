@@ -1094,7 +1094,8 @@ def analyze_macro_question(
     if hard_reason:
         return _rejection_result(question=clean_question, reason=hard_reason, timestamp=now)
 
-    web_macro = _is_web_macro_context(context)
+    macro_mode = str((context or {}).get("macro_mode") or "fast").lower()
+    web_macro = macro_mode == "fast" or (_is_web_macro_context(context) and macro_mode != "complete")
     route = classify_macro_request(
         clean_question,
         symbols=symbols,
@@ -2388,7 +2389,15 @@ def _build_macro_context(
         metadata={"route": "macro_signal"},
     )
     try:
-        manager = _create_macro_data_manager(fast_mode=True) if fast_mode else _create_macro_data_manager()
+        if fast_mode:
+            try:
+                manager = _create_macro_data_manager(fast_mode=True)
+            except TypeError as exc:
+                if "fast_mode" not in str(exc):
+                    raise
+                manager = _create_macro_data_manager()
+        else:
+            manager = _create_macro_data_manager()
         result = manager.gather(query, provider_ids=provider_ids)
         context = _macro_context_from_gather(question, provider_ids, result)
         signal_count = len(context["signals"])

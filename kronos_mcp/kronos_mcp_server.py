@@ -302,6 +302,60 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="submit_backtest_job",
+            description="Submit a ranking backtest as a trackable background job, aligned with POST /api/jobs/backtest.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                    "top_k": {"type": "integer", "default": 3},
+                    "dry_run": {"type": "boolean", "default": True},
+                    "start_immediately": {"type": "boolean", "default": False},
+                },
+                "required": ["symbols", "start_date", "end_date"],
+            },
+        ),
+        Tool(
+            name="get_job_status",
+            description="Get an in-process job status/result by job_id, aligned with GET /api/jobs/{job_id}.",
+            inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
+        ),
+        Tool(
+            name="create_prediction_deviation_alerts",
+            description="Create prediction-deviation alert rules for a watchlist, aligned with POST /api/alert/presets/prediction-deviation.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "deviation_pct": {"type": "number", "default": 10.0},
+                    "market": {"type": "string", "default": "cn"},
+                    "channel": {"type": "string", "default": "feishu"},
+                },
+                "required": ["symbols"],
+            },
+        ),
+        Tool(
+            name="macro_provider_status",
+            description="Return macro provider operational status, aligned with GET /api/v1/analyze/macro/providers/status.",
+            inputSchema={"type": "object", "properties": {"mode": {"type": "string", "enum": ["fast", "complete"], "default": "fast"}}},
+        ),
+        Tool(
+            name="watchlist_research",
+            description="Summarize watchlist rankings into weighted portfolio research, aligned with POST /api/watchlist/research.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "default": "Watchlist"},
+                    "symbols": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                    "weights": {"type": "object"},
+                    "rankings": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["symbols"],
+            },
+        ),
+        Tool(
             name="health_check",
             description="Return service health diagnostics, aligned with GET /api/health.",
             inputSchema={
@@ -335,6 +389,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return await _handle_analyze_macro(arguments)
         elif name == "generate_suggestions":
             return await _handle_generate_suggestions(arguments)
+        elif name == "submit_backtest_job":
+            return await _handle_submit_backtest_job(arguments)
+        elif name == "get_job_status":
+            return _handle_get_job_status(arguments)
+        elif name == "create_prediction_deviation_alerts":
+            return await _handle_create_prediction_deviation_alerts(arguments)
+        elif name == "macro_provider_status":
+            return await _handle_macro_provider_status(arguments)
+        elif name == "watchlist_research":
+            return await _handle_watchlist_research(arguments)
         elif name == "health_check":
             return _handle_health_check(arguments)
         else:
@@ -545,6 +609,71 @@ async def _handle_generate_suggestions(args: dict[str, Any]) -> list[TextContent
     suggestion_type = args.get("type", "analysis")
     result = await get_suggestions(type=suggestion_type)
     return _json_text({"ok": True, "type": suggestion_type, **result})
+
+
+async def _handle_submit_backtest_job(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from fastapi import BackgroundTasks
+    from kronos_fincept.api.routes.jobs import BacktestJobRequest, submit_backtest_job
+
+    req = BacktestJobRequest(**{
+        "symbols": args["symbols"],
+        "start_date": args["start_date"],
+        "end_date": args["end_date"],
+        "top_k": args.get("top_k", 3),
+        "pred_len": args.get("pred_len", 5),
+        "window_size": args.get("window_size", 60),
+        "step": args.get("step", 5),
+        "initial_equity": args.get("initial_equity", 100000.0),
+        "fee_bps": args.get("fee_bps", 0.0),
+        "slippage_bps": args.get("slippage_bps", 0.0),
+        "dry_run": args.get("dry_run", True),
+        "start_immediately": args.get("start_immediately", False),
+    })
+    return _json_text(_model_to_dict(await submit_backtest_job(req, BackgroundTasks())))
+
+
+def _handle_get_job_status(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.jobs import _JOBS
+
+    job = _JOBS.get(args["job_id"])
+    if not job:
+        return _json_text({"ok": False, "error": "job not found"})
+    return _json_text(job)
+
+
+async def _handle_create_prediction_deviation_alerts(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.alert import PredictionDeviationPresetIn, create_prediction_deviation_preset
+
+    req = PredictionDeviationPresetIn(
+        symbols=args["symbols"],
+        deviation_pct=args.get("deviation_pct", 10.0),
+        market=args.get("market", "cn"),
+        channel=args.get("channel", "feishu"),
+    )
+    return _json_text(_model_to_dict(await create_prediction_deviation_preset(req)))
+
+
+async def _handle_macro_provider_status(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.ai_analyze import macro_provider_status
+
+    return _json_text(await macro_provider_status(mode=args.get("mode", "fast")))
+
+
+async def _handle_watchlist_research(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.watchlist import WatchlistResearchRequest, watchlist_research
+
+    req = WatchlistResearchRequest(
+        name=args.get("name", "Watchlist"),
+        symbols=args["symbols"],
+        weights=args.get("weights", {}),
+        rankings=args.get("rankings", []),
+    )
+    return _json_text(_model_to_dict(await watchlist_research(req)))
 
 
 def _handle_health_check(args: dict[str, Any]) -> list[TextContent]:
