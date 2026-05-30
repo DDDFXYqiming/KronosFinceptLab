@@ -128,6 +128,9 @@ class AgentAnalyzeResponse(BaseModel):
     macro_data_quality: dict[str, Any] | None = None
     macro_dimension_coverage: dict[str, Any] | None = None
     macro_evidence_insufficiency: dict[str, Any] | None = None
+    evidence_pack: dict[str, Any] | None = None
+    cited_claims: list[dict[str, Any]] = Field(default_factory=list)
+    confidence_breakdown: dict[str, float] | None = None
 
 
 # ── Endpoints ──

@@ -257,6 +257,51 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
   );
 }
 
+
+function EvidenceGraphViewer({ result }: { result: AgentAnalyzeResponse }) {
+  const pack = result.evidence_pack;
+  if (!pack?.items?.length) return null;
+  const confidenceEntries = Object.entries(result.confidence_breakdown || {});
+  return (
+    <Card>
+      <CardTitle subtitle="Evidence Pack + cited claims + confidence breakdown">Evidence Graph</CardTitle>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {pack.items.slice(0, 9).map((item) => (
+          <div key={item.id} className="rounded-lg border border-border bg-card p-3">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="font-mono text-xs text-accent">{item.id}</span>
+              <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{item.category}</span>
+            </div>
+            <p className="font-semibold text-foreground">{item.title}</p>
+            <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{cleanUserVisibleText(item.summary)}</p>
+          </div>
+        ))}
+      </div>
+      {result.cited_claims?.length ? (
+        <div className="mt-4 space-y-2">
+          <p className="text-sm font-semibold text-foreground">引用式结论</p>
+          {result.cited_claims.map((claim, index) => (
+            <div key={`${claim.claim}-${index}`} className="rounded-lg bg-muted p-3 text-sm">
+              <p className="text-foreground">{cleanUserVisibleText(claim.claim)}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">evidence: {claim.evidence_ids.join(", ")}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {confidenceEntries.length > 0 && (
+        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
+          {confidenceEntries.map(([key, value]) => (
+            <div key={key} className="rounded-lg border border-border p-2">
+              <p className="text-xs text-muted-foreground">{key}</p>
+              <p className="text-lg font-bold text-foreground">{`${(Number(value || 0) * 100).toFixed(1)}%`}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ToolCallList({ result }: { result: AgentAnalyzeResponse }) {
   return (
     <div className="space-y-3">
@@ -1045,6 +1090,8 @@ function AnalysisContent() {
               ))}
             </div>
           )}
+
+          <EvidenceGraphViewer result={result} />
 
           <Card>
             <CardTitle>依据与工具调用</CardTitle>
