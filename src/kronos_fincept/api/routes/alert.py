@@ -32,6 +32,7 @@ from kronos_fincept.alert_engine import (
     prediction_deviation_rule,
     volume_spike_rule,
 )
+from kronos_fincept.runtime_store import get_runtime_store
 from kronos_fincept.security_utils import env_bool, validate_webhook_url
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,13 @@ def _mask_contact_value(value: str | None) -> str | None:
     return f"{text[:5]}...[REDACTED]...{text[-4:]}"
 
 
+def _persist_alert_rules(engine: AlertEngine) -> None:
+    try:
+        get_runtime_store().replace_alert_rules([rule.to_dict() for rule in engine.list_rules()])
+    except Exception:
+        pass
+
+
 def _rule_to_out(rule: AlertRule) -> AlertRuleOut:
     """Convert internal AlertRule to Pydantic output model."""
     return AlertRuleOut(
@@ -235,6 +243,7 @@ async def create_alert_rule(req: AlertRuleIn) -> AlertRuleOut:
     try:
         rule: AlertRule = factory(**kwargs)
         engine.register_rule(rule)
+        _persist_alert_rules(engine)
         logger.info(
             "Alert rule registered via API: %s (%s)", rule.id, rule.name,
         )
@@ -280,6 +289,7 @@ async def create_prediction_deviation_preset(req: PredictionDeviationPresetIn) -
         engine.register_rule(rule)
         created.append(rule)
 
+    _persist_alert_rules(engine)
     return AlertPresetOut(ok=True, created=len(created), rules=[_rule_to_out(rule) for rule in created])
 
 
@@ -288,6 +298,7 @@ async def delete_alert_rule(rule_id: str) -> AlertDeleteOut:
     """Remove an alert rule by ID."""
     engine = _get_engine()
     if engine.unregister_rule(rule_id):
+        _persist_alert_rules(engine)
         logger.info("Alert rule deleted via API: %s", rule_id)
         return AlertDeleteOut(ok=True, message=f"Rule '{rule_id}' deleted")
     raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found")

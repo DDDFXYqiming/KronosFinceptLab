@@ -101,6 +101,8 @@ function BatchContent() {
   const [progress, setProgress] = useState<BatchProgress>(createInitialProgress());
   const [loading, setLoading] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobHistory, setJobHistory] = useState<JobStatusResponse[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-batch-error", "");
 
   useEffect(() => {
@@ -121,6 +123,22 @@ function BatchContent() {
       if (!modelId && health.default_model_id) setModelId(health.default_model_id);
     }).catch(() => undefined);
   }, [modelId, queryClient, setModelId]);
+
+  const refreshJobHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const response = await api.listJobs({ limit: 8, kind: "batch", timeoutMs: 15000 });
+      setJobHistory(response.jobs);
+    } catch {
+      setJobHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshJobHistory();
+  }, []);
 
   const selectedSymbols = useMemo(() => normalizeSymbols(input), [input]);
   const modelOptions = useMemo(() => Array.from(new Set([...availableModelIds, preferences.defaultModelId, modelId].filter(Boolean))), [availableModelIds, modelId, preferences.defaultModelId]);
@@ -272,6 +290,18 @@ function BatchContent() {
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
       {results.length > 0 && <><Card><CardTitle>预测收益率对比</CardTitle><ReturnComparisonChart data={chartData} /></Card><Card><CardTitle action={<select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="app-input h-10"><option value="rank">按排名</option><option value="predicted_return">按收益率</option><option value="risk">按风险</option><option value="symbol">按代码</option></select>}>排名</CardTitle><div className="table-scroll"><table className="min-w-[44rem] w-full text-sm md:min-w-[56rem]"><thead><tr className="border-b border-gray-700 text-gray-400"><th className="py-2 text-left">排名</th><th className="py-2 text-left">代码</th><th className="py-2 text-left">市场</th><th className="py-2 text-right">最新收盘</th><th className="py-2 text-right">预测收盘</th><th className="py-2 text-right">预测收益率</th><th className="py-2 text-left">风险</th><th className="py-2 text-right">操作</th></tr></thead><tbody>{sortedResults.map((result) => <tr key={result.symbol} className="border-b border-gray-800 hover:bg-surface-overlay"><td className="py-2">{result.rank}</td><td className="py-2 font-mono font-bold text-white">{result.symbol}</td><td className="py-2">{getMarketLabel(result.market || market)}</td><td className="py-2 text-right">{result.last_close.toFixed(2)}</td><td className="py-2 text-right">{result.predicted_close.toFixed(2)}</td><td className={result.predicted_return >= 0 ? "py-2 text-right text-accent-green" : "py-2 text-right text-accent-red"}>{(result.predicted_return * 100).toFixed(2)}%</td><td className="py-2">{result.risk_label || riskLabel(result.predicted_return)}</td><td className="py-2 text-right"><div className="flex justify-end gap-2"><button className="rounded bg-surface-overlay px-2 py-1 text-xs" onClick={() => addToWatchlist({ symbol: result.symbol, market: (result.market as Market) || market, addedAt: new Date().toISOString() })}>加入自选</button><Link className="rounded bg-surface-overlay px-2 py-1 text-xs" href={`/forecast?symbol=${result.symbol}&market=${result.market || market}`}>预测</Link><Link className="rounded bg-primary/20 px-2 py-1 text-xs text-primary-light" href={`/analysis?symbol=${result.symbol}&market=${result.market || market}`}>分析</Link></div></td></tr>)}</tbody></table></div></Card></>}
       {failures.length > 0 && <Card><CardTitle>失败项</CardTitle><div className="space-y-2">{failures.map((failure) => <div key={`${failure.symbol}-${failure.stage}`} className="rounded-lg border border-border p-3 text-sm"><span className="font-mono font-bold">{failure.symbol}</span> · {failure.stage} · {failure.message}{failure.requestId ? ` request_id=${failure.requestId}` : ""}</div>)}</div></Card>}
+      <Card>
+        <CardTitle action={<Button variant="secondary" onClick={refreshJobHistory} loading={historyLoading}>刷新</Button>}>批量任务历史</CardTitle>
+        <div className="space-y-2 text-sm">
+          {jobHistory.length === 0 && <p className="text-gray-500">暂无持久化批量任务记录。</p>}
+          {jobHistory.map((job) => (
+            <div key={job.job_id} className="flex flex-col gap-1 rounded-lg border border-border p-3 md:flex-row md:items-center md:justify-between">
+              <div><span className="font-mono text-xs text-gray-400">{job.job_id.slice(0, 12)}</span> · {job.status} · {new Date(job.updated_at * 1000).toLocaleString()}</div>
+              <Link className="text-sm text-accent-blue" href={`/batch?job=${job.job_id}`}>查看任务</Link>
+            </div>
+          ))}
+        </div>
+      </Card>
       {results.length === 0 && failures.length === 0 && !loading && !error && <Card><div className="py-12 text-center text-gray-500"><p className="mb-2 text-lg">批量标的对比</p><p className="text-sm">输入多个股票代码，对比预测收益率。</p></div></Card>}
     </div>
   );

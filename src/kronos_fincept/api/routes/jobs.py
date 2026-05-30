@@ -14,6 +14,7 @@ from kronos_fincept.api.models import BacktestRequestIn, BatchForecastItemIn, Ba
 from kronos_fincept.api.routes.ai_analyze import AgentAnalyzeRequest
 from kronos_fincept.api.routes.batch import _item_to_forecast_request
 from kronos_fincept.api.routes.data import fetch_market_rows_for_batch
+from kronos_fincept.runtime_store import get_runtime_store
 from kronos_fincept.schemas import ForecastRequest
 from kronos_fincept.service import batch_forecast_from_requests, forecast_from_request
 
@@ -48,6 +49,12 @@ class JobStatusResponse(BaseModel):
     updated_at: float
 
 
+class JobHistoryResponse(BaseModel):
+    ok: bool = True
+    jobs: list[JobStatusResponse]
+    total: int
+
+
 class BatchJobRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1, max_length=100)
     market: str = Field(default="cn", min_length=1, max_length=16)
@@ -66,6 +73,10 @@ class BacktestJobRequest(BacktestRequestIn):
 
 def _cleanup_jobs(now: float | None = None) -> None:
     now = now or time.time()
+    try:
+        get_runtime_store().prune_jobs(_MAX_JOBS, _JOB_TTL_SECONDS)
+    except Exception:
+        pass
     stale = [job_id for job_id, job in _JOBS.items() if now - float(job.get("updated_at", now)) > _JOB_TTL_SECONDS]
     for job_id in stale:
         _JOBS.pop(job_id, None)
@@ -87,7 +98,22 @@ def _create_job(kind: str, steps: list[str]) -> str:
         "created_at": now,
         "updated_at": now,
     }
+    _persist_job(_JOBS[job_id])
     return job_id
+
+
+def _persist_job(job: dict[str, Any]) -> None:
+    try:
+        get_runtime_store().upsert_job(job)
+    except Exception:
+        pass
+
+
+def get_job_snapshot(job_id: str) -> dict[str, Any] | None:
+    job = _JOBS.get(job_id)
+    if job:
+        return job
+    return get_runtime_store().get_job(job_id)
 
 
 def _set_step(job: dict[str, Any], index: int, status: str, summary: str = "") -> None:
@@ -97,6 +123,7 @@ def _set_step(job: dict[str, Any], index: int, status: str, summary: str = "") -
         step["summary"] = summary
         step["elapsed_ms"] = int((time.time() - job["created_at"]) * 1000)
     job["updated_at"] = time.time()
+    _persist_job(job)
 
 
 def _complete(job: dict[str, Any], result: dict[str, Any]) -> None:
@@ -106,6 +133,7 @@ def _complete(job: dict[str, Any], result: dict[str, Any]) -> None:
     job["status"] = "completed"
     job["result"] = result
     job["updated_at"] = time.time()
+    _persist_job(job)
 
 
 def _cancel(job: dict[str, Any]) -> None:
@@ -116,6 +144,7 @@ def _cancel(job: dict[str, Any]) -> None:
             step["summary"] = step.get("summary") or "cancelled"
             step["elapsed_ms"] = int((time.time() - job["created_at"]) * 1000)
     job["updated_at"] = time.time()
+    _persist_job(job)
 
 
 def _fail(job: dict[str, Any], exc: BaseException) -> None:
@@ -127,6 +156,7 @@ def _fail(job: dict[str, Any], exc: BaseException) -> None:
     job["status"] = "failed"
     job["error"] = message[:500]
     job["updated_at"] = time.time()
+    _persist_job(job)
 
 
 def _run_forecast_job(job_id: str, req: ForecastRequestIn) -> None:
@@ -262,6 +292,17 @@ async def _run_backtest_job(job_id: str, req: BacktestRequestIn) -> None:
         _fail(job, exc)
 
 
+@router.get("", response_model=JobHistoryResponse)
+async def list_jobs(limit: int = 50, status: str | None = None, kind: str | None = None) -> JobHistoryResponse:
+    _cleanup_jobs()
+    merged: dict[str, dict[str, Any]] = {job["job_id"]: job for job in get_runtime_store().list_jobs(limit=limit, status=status, kind=kind)}
+    for job_id, job in _JOBS.items():
+        if (not status or job.get("status") == status) and (not kind or job.get("kind") == kind):
+            merged[job_id] = job
+    jobs = sorted(merged.values(), key=lambda item: float(item.get("updated_at", 0)), reverse=True)[: max(1, min(int(limit), 200))]
+    return JobHistoryResponse(jobs=[JobStatusResponse(**job) for job in jobs], total=len(jobs))
+
+
 @router.post("/forecast", response_model=JobSubmitResponse)
 async def submit_forecast_job(req: ForecastRequestIn, background_tasks: BackgroundTasks) -> JobSubmitResponse:
     job_id = _create_job("forecast", ["校验请求", "Kronos 预测"])
@@ -296,18 +337,20 @@ async def submit_backtest_job(req: BacktestJobRequest, background_tasks: Backgro
 @router.get("/{job_id}", response_model=JobStatusResponse)
 async def get_job(job_id: str) -> JobStatusResponse:
     _cleanup_jobs()
-    job = _JOBS.get(job_id)
+    job = get_job_snapshot(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
+    _JOBS[job_id] = job
     return JobStatusResponse(**job)
 
 
 @router.post("/{job_id}/cancel", response_model=JobCancelResponse)
 async def cancel_job(job_id: str) -> JobCancelResponse:
     _cleanup_jobs()
-    job = _JOBS.get(job_id)
+    job = get_job_snapshot(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
+    _JOBS[job_id] = job
     if job["status"] in {"completed", "failed", "cancelled"}:
         return JobCancelResponse(job_id=job_id, status=job["status"])
     _cancel(job)

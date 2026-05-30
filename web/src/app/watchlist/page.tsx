@@ -14,7 +14,7 @@ import { downloadTextFile, makeDatedFilename, parseCsv, toCsv } from "@/lib/expo
 import { formatCompactNumber, formatNumber } from "@/lib/utils";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
-import type { DataResponse, IndicatorResponse } from "@/types/api";
+import type { DataResponse, IndicatorResponse, WatchlistListItem } from "@/types/api";
 
 interface QuoteSummary {
   symbol: string;
@@ -128,6 +128,8 @@ export default function WatchlistPage() {
   const [quoteSummaries, setQuoteSummaries] = useSessionState<Record<string, QuoteSummary>>("kronos-watchlist-quotes", {});
   const [researchSummaries, setResearchSummaries] = useState<Record<string, ResearchSummary>>({});
   const [loadingQuotes, setLoadingQuotes] = useState(false);
+  const [serverLists, setServerLists] = useState<WatchlistListItem[]>([]);
+  const [syncingServer, setSyncingServer] = useState(false);
   const [error, setError] = useSessionState("kronos-watchlist-error", "");
 
   const selectedItems = useMemo(() => watchlist.filter((item) => selectedKeys.includes(itemKey(item))), [selectedKeys, watchlist]);
@@ -243,6 +245,64 @@ export default function WatchlistPage() {
     }
   };
 
+  const refreshServerLists = async () => {
+    setSyncingServer(true);
+    try {
+      const response = await api.watchlistList({ timeoutMs: 15000 });
+      setServerLists(response.watchlists);
+    } catch (exc) {
+      setError(formatApiError(exc, "加载服务端自选失败"));
+    } finally {
+      setSyncingServer(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshServerLists();
+  }, []);
+
+  const saveCurrentWatchlist = async () => {
+    if (watchlist.length === 0) return;
+    setSyncingServer(true);
+    try {
+      await api.watchlistCreate({
+        name: name.trim() || "本地自选",
+        market: market,
+        symbols: watchlist.map((item) => item.symbol),
+        tags: ["frontend"],
+        note: "Saved from watchlist page",
+      }, { timeoutMs: 15000 });
+      await refreshServerLists();
+      setError("");
+    } catch (exc) {
+      setError(formatApiError(exc, "保存服务端自选失败"));
+    } finally {
+      setSyncingServer(false);
+    }
+  };
+
+  const loadServerWatchlist = (item: WatchlistListItem) => {
+    replaceWatchlist(item.symbols.map((symbol) => ({
+      symbol,
+      market: isMarket(item.market) ? item.market : DEFAULT_MARKET,
+      tags: item.tags || [],
+      note: item.note || undefined,
+      addedAt: new Date(item.updated_at * 1000).toISOString(),
+    })));
+  };
+
+  const deleteServerWatchlist = async (id: string) => {
+    setSyncingServer(true);
+    try {
+      await api.watchlistDelete(id, { timeoutMs: 15000 });
+      await refreshServerLists();
+    } catch (exc) {
+      setError(formatApiError(exc, "删除服务端自选失败"));
+    } finally {
+      setSyncingServer(false);
+    }
+  };
+
   const handleExportWatchlist = () => {
     const csv = toCsv(
       ["symbol", "market", "name", "note", "tags", "addedAt"],
@@ -306,11 +366,32 @@ export default function WatchlistPage() {
           <Button variant="secondary" onClick={refreshQuoteSummaries} loading={loadingQuotes}>刷新行情/指标</Button>
           <Button variant="secondary" onClick={handleExportWatchlist} disabled={watchlist.length === 0}>导出自选</Button>
           <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>导入自选</Button>
+          <Button variant="secondary" onClick={saveCurrentWatchlist} loading={syncingServer} disabled={watchlist.length === 0}>保存到服务端</Button>
+          <Button variant="secondary" onClick={refreshServerLists} loading={syncingServer}>刷新服务端</Button>
           <input ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={handleImportWatchlist} />
         </div>
       </Card>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
+
+      <Card>
+        <CardTitle subtitle="服务端 SQLite 持久化，重启后仍可恢复。">服务端自选列表</CardTitle>
+        <div className="space-y-2 text-sm">
+          {serverLists.length === 0 && <p className="text-gray-500">暂无服务端自选列表。</p>}
+          {serverLists.map((item) => (
+            <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="font-semibold text-white">{item.name} <span className="font-mono text-xs text-gray-500">{item.id.slice(0, 8)}</span></div>
+                <div className="text-xs text-muted-foreground">{item.market} · {item.symbols.join(", ")} · {new Date(item.updated_at * 1000).toLocaleString()}</div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => loadServerWatchlist(item)}>加载</Button>
+                <Button variant="danger" onClick={() => deleteServerWatchlist(item.id)}>删除</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {watchlist.length === 0 ? (
         <Card>
