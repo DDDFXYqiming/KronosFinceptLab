@@ -726,6 +726,71 @@ class MacroRouteDecision:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+
+
+def _build_evidence_graph_payload(result: "AgentAnalysisResult") -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, float]]:
+    """Create a deterministic evidence pack and cited claims for agent reports."""
+    items: list[dict[str, Any]] = []
+
+    def add_item(category: str, title: str, summary: str, payload: dict[str, Any] | None = None, source: str = "agent") -> str:
+        evidence_id = f"{category}:{len(items) + 1:03d}"
+        items.append({
+            "id": evidence_id,
+            "category": category,
+            "title": title,
+            "summary": summary,
+            "source": source,
+            "payload": payload or {},
+        })
+        return evidence_id
+
+    if result.current_price is not None:
+        add_item("price", "当前价格", f"{result.symbol or '标的'} 当前价格约 {result.current_price}。", {"current_price": result.current_price, "symbol": result.symbol})
+    if result.kronos_prediction:
+        forecast = result.kronos_prediction.get("forecast") or []
+        add_item("forecast", "Kronos 预测", f"Kronos 返回 {len(forecast)} 条预测记录。", {"prediction_days": result.kronos_prediction.get("prediction_days"), "forecast_count": len(forecast)})
+    if result.risk_metrics:
+        add_item("risk", "风险指标", "风险指标已计算，可用于约束仓位和判断波动暴露。", result.risk_metrics)
+    for index, call in enumerate(result.tool_calls[:8], start=1):
+        category = "disclosure" if "披露" in call.summary or "cninfo" in str(call.metadata).lower() else "tool"
+        add_item(category, call.name or f"工具 {index}", call.summary, call.metadata, source="tool_call")
+    if result.macro_dimension_coverage:
+        add_item("macro", "宏观维度覆盖", "宏观证据维度覆盖已评估。", result.macro_dimension_coverage)
+
+    if not items:
+        add_item("report", "本地报告", "没有可结构化的外部证据，报告仅基于当前本地结果。", result.report)
+
+    ids_by_category: dict[str, list[str]] = {}
+    for item in items:
+        ids_by_category.setdefault(str(item["category"]), []).append(str(item["id"]))
+
+    def pick(*categories: str) -> list[str]:
+        picked: list[str] = []
+        for category in categories:
+            picked.extend(ids_by_category.get(category, [])[:2])
+        return picked or [str(items[0]["id"])]
+
+    claims = [
+        {"claim": str(result.report.get("conclusion") or result.final_report or "分析结论已生成。"), "evidence_ids": pick("price", "forecast", "risk"), "confidence": result.confidence},
+        {"claim": str(result.report.get("recommendation") or result.recommendation), "evidence_ids": pick("forecast", "risk", "disclosure", "tool"), "confidence": result.confidence},
+    ]
+    if result.report.get("risk"):
+        claims.append({"claim": str(result.report.get("risk")), "evidence_ids": pick("risk", "macro", "tool"), "confidence": min(result.confidence, 0.75)})
+
+    data_coverage = min(1.0, len(items) / 6.0)
+    forecast_support = 1.0 if result.kronos_prediction else 0.0
+    risk_support = 1.0 if result.risk_metrics else 0.0
+    macro_support = 1.0 if result.macro_dimension_coverage else 0.0
+    confidence_breakdown = {
+        "data_coverage": round(data_coverage, 4),
+        "forecast_support": round(forecast_support, 4),
+        "risk_support": round(risk_support, 4),
+        "macro_support": round(macro_support, 4),
+        "final": result.confidence,
+    }
+    return {"version": "v11.5", "items": items, "categories": sorted(ids_by_category)}, claims, confidence_breakdown
+
+
 @dataclass(frozen=True)
 class AgentAnalysisResult:
     ok: bool
@@ -754,11 +819,19 @@ class AgentAnalysisResult:
     macro_data_quality: dict[str, Any] | None = None
     macro_dimension_coverage: dict[str, Any] | None = None
     macro_evidence_insufficiency: dict[str, Any] | None = None
+    evidence_pack: dict[str, Any] | None = None
+    cited_claims: list[dict[str, Any]] = field(default_factory=list)
+    confidence_breakdown: dict[str, float] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["tool_calls"] = [asdict(item) for item in self.tool_calls]
         payload["steps"] = [asdict(item) for item in self.steps]
+        if not payload.get("evidence_pack"):
+            evidence_pack, cited_claims, confidence_breakdown = _build_evidence_graph_payload(self)
+            payload["evidence_pack"] = evidence_pack
+            payload["cited_claims"] = cited_claims
+            payload["confidence_breakdown"] = confidence_breakdown
         return payload
 
 

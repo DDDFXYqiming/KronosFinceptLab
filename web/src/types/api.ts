@@ -548,6 +548,28 @@ export interface MacroProviderStatusResponse {
   providers: MacroProviderStatusRow[];
 }
 
+
+export interface EvidenceItem {
+  id: string;
+  category: string;
+  title: string;
+  summary: string;
+  source: string;
+  payload: Record<string, any>;
+}
+
+export interface EvidencePack {
+  version: string;
+  items: EvidenceItem[];
+  categories: string[];
+}
+
+export interface CitedClaim {
+  claim: string;
+  evidence_ids: string[];
+  confidence: number;
+}
+
 export interface AgentAnalyzeResponse {
   ok: boolean;
   question: string;
@@ -581,6 +603,9 @@ export interface AgentAnalyzeResponse {
   macro_data_quality?: MacroDataQualitySummary | null;
   macro_dimension_coverage?: MacroEvidenceCoverage | null;
   macro_evidence_insufficiency?: MacroEvidenceInsufficiency | null;
+  evidence_pack?: EvidencePack | null;
+  cited_claims?: CitedClaim[];
+  confidence_breakdown?: Record<string, number> | null;
 }
 
 export interface MacroProviderCoverage {
