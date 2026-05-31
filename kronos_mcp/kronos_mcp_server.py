@@ -157,6 +157,45 @@ async def list_tools() -> list[Tool]:
                         "description": "HuggingFace model ID",
                         "default": "NeoQuasar/Kronos-base",
                     },
+                    "tokenizer_id": {
+                        "type": "string",
+                        "description": "Optional HuggingFace tokenizer ID override",
+                    },
+                    "max_context": {
+                        "type": "integer",
+                        "description": "Maximum Kronos context length",
+                        "default": 512,
+                        "minimum": 1,
+                        "maximum": 2048,
+                    },
+                    "temperature": {
+                        "type": "number",
+                        "description": "Sampling temperature",
+                        "default": 1.0,
+                        "exclusiveMinimum": 0,
+                        "maximum": 2,
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Top-k sampling threshold; 0 disables top-k filtering",
+                        "default": 0,
+                        "minimum": 0,
+                        "maximum": 100,
+                    },
+                    "top_p": {
+                        "type": "number",
+                        "description": "Nucleus sampling probability",
+                        "default": 0.9,
+                        "exclusiveMinimum": 0,
+                        "maximum": 1,
+                    },
+                    "sample_count": {
+                        "type": "integer",
+                        "description": "Number of forecast samples to generate and average",
+                        "default": 1,
+                        "minimum": 1,
+                        "maximum": 8,
+                    },
                 },
                 "required": ["symbol", "rows", "pred_len"],
             },
@@ -534,6 +573,12 @@ def _handle_forecast(args: dict[str, Any]) -> list[TextContent]:
         "rows": args["rows"],
         "dry_run": args.get("dry_run", False),
         "model_id": args.get("model_id", "NeoQuasar/Kronos-base"),
+        "tokenizer_id": args.get("tokenizer_id"),
+        "max_context": args.get("max_context"),
+        "temperature": args.get("temperature", 1.0),
+        "top_k": args.get("top_k", 0),
+        "top_p": args.get("top_p", 0.9),
+        "sample_count": args.get("sample_count", 1),
     })
     result = svc["forecast"](req)
     return _json_text(result)

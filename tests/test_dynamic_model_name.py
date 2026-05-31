@@ -1,3 +1,7 @@
+import concurrent.futures
+import threading
+import time
+
 from kronos_fincept.agent import (
     AgentRouteDecision,
     AgentToolCall,
@@ -107,6 +111,41 @@ def test_generate_report_fallback_summary_shows_provider_failures(monkeypatch):
     assert "DeepSeek 返回格式不可解析" in tool_call.summary
     assert "本地结构化报告模板" in tool_call.summary
     assert tool_call.metadata["failures"][0]["status_code"] == 429
+
+
+def test_generate_report_llm_metadata_isolated_between_threads(monkeypatch):
+    openrouter = _make_provider(name="openrouter", display_name="OpenRouter Free", model="openrouter-model")
+    deepseek = _make_provider(name="deepseek", display_name="DeepSeek", model="deepseek-v4-flash")
+    barrier = threading.Barrier(2)
+
+    def fake_call(question, context):
+        if question == "open":
+            _set_last_report_llm_metadata(openrouter)
+            barrier.wait(timeout=2)
+            time.sleep(0.1)
+        else:
+            barrier.wait(timeout=2)
+            _set_last_report_llm_metadata(deepseek)
+        return {
+            "conclusion": question,
+            "recommendation": "观察",
+            "confidence": 0.5,
+            "risk_level": "中",
+            "disclaimer": "test",
+        }
+
+    monkeypatch.setattr("kronos_fincept.agent._call_deepseek_report", fake_call)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        open_future = executor.submit(_generate_report, "open", {})
+        deep_future = executor.submit(_generate_report, "deep", {})
+        _, open_tool = open_future.result(timeout=3)
+        _, deep_tool = deep_future.result(timeout=3)
+
+    assert open_tool.name == "OpenRouter Free 汇总"
+    assert open_tool.metadata["model"] == "openrouter-model"
+    assert deep_tool.name == "DeepSeek 汇总"
+    assert deep_tool.metadata["model"] == "deepseek-v4-flash"
 
 
 def test_step_name_inherits_tool_call_name(monkeypatch):
