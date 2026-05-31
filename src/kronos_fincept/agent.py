@@ -10,6 +10,7 @@ import os
 import re
 import time
 from contextlib import redirect_stdout
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import date, datetime, timedelta
 from io import StringIO
@@ -33,8 +34,8 @@ from kronos_fincept.web_search import AnySearchClient, WebSearchClient, WebSearc
 logger = logging.getLogger(__name__)
 
 
-_LAST_REPORT_LLM_METADATA: dict[str, Any] = {}
-_LAST_REPORT_LLM_FAILURES: list[dict[str, Any]] = []
+_LAST_REPORT_LLM_METADATA: ContextVar[dict[str, Any]] = ContextVar("last_report_llm_metadata", default={})
+_LAST_REPORT_LLM_FAILURES: ContextVar[list[dict[str, Any]]] = ContextVar("last_report_llm_failures", default=[])
 _LLM_FAILURES: dict[str, tuple[int, float]] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
@@ -385,13 +386,12 @@ def _llm_source(provider: LLMChatProvider, purpose: str) -> str:
 
 
 def _clear_last_report_llm_metadata() -> None:
-    _LAST_REPORT_LLM_METADATA.clear()
-    _LAST_REPORT_LLM_FAILURES.clear()
+    _LAST_REPORT_LLM_METADATA.set({})
+    _LAST_REPORT_LLM_FAILURES.set([])
 
 
 def _set_last_report_llm_metadata(provider: LLMChatProvider) -> None:
-    _LAST_REPORT_LLM_METADATA.clear()
-    _LAST_REPORT_LLM_METADATA.update(
+    _LAST_REPORT_LLM_METADATA.set(
         {
             "provider": provider.name,
             "provider_display": provider.display_name,
@@ -402,11 +402,12 @@ def _set_last_report_llm_metadata(provider: LLMChatProvider) -> None:
 
 
 def _last_report_llm_metadata() -> dict[str, Any]:
-    return dict(_LAST_REPORT_LLM_METADATA)
+    return dict(_LAST_REPORT_LLM_METADATA.get({}))
 
 
 def _record_report_llm_failure(provider: LLMChatProvider, reason: str, **metadata: Any) -> None:
-    _LAST_REPORT_LLM_FAILURES.append(
+    failures = list(_LAST_REPORT_LLM_FAILURES.get([]))
+    failures.append(
         {
             "provider": provider.name,
             "provider_display": provider.display_name,
@@ -415,10 +416,11 @@ def _record_report_llm_failure(provider: LLMChatProvider, reason: str, **metadat
             **metadata,
         }
     )
+    _LAST_REPORT_LLM_FAILURES.set(failures)
 
 
 def _last_report_llm_failures() -> list[dict[str, Any]]:
-    return [dict(item) for item in _LAST_REPORT_LLM_FAILURES]
+    return [dict(item) for item in _LAST_REPORT_LLM_FAILURES.get([])]
 
 
 def _report_llm_fallback_summary(failures: list[dict[str, Any]]) -> str:
@@ -481,7 +483,9 @@ def _call_structured_llm_json(
             purpose=purpose,
         )
         if purpose == "report":
-            _LAST_REPORT_LLM_FAILURES.append({"reason": "import_failed"})
+            failures = list(_LAST_REPORT_LLM_FAILURES.get([]))
+            failures.append({"reason": "import_failed"})
+            _LAST_REPORT_LLM_FAILURES.set(failures)
         return None
 
     max_attempts = max(1, env_int("KRONOS_LLM_MAX_PROVIDER_ATTEMPTS", 2))
@@ -2479,13 +2483,13 @@ def _ensure_macro_provider_dimension_floor(
     """Expand auto-routed provider choices so web macro has enough independent dimensions."""
     selected = _filter_macro_provider_ids(provider_ids)
     candidates = [
+        "us_treasury",
+        "cftc_cot",
         "source_project_macro_cache",
         "fred",
         "china_macro_akshare",
         "china_macro_chinalive",
         "china_nbs_live",
-        "us_treasury",
-        "cftc_cot",
         "dbnomics",
         "currency",
         "anysearch",

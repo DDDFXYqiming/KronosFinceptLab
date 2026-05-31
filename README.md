@@ -200,7 +200,7 @@ Key environment variables (see `.env.example` for full reference):
 | `TUSHARE_TOKEN` | Optional Tushare Pro token for A-share and Stock Connect fallback data |
 | `FRED_API_KEY` | Optional FRED API key for U.S. macro indicators |
 | `KRONOS_SOURCE_PROJECT_ROOT` | Optional path to the verified source project for market/macro cache reuse |
-| `KRONOS_ENABLE_TDX_NETWORK` | Optional TDX network source; off by default for Zeabur/Linux safety |
+| `KRONOS_ENABLE_TDX_NETWORK` | Optional TDX network source; off by default for container/Linux safety |
 | `KRONOS_ENABLE_TICKFLOW` | Optional TickFlow source; skipped when dependency is unavailable |
 | `KRONOS_ENABLE_NBS_LIVE` | Optional NBS live client; off by default and cache/public sources are preferred |
 | `KRONOS_LOW_MEMORY_DEFAULTS` | Enables conservative thread/import defaults for local and container startup |
