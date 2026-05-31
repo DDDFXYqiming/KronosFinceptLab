@@ -18,6 +18,9 @@ import click
 @click.option("--reload", is_flag=True, default=False, help="Auto-reload on code changes")
 def serve_cmd(host: str, port: int, workers: int, reload: bool) -> None:
     """Start the FastAPI API server."""
+    from kronos_fincept.runtime_env import apply_low_memory_defaults
+
+    apply_low_memory_defaults()
     import uvicorn
     click.echo(f"[launch] Starting KronosFinceptLab API on {host}:{port}")
     click.echo(f"   Docs: http://{host}:{port}/docs")

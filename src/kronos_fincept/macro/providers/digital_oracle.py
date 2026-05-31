@@ -23,7 +23,12 @@ from typing import Any
 
 from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderUnavailable
 from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
+from kronos_fincept.macro.providers.china_macro import ChinaMacroAkshareProvider
+from kronos_fincept.macro.providers.chinalive import ChinaDataLiveProvider
 from kronos_fincept.macro.providers.dbnomics import DBnomicsProvider
+from kronos_fincept.macro.providers.fred import FredProvider
+from kronos_fincept.macro.providers.nbs_live import ChinaNBSLiveProvider
+from kronos_fincept.macro.providers.source_project_cache import SourceProjectMacroCacheProvider
 from kronos_fincept.web_search import AnySearchClient, WebSearchClient
 
 
@@ -1478,6 +1483,11 @@ def create_default_providers() -> list[MacroProvider]:
     return [
         PolymarketProvider(),
         KalshiProvider(),
+        FredProvider(),
+        SourceProjectMacroCacheProvider(),
+        ChinaMacroAkshareProvider(),
+        ChinaDataLiveProvider(),
+        ChinaNBSLiveProvider(),
         USTreasuryProvider(),
         CftcCotProvider(),
         CoinGeckoProvider(),

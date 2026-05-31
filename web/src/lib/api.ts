@@ -443,6 +443,37 @@ export const api = {
   getIndicators: (symbol: string, market = "cn", options?: ApiClientOptions) =>
     get<IndicatorResponse>(`/data/indicator/${symbol}?market=${market}`, options),
 
+  getMoneyFlow: (symbol: string, options?: ApiClientOptions & { limit?: number; startDate?: string; endDate?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.startDate) params.set("start_date", options.startDate);
+    if (options?.endDate) params.set("end_date", options.endDate);
+    const qs = params.toString();
+    return get<any>(`/data/money-flow/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ""}`, options);
+  },
+
+  getSectorFlow: (sectorType: "industry" | "concept" | "region" = "industry", options?: ApiClientOptions) =>
+    get<any>(`/data/sector-flow?sector_type=${encodeURIComponent(sectorType)}`, options),
+
+  getHsgtFlow: (options?: ApiClientOptions & { startDate?: string; endDate?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.startDate) params.set("start_date", options.startDate);
+    if (options?.endDate) params.set("end_date", options.endDate);
+    const qs = params.toString();
+    return get<any>(`/data/hsgt-flow${qs ? `?${qs}` : ""}`, options);
+  },
+
+  getSourceMarketArtifact: (
+    artifact: string,
+    options?: ApiClientOptions & { date?: string; limit?: number }
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.date) params.set("date", options.date);
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    const qs = params.toString();
+    return get<any>(`/data/source-market/${encodeURIComponent(artifact)}${qs ? `?${qs}` : ""}`, options);
+  },
+
   aiAnalyze: (req: AIAnalyzeRequest, options?: ApiClientOptions) =>
     post<AIAnalyzeResponse>("/v1/analyze/ai", req, options),
 

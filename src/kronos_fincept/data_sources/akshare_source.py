@@ -4,6 +4,8 @@ Supports A-shares, Hong Kong stocks, US stocks and other market data
 """
 
 import time
+import os
+import random
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -24,8 +26,8 @@ class AkShareSource(DataSource):
         config = DataSourceConfig(
             name="akshare",
             priority=priority,
-            max_retries=3,
-            retry_delay=1.0,
+            max_retries=_env_int("AKSHARE_MAX_RETRIES", 3),
+            retry_delay=_env_float("AKSHARE_MIN_DELAY", 1.0),
             timeout=30.0,
             circuit_break_threshold=5,
             circuit_break_duration=300,
@@ -33,6 +35,9 @@ class AkShareSource(DataSource):
         )
         super().__init__(config)
         self._ak = None
+        self._last_call_ts = 0.0
+        self._min_delay = max(0.0, _env_float("AKSHARE_MIN_DELAY", 0.0))
+        self._max_delay = max(self._min_delay, _env_float("AKSHARE_MAX_DELAY", self._min_delay))
 
     def _get_ak(self):
         """Lazy-load AkShare"""
@@ -76,6 +81,7 @@ class AkShareSource(DataSource):
                 }
 
             # Call the function
+            self._throttle()
             start_time = time.time()
             result = func(**kwargs)
             elapsed = time.time() - start_time
@@ -120,6 +126,16 @@ class AkShareSource(DataSource):
                 "source": self.config.name,
                 "timestamp": int(datetime.now().timestamp())
             }
+
+    def _throttle(self) -> None:
+        """Apply optional AkShare request pacing from the source project's config."""
+        if self._max_delay <= 0:
+            return
+        elapsed = time.time() - self._last_call_ts if self._last_call_ts else self._max_delay
+        target = random.uniform(self._min_delay, self._max_delay)
+        if elapsed < target:
+            time.sleep(target - elapsed)
+        self._last_call_ts = time.time()
 
 
 # Convenience functions
@@ -201,3 +217,17 @@ def get_stock_info(symbol: str) -> Dict[str, Any]:
         endpoint='stock_individual_info_em',
         symbol=symbol
     )
+
+
+def _env_int(key: str, default: int) -> int:
+    try:
+        return int(float(os.environ.get(key, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(key: str, default: float) -> float:
+    try:
+        return float(os.environ.get(key, str(default)))
+    except (TypeError, ValueError):
+        return default

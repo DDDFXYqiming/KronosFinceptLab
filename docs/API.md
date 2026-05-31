@@ -19,10 +19,15 @@ Admin-only surfaces such as alerts and admin diagnostics require an admin/intern
 | Health | GET | `/api/health/deep` | Deeper dependency health information |
 | Forecast | POST | `/api/forecast` | Single-asset Kronos forecast |
 | Batch | POST | `/api/batch` | Multi-asset forecast and ranking |
+| Data | POST | `/api/data/batch` | Multi-symbol OHLCV fetch with per-symbol errors |
 | Data | GET | `/api/data/global/{symbol}` | Global market OHLCV data |
 | Data | GET | `/api/data/indicator/{symbol}` | Technical indicators |
 | Data | GET | `/api/data/a-stock/{symbol}` | A-share OHLCV data |
 | Data | GET | `/api/data/search` | Stock/instrument search |
+| Data | GET | `/api/data/money-flow/{symbol}` | EastMoney main-money-flow rows |
+| Data | GET | `/api/data/sector-flow` | EastMoney sector/concept money-flow rankings |
+| Data | GET | `/api/data/hsgt-flow` | Stock Connect flow via Tushare when configured |
+| Data | GET | `/api/data/source-market/{artifact}` | Source-project market-review cache artifact or summary |
 | Backtest | POST | `/api/backtest/ranking` | Multi-symbol ranking backtest |
 | Backtest | POST | `/api/backtest/report` | HTML/text report generation |
 | Analysis | POST | `/api/v1/analyze/agent` | Natural-language stateless analysis agent |
@@ -36,12 +41,25 @@ Admin-only surfaces such as alerts and admin diagnostics require an admin/intern
 | Alerts | GET | `/api/alert/rules` | List alert rules; admin key required |
 | Alerts | DELETE | `/api/alert/rules/{rule_id}` | Remove alert rule; admin key required |
 | Alerts | POST | `/api/alert/check` | Run alert checks; admin key required |
+| Alerts | POST | `/api/alert/presets/prediction-deviation` | Create prediction-deviation rules for a watchlist; admin key required |
 | News | POST | `/api/news/rss` | Fetch HTTPS RSS/Atom feeds with SSRF-safe URL checks |
 | Suggestions | GET | `/api/v1/suggestions` | Suggested analysis or macro prompts |
+| Watchlist | GET | `/api/watchlist/lists` | List persisted watchlists |
+| Watchlist | POST | `/api/watchlist/lists` | Create watchlist |
+| Watchlist | PUT | `/api/watchlist/lists/{watchlist_id}` | Update watchlist |
+| Watchlist | DELETE | `/api/watchlist/lists/{watchlist_id}` | Delete watchlist |
+| Watchlist | POST | `/api/watchlist/research` | Build weighted watchlist research summary |
 | Jobs | POST | `/api/jobs/forecast` | Submit async forecast job |
 | Jobs | POST | `/api/jobs/analyze` | Submit async agent-analysis job |
+| Jobs | POST | `/api/jobs/batch` | Submit async batch forecast job |
+| Jobs | POST | `/api/jobs/backtest` | Submit async ranking backtest job |
+| Jobs | GET | `/api/jobs` | List bounded in-process job history |
 | Jobs | GET | `/api/jobs/{job_id}` | Read async job state/result |
+| Jobs | POST | `/api/jobs/{job_id}/cancel` | Cancel queued/running job when possible |
 | Admin | GET | `/api/admin/security/summary` | Security configuration summary; admin key required |
+| Admin | GET | `/api/admin/model/cache` | Model cache state; admin key required |
+| Admin | POST | `/api/admin/model/clear-cache` | Clear model cache; admin key required |
+| Admin | POST | `/api/admin/model/prewarm` | Preload model; admin key required |
 
 ## Health Check
 
@@ -95,9 +113,18 @@ The batch path ranks assets by predicted return and uses shared model loading/ca
 ```http
 GET /api/data/a-stock/600036?start_date=20250101&end_date=20260430&adjust=qfq
 GET /api/data/global/AAPL?market=us&start_date=20250101&end_date=20260430
-GET /api/data/indicator/600036?market=cn&indicator=rsi
+GET /api/data/indicator/600036?market=cn
 GET /api/data/search?q=China+Merchants+Bank
+GET /api/data/money-flow/600036?limit=60
+GET /api/data/sector-flow?sector_type=industry
+GET /api/data/hsgt-flow?start_date=20250101&end_date=20260430
+GET /api/data/source-market/summary
+GET /api/data/source-market/dragon_tiger?date=2026-05-26&limit=100
 ```
+
+`/api/data/money-flow` and `/api/data/sector-flow` use the no-key EastMoney Push2 source. `/api/data/hsgt-flow` requires `TUSHARE_TOKEN`. `/api/data/source-market/{artifact}` reads verified local cache artifacts from `KRONOS_SOURCE_PROJECT_ROOT` when configured and returns 404 rather than breaking startup when the cache is unavailable.
+
+Data endpoints route through `DataSourceManager` where possible. Supported providers include EastMoney, Tushare, TDX local, AkShare, BaoStock, Yahoo/Stooq, Binance/OKX, and source-project caches. Optional heavy providers such as TDX network, TickFlow, and NBS live are disabled unless their feature flags and dependencies are present.
 
 ## Backtest
 
@@ -142,14 +169,18 @@ Content-Type: application/json
 }
 ```
 
-The shared LLM synthesis chain prioritizes DeepSeek and falls back to OpenRouter when configured. Generic web search requires `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY`; AnySearch requires `ANYSEARCH_ENABLED=true`.
+The shared LLM synthesis chain prioritizes DeepSeek and falls back to OpenRouter when configured. Macro providers include no-key public sources plus optional FRED (`FRED_API_KEY`) and Tushare (`TUSHARE_TOKEN`) enrichment. Generic web search requires `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY`; AnySearch requires `ANYSEARCH_ENABLED=true`.
 
 ## Async Jobs
 
 ```http
 POST /api/jobs/forecast
 POST /api/jobs/analyze
+POST /api/jobs/batch
+POST /api/jobs/backtest
+GET /api/jobs
 GET /api/jobs/{job_id}
+POST /api/jobs/{job_id}/cancel
 ```
 
 Jobs are stored in process with bounded size and TTL. They are intended for local/single-process usage and frontend long-running operations, not as a distributed queue.

@@ -126,6 +126,52 @@ def test_v102_selects_macro_providers_for_geopolitical_question():
     assert {"cftc_cot", "fear_greed", "us_treasury"} <= set(gold_providers)
 
 
+def test_v102_embedded_cn_macro_prefers_local_macro_sources():
+    from kronos_fincept import agent
+
+    providers = agent._select_embedded_macro_provider_ids(
+        "招商银行和A股流动性怎么看",
+        symbols=[agent.ResolvedSymbol("600036", "cn", "招商银行")],
+    )
+
+    assert providers[:3] == ["source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive"]
+
+
+def test_v102_local_market_review_context_summarizes_symbol_hits(monkeypatch):
+    from kronos_fincept import agent
+
+    class FakeManager:
+        def fetch(self, endpoint, **kwargs):
+            assert endpoint == "source_market_review"
+            artifact = kwargs["artifact"]
+            if artifact == "summary":
+                return {
+                    "success": True,
+                    "source": "source_market_cache",
+                    "count": 2,
+                    "data": {
+                        "date": "2026-05-26",
+                        "artifact_count": 2,
+                        "categories": {"stock_flow": 1, "dragon_tiger": 1},
+                        "artifacts": [{"artifact": "stock_in"}, {"artifact": "dragon_tiger"}],
+                    },
+                    "metadata": {"date": "2026-05-26", "data_quality": "source_project_verified_market_cache"},
+                }
+            if artifact == "stock_in":
+                return {"success": True, "data": [{"代码": "600036", "主力净流入": 123}]}
+            if artifact == "dragon_tiger":
+                return {"success": True, "data": [{"代码": "000858", "买入额": 99}]}
+            return {"success": True, "data": []}
+
+    monkeypatch.setattr("kronos_fincept.data_sources.init.init_data_sources", lambda: FakeManager())
+
+    context = agent._build_local_market_review_context("600036", "cn")
+
+    assert context["available"] is True
+    assert context["date"] == "2026-05-26"
+    assert context["symbol_hits"]["stock_in"][0]["主力净流入"] == 123
+
+
 def test_v102_macro_agent_returns_macro_report(monkeypatch):
     from kronos_fincept.agent import analyze_macro_question
 

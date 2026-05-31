@@ -2,6 +2,8 @@
 
 ## End-to-End Integration Status
 
+The current KronosFinceptLab service exposes forecast, batch, market data, money-flow, source-market cache, backtest, AI agent, macro, alert, watchlist, and health operations through REST, CLI, Web, and MCP where practical. FinceptTerminal can keep using the Python bridge for forecast/batch and can use MCP for richer analysis/data tools.
+
 ### Verified
 
 | Component | Status | Notes |

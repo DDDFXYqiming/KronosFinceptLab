@@ -16,7 +16,6 @@ from kronos_fincept.api.routes.batch import _item_to_forecast_request
 from kronos_fincept.api.routes.data import fetch_market_rows_for_batch
 from kronos_fincept.runtime_store import get_runtime_store
 from kronos_fincept.schemas import ForecastRequest
-from kronos_fincept.service import batch_forecast_from_requests, forecast_from_request
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -162,6 +161,8 @@ def _fail(job: dict[str, Any], exc: BaseException) -> None:
 def _run_forecast_job(job_id: str, req: ForecastRequestIn) -> None:
     job = _JOBS[job_id]
     try:
+        from kronos_fincept.service import forecast_from_request
+
         if job.get("status") == "cancelled":
             return
         job["status"] = "running"
@@ -205,6 +206,8 @@ def _run_agent_job(job_id: str, req: AgentAnalyzeRequest) -> None:
 def _run_batch_job(job_id: str, req: BatchJobRequest) -> None:
     job = _JOBS[job_id]
     try:
+        from kronos_fincept.service import batch_forecast_from_requests
+
         if job.get("status") == "cancelled":
             return
         job["status"] = "running"

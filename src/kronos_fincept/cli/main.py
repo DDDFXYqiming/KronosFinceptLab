@@ -16,6 +16,9 @@ from importlib import import_module
 import click
 
 from kronos_fincept.logging_config import configure_logging
+from kronos_fincept.runtime_env import apply_low_memory_defaults
+
+apply_low_memory_defaults()
 
 
 COMMANDS = {
@@ -26,6 +29,7 @@ COMMANDS = {
     "serve": ("kronos_fincept.cli.commands.serve", "serve_cmd"),
     "analyze": ("kronos_fincept.cli.commands.analyze", "analyze_group"),
     "alert": ("kronos_fincept.cli.commands.alert", "alert_group"),
+    "news": ("kronos_fincept.cli.commands.news", "news_group"),
     "health": ("kronos_fincept.cli.commands.health", "health_cmd"),
     "suggestions": ("kronos_fincept.cli.commands.suggestions", "suggestions_cmd"),
     "model": ("kronos_fincept.cli.commands.model", "model_group"),

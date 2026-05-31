@@ -122,8 +122,10 @@ def test_data_source_manager_skips_sources_that_do_not_support_endpoint(tmp_path
 
 def test_builtin_sources_declare_supported_endpoints():
     sources = {
+        "src/kronos_fincept/data_sources/eastmoney_source.py": "stock_zh_a_hist",
         "src/kronos_fincept/data_sources/akshare_source.py": "stock_zh_a_hist",
         "src/kronos_fincept/data_sources/baostock_source.py": "stock_zh_a_hist",
+        "src/kronos_fincept/data_sources/tushare_source.py": "stock_zh_a_hist",
         "src/kronos_fincept/data_sources/yahoo_source.py": "stock_zh_a_hist",
         "src/kronos_fincept/data_sources/binance_source.py": "binance_kline",
         "src/kronos_fincept/data_sources/okx_source.py": "binance_kline",

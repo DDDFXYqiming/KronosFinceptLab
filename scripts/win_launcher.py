@@ -19,6 +19,13 @@ _src_dir = os.path.join(_project_root, "src")
 # ── Set environment variables (Windows paths) ──
 os.environ["KRONOS_REPO_PATH"] = _kronos_repo
 os.environ["HF_HOME"] = os.path.join(_project_root, "external")
+os.environ.setdefault("KRONOS_LOW_MEMORY_DEFAULTS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_MAX_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 # ── Ensure paths are on sys.path ──
 for p in [_kronos_repo, _src_dir]:

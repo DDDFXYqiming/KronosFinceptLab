@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import os
+import sys
 import importlib.util
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from kronos_fincept.config import settings
-from kronos_fincept.predictor import DryRunPredictor, KronosPredictorWrapper
-from kronos_fincept.predictor import _ensure_kronos_on_syspath, _resolve_kronos_repo
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
 from kronos_fincept.security_utils import safe_configured_model_id
+
+_KRONOS_REPO_ENV = "KRONOS_REPO_PATH"
 
 
 def get_predictor(
@@ -25,6 +27,8 @@ def get_predictor(
     sample_count: int = 1,
 ) -> Any:
     """Get a predictor instance — dry-run or real Kronos."""
+    from kronos_fincept.predictor import DryRunPredictor, KronosPredictorWrapper
+
     if dry_run:
         return DryRunPredictor()
     return KronosPredictorWrapper(
@@ -61,6 +65,7 @@ def get_model_info(deep: bool = False) -> dict[str, Any]:
     capabilities: dict[str, bool] = {
         "akshare": _has_module("akshare"),
         "baostock": _has_module("baostock"),
+        "tushare": _has_module("tushare"),
         "yfinance": _has_module("yfinance"),
         "torch": _has_module("torch"),
         "huggingface_hub": _has_module("huggingface_hub"),
@@ -146,3 +151,25 @@ def get_model_info(deep: bool = False) -> dict[str, Any]:
 def _has_module(name: str) -> bool:
     """Return whether a Python module can be imported without importing it."""
     return importlib.util.find_spec(name) is not None
+
+
+def _resolve_kronos_repo() -> Path | None:
+    """Resolve the upstream Kronos repo path without importing predictor.py."""
+    env = os.environ.get(_KRONOS_REPO_ENV)
+    if env:
+        path = Path(env)
+        if path.is_dir():
+            return path
+    local = Path(__file__).resolve().parents[3] / "external" / "Kronos"
+    if local.is_dir():
+        return local
+    return None
+
+
+def _ensure_kronos_on_syspath() -> None:
+    repo = _resolve_kronos_repo()
+    if repo is None:
+        return
+    repo_str = str(repo)
+    if repo_str not in sys.path:
+        sys.path.insert(0, repo_str)

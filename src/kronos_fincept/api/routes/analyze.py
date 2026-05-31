@@ -4,7 +4,6 @@ API routes for financial analysis (v4.0).
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Optional, List, Dict
-import pandas as pd
 
 router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
 
@@ -222,6 +221,8 @@ async def analyze_portfolio(request: PortfolioRequest):
         if len(price_data) < 2:
             raise HTTPException(status_code=404, detail="Could not get price data for at least 2 symbols")
         
+        import pandas as pd
+
         # Create DataFrame
         min_length = min(len(prices) for prices in price_data.values())
         prices_df = pd.DataFrame({

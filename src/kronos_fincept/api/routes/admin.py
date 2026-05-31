@@ -9,8 +9,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from kronos_fincept.api.security import get_security_summary
-from kronos_fincept.predictor import clear_predictor_cache, predictor_cache_stats
-from kronos_fincept.service import prewarm_default_predictor
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -28,6 +26,8 @@ async def security_summary() -> dict:
 @router.get("/model/cache")
 async def model_cache_status() -> dict[str, Any]:
     """Return lightweight Kronos model cache diagnostics without loading a model."""
+    from kronos_fincept.predictor import predictor_cache_stats
+
     stats = predictor_cache_stats()
     return {"ok": True, "cache": stats, "checked_at": time.time()}
 
@@ -35,6 +35,8 @@ async def model_cache_status() -> dict[str, Any]:
 @router.post("/model/clear-cache")
 async def model_clear_cache() -> dict[str, Any]:
     """Clear the in-process Kronos predictor cache for controlled troubleshooting."""
+    from kronos_fincept.predictor import clear_predictor_cache, predictor_cache_stats
+
     before = predictor_cache_stats()
     clear_predictor_cache()
     after = predictor_cache_stats()
@@ -45,6 +47,9 @@ async def model_clear_cache() -> dict[str, Any]:
 async def model_prewarm(req: ModelPrewarmRequest | None = None) -> dict[str, Any]:
     """Prewarm the configured Kronos predictor and return load/cache metadata."""
     try:
+        from kronos_fincept.predictor import clear_predictor_cache
+        from kronos_fincept.service import prewarm_default_predictor
+
         if req and req.force:
             clear_predictor_cache()
         result = prewarm_default_predictor()

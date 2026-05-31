@@ -7,6 +7,7 @@ import time
 import json
 import os
 import logging
+import copy
 from collections import OrderedDict
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
@@ -158,7 +159,7 @@ class DataSourceManager:
 
     def _get_cache_key(self, endpoint: str, **kwargs) -> str:
         """Generate a cache key"""
-        key_data = f"{endpoint}:{json.dumps(kwargs, sort_keys=True)}"
+        key_data = f"{endpoint}:{json.dumps(kwargs, sort_keys=True, default=str)}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
     def _set_memory_cache(self, cache_key: str, cache_entry: Dict[str, Any]) -> None:
@@ -170,12 +171,49 @@ class DataSourceManager:
             evicted_key, _ = self.memory_cache.popitem(last=False)
             logger.debug(f" 内存缓存 LRU 淘汰: {evicted_key}")
 
+    def _cache_file_path(self, cache_key: str) -> str:
+        return os.path.join(self.cache_dir, f"{cache_key}.json")
+
+    @staticmethod
+    def _cache_entry_is_fresh(cache_entry: Dict[str, Any]) -> bool:
+        try:
+            return datetime.now().timestamp() < float(cache_entry["expire_at"])
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _cache_entry_age_seconds(cache_entry: Dict[str, Any]) -> int | None:
+        created_at = cache_entry.get("created_at")
+        if not created_at:
+            return None
+        try:
+            created = datetime.fromisoformat(str(created_at))
+        except ValueError:
+            return None
+        return max(0, int((datetime.now() - created).total_seconds()))
+
+    def _read_file_cache_entry(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        cache_file = self._cache_file_path(cache_key)
+        if not os.path.exists(cache_file):
+            return None
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                entry = json.load(f)
+            if isinstance(entry, dict) and "data" in entry:
+                return entry
+        except Exception as exc:
+            logger.debug(f" 缓存读取失败: {exc}")
+            try:
+                os.remove(cache_file)
+            except OSError:
+                pass
+        return None
+
     def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
-        """Get data from cache"""
-        # Check memory cache first
+        """Get fresh data from cache."""
         if cache_key in self.memory_cache:
             cache_entry = self.memory_cache[cache_key]
-            if datetime.now().timestamp() < cache_entry["expire_at"]:
+            if self._cache_entry_is_fresh(cache_entry):
                 self.memory_cache.move_to_end(cache_key)
                 log_event(
                     logger,
@@ -184,33 +222,49 @@ class DataSourceManager:
                     "Memory cache hit",
                     cache_key=cache_key,
                 )
-                return cache_entry["data"]
+                return copy.deepcopy(cache_entry["data"])
             else:
                 del self.memory_cache[cache_key]
 
-        # Then check file cache
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    cache_entry = json.load(f)
-                if datetime.now().timestamp() < cache_entry["expire_at"]:
-                    # Load into memory cache
-                    self._set_memory_cache(cache_key, cache_entry)
-                    log_event(
-                        logger,
-                        logging.DEBUG,
-                        "data_source.cache_hit",
-                        "File cache hit",
-                        cache_key=cache_key,
-                    )
-                    return cache_entry["data"]
-                else:
-                    os.remove(cache_file)
-            except Exception:
-                pass
+        cache_entry = self._read_file_cache_entry(cache_key)
+        if cache_entry and self._cache_entry_is_fresh(cache_entry):
+            self._set_memory_cache(cache_key, cache_entry)
+            log_event(
+                logger,
+                logging.DEBUG,
+                "data_source.cache_hit",
+                "File cache hit",
+                cache_key=cache_key,
+            )
+            return copy.deepcopy(cache_entry["data"])
 
         return None
+
+    def _get_stale_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Return expired cache data as a last-resort fallback."""
+        try:
+            max_age_seconds = max(0, int(os.environ.get("KRONOS_STALE_CACHE_MAX_AGE_SECONDS", "604800")))
+        except ValueError:
+            max_age_seconds = 604800
+        if max_age_seconds <= 0:
+            return None
+
+        cache_entry = self.memory_cache.get(cache_key) or self._read_file_cache_entry(cache_key)
+        if not cache_entry or self._cache_entry_is_fresh(cache_entry):
+            return None
+
+        age_seconds = self._cache_entry_age_seconds(cache_entry)
+        if age_seconds is not None and age_seconds > max_age_seconds:
+            return None
+
+        data = copy.deepcopy(cache_entry.get("data"))
+        if not isinstance(data, dict):
+            return None
+        data["from_cache"] = True
+        data["from_stale_cache"] = True
+        data["cache_age_seconds"] = age_seconds
+        data["cache_expired_at"] = cache_entry.get("expire_at")
+        return data
 
     def _save_to_cache(self, cache_key: str, data: Dict[str, Any],
                        ttl: int = 86400):
@@ -225,12 +279,19 @@ class DataSourceManager:
         self._set_memory_cache(cache_key, cache_entry)
 
         # Save to file cache
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
+        cache_file = self._cache_file_path(cache_key)
+        tmp_file = f"{cache_file}.tmp"
         try:
-            with open(cache_file, "w", encoding="utf-8") as f:
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(cache_entry, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_file, cache_file)
         except Exception as e:
             logger.debug(f" 缓存写入失败: {e}")
+            try:
+                if os.path.exists(tmp_file):
+                    os.remove(tmp_file)
+            except OSError:
+                pass
 
     def fetch(self, endpoint: str, use_cache: bool = True,
               cache_ttl: int = 86400, **kwargs) -> Dict[str, Any]:
@@ -253,11 +314,13 @@ class DataSourceManager:
             }
         """
         # Check cache
+        cache_key = ""
         if use_cache:
             cache_key = self._get_cache_key(endpoint, **kwargs)
             cached_data = self._get_from_cache(cache_key)
             if cached_data is not None:
                 cached_data["from_cache"] = True
+                cached_data["from_stale_cache"] = False
                 return cached_data
 
         # Try data sources by priority
@@ -375,6 +438,21 @@ class DataSourceManager:
             )
         else:
             error_detail = f"endpoint unsupported by registered sources: {endpoint}"
+
+        if use_cache and cache_key:
+            stale_data = self._get_stale_from_cache(cache_key)
+            if stale_data is not None:
+                stale_data["stale_reason"] = error_detail
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "data_source.stale_cache_fallback",
+                    "Returning stale cache after all data sources failed",
+                    endpoint=endpoint,
+                    error=error_detail,
+                )
+                return stale_data
+
         return {
             "success": False,
             "data": None,

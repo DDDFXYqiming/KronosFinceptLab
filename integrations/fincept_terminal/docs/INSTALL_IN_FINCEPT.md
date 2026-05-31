@@ -1,6 +1,6 @@
 # Installing KronosFinceptLab in FinceptTerminal
 
-This document describes the v0.2 bridge path. It does not require C++ UI changes.
+This document describes the bridge path. It does not require C++ UI changes. Forecast/batch still use the Python bridge; richer research functions such as money flow, sector flow, source-market cache, macro, agent analysis, alerts, and watchlist research are available through the project REST API or MCP server.
 
 ## 1. Install the integration package
 

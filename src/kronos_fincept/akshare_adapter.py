@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
-
 # AkShare uses Chinese column names — reused by all DataSourceManager sources
 _CN_COLUMN_MAP = {
     "日期": "timestamp",
@@ -216,78 +214,72 @@ def search_stocks(
 ) -> list[dict[str, str]]:
     """Search A-stocks by code or name with multi-source fallback.
 
-    Tries AkShare first (eastmoney real-time quotes), then BaoStock (stock list).
+    Tries the unified DataSourceManager first, so EastMoney/AkShare/BaoStock/
+    TDX/TickFlow stock lists share the same cache and failover behavior.
 
     Returns:
         List of dicts with keys: code, name, market.
     """
-    # Try AkShare first (eastmoney real-time quotes, fast with filtering)
+    manager = _get_manager()
     try:
-        import akshare as ak
-
-        df = ak.stock_zh_a_spot_em()
-        mask = df["代码"].str.contains(query, case=False, na=False) | df[
-            "名称"
-        ].str.contains(query, case=False, na=False)
-        matches = df[mask].head(max_results)
-
-        results = []
-        for _, row in matches.iterrows():
-            code = str(row["代码"])
-            name = str(row["名称"])
-            if code.startswith("6"):
-                market = "SSE"
-            elif code.startswith(("0", "3")):
-                market = "SZSE"
-            elif code.startswith(("4", "8")):
-                market = "BSE"
-            else:
-                market = "UNKNOWN"
-            results.append({"code": code, "name": name, "market": market})
-
-        if results:  # Only return if we got actual results
+        result = manager.fetch(
+            endpoint="stock_zh_a_spot_em",
+            use_cache=True,
+            cache_ttl=300,
+            page_size=6000,
+        )
+        results = _search_stock_rows(result.get("data", []), query, max_results)
+        if results:
             return results
-
-        # AkShare returned empty — fall through to BaoStock
     except Exception:
-        pass  # Fall through to BaoStock
+        pass
 
-    # Fallback: BaoStock stock list
     try:
-        manager = _get_manager()
         result = manager.fetch(
             endpoint="stock_info_a_code_name",
             use_cache=True,
             cache_ttl=86400,  # 24h cache — stock list rarely changes
         )
-
-        if not result.get("success"):
-            return []
-
-        rows = result.get("data", [])
-        results = []
-        for r in rows:
-            code = str(r.get("code", ""))
-            # BaoStock returns "name" (not "code_name")
-            name = str(r.get("name", r.get("code_name", "")))
-            if not code or not name:
-                continue
-            # Filter by query
-            if query.lower() in code.lower() or query.lower() in name.lower():
-                if code.startswith("6"):
-                    market = "SSE"
-                elif code.startswith(("0", "3")):
-                    market = "SZSE"
-                elif code.startswith(("4", "8")):
-                    market = "BSE"
-                else:
-                    market = "UNKNOWN"
-                results.append({"code": code, "name": name, "market": market})
-                if len(results) >= max_results:
-                    break
-
-        return results
+        return _search_stock_rows(result.get("data", []) if result.get("success") else [], query, max_results)
 
     except Exception:
         return []
+
+
+def _search_stock_rows(rows: Any, query: str, max_results: int) -> list[dict[str, str]]:
+    if not isinstance(rows, list):
+        return []
+    needle = str(query or "").strip().lower()
+    if not needle:
+        return []
+    results: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        code = str(row.get("代码") or row.get("code") or row.get("symbol") or "").strip()
+        name = str(row.get("名称") or row.get("name") or row.get("code_name") or row.get("stock_name") or "").strip()
+        if not code or not name:
+            continue
+        if needle not in code.lower() and needle not in name.lower():
+            continue
+        normalized_code = code.split(".")[0]
+        key = normalized_code.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append({"code": normalized_code, "name": name, "market": _infer_cn_market(normalized_code)})
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def _infer_cn_market(code: str) -> str:
+    if code.startswith(("6", "5", "9")):
+        return "SSE"
+    if code.startswith(("0", "2", "3")):
+        return "SZSE"
+    if code.startswith(("4", "8")):
+        return "BSE"
+    return "UNKNOWN"
 

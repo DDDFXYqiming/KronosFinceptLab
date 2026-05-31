@@ -61,6 +61,20 @@ npm run dev
 | API Docs | http://localhost:8000/docs | Requires `KRONOS_ENABLE_API_DOCS=1` |
 | Health | http://localhost:8000/api/health | Public health endpoint |
 
+## Quick Capability Checks
+
+```bash
+kronos health
+kronos data fetch --symbol 600036 --start 20250101 --end 20260430
+kronos data money-flow --symbol 600036 --limit 10
+kronos data sector-flow --sector-type industry
+kronos data source-market --artifact summary
+kronos analyze macro --question "How do US yields affect gold?" --symbols GC=F,DXY
+kronos news rss --feed "fed|Federal Reserve|https://www.federalreserve.gov/feeds/press_all.xml" --limit 5
+```
+
+`source-market` depends on `KRONOS_SOURCE_PROJECT_ROOT`. `hsgt-flow` depends on `TUSHARE_TOKEN`. If those are not configured, the command/API returns a normal error instead of blocking startup.
+
 ## API Keys
 
 Most `/api/*` endpoints require an API key unless local auth is disabled with `KRONOS_AUTH_DISABLED=1`.
@@ -71,6 +85,10 @@ Most `/api/*` endpoints require an API key unless local auth is disabled with `K
 - Request header: `X-Kronos-Api-Key`
 
 For local-only experiments, `KRONOS_AUTH_DISABLED=1` can be used, but do not use it for public deployments.
+
+## Low-Memory Startup
+
+Local and Zeabur deployments default to conservative startup behavior: API reload is off unless `KRONOS_API_RELOAD=1`, heavy imports are deferred, and optional sources such as TDX network, TickFlow, and NBS live are skipped unless explicitly enabled. For small containers, use `KRONOS_MODEL_ID=NeoQuasar/Kronos-mini` and keep `KRONOS_PREWARM_ON_STARTUP=0` until the instance has enough memory.
 
 ## Stopping Services
 

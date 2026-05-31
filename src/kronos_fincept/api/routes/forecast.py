@@ -12,7 +12,6 @@ from kronos_fincept.api.models import (
     ForecastResponseOut,
 )
 from kronos_fincept.schemas import ForecastRequest, RESEARCH_WARNING
-from kronos_fincept.service import forecast_from_request
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -25,6 +24,8 @@ async def predict(req: ForecastRequestIn) -> ForecastResponseOut:
     Accepts OHLCV rows directly. For convenience with A-stock data,
     use the CLI's `--symbol` flag which auto-fetches via AkShare.
     """
+    from kronos_fincept.service import forecast_from_request
+
     internal_req = ForecastRequest.from_pydantic(req)
     result = await asyncio.to_thread(forecast_from_request, internal_req)
 
