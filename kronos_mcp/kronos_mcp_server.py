@@ -7,6 +7,11 @@ Tools:
   - forecast_ohlcv:       Single-asset OHLCV K-line forecast
   - batch_forecast_ohlcv: Multi-asset batch forecast with predicted_return ranking
   - fetch_a_stock:        Fetch real A-share daily OHLCV data via AkShare
+  - get_money_flow:       Fetch EastMoney main-money-flow rows
+  - get_sector_flow:      Fetch EastMoney sector/concept money-flow rankings
+  - get_hsgt_flow:        Fetch Stock Connect flow when Tushare is configured
+  - get_source_market_artifact: Read source-project market-review cache artifacts
+  - fetch_rss_news:       Fetch and normalize HTTPS RSS/Atom feeds
 
 Usage:
   # stdio transport (default, for local MCP clients)
@@ -21,8 +26,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from typing import Any
+
+os.environ.setdefault("KRONOS_LOW_MEMORY_DEFAULTS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_MAX_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -37,6 +51,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _service = None
 _akshare_adapter = None
+_data_source_manager = None
 
 
 def _ensure_src_path() -> None:
@@ -67,6 +82,16 @@ def _get_akshare_adapter():
 
         _akshare_adapter = {"fetch": fetch_a_stock_ohlcv}
     return _akshare_adapter
+
+
+def _get_data_source_manager():
+    global _data_source_manager
+    if _data_source_manager is None:
+        _ensure_src_path()
+        from kronos_fincept.data_sources.init import init_data_sources
+
+        _data_source_manager = init_data_sources()
+    return _data_source_manager
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +267,57 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="get_money_flow",
+            description="Fetch A-share/ETF main-money-flow rows, aligned with GET /api/data/money-flow/{symbol}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "A-share or ETF code, e.g. 600036"},
+                    "start_date": {"type": "string", "description": "Optional start date YYYYMMDD"},
+                    "end_date": {"type": "string", "description": "Optional end date YYYYMMDD"},
+                    "limit": {"type": "integer", "default": 60, "minimum": 1, "maximum": 5000},
+                },
+                "required": ["symbol"],
+            },
+        ),
+        Tool(
+            name="get_sector_flow",
+            description="Fetch EastMoney sector/concept/region money-flow rankings, aligned with GET /api/data/sector-flow.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sector_type": {
+                        "type": "string",
+                        "default": "industry",
+                        "description": "industry, concept, region, or raw EastMoney market id like m:90+t:2",
+                    }
+                },
+            },
+        ),
+        Tool(
+            name="get_hsgt_flow",
+            description="Fetch north/south-bound Stock Connect flow via Tushare when configured, aligned with GET /api/data/hsgt-flow.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start_date": {"type": "string", "description": "Optional start date YYYYMMDD"},
+                    "end_date": {"type": "string", "description": "Optional end date YYYYMMDD"},
+                },
+            },
+        ),
+        Tool(
+            name="get_source_market_artifact",
+            description="Read verified source-project market-review artifacts, aligned with GET /api/data/source-market/{artifact}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "artifact": {"type": "string", "default": "summary"},
+                    "date": {"type": "string", "description": "Optional review date YYYY-MM-DD"},
+                    "limit": {"type": "integer", "default": 500, "minimum": 0, "maximum": 5000},
+                },
+            },
+        ),
+        Tool(
             name="run_ranking_backtest",
             description="Run ranking strategy backtest, aligned with POST /api/backtest/ranking.",
             inputSchema={
@@ -299,6 +375,30 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {"type": {"type": "string", "enum": ["analysis", "macro"], "default": "analysis"}},
+            },
+        ),
+        Tool(
+            name="fetch_rss_news",
+            description="Fetch HTTPS RSS/Atom feeds with the same SSRF-safe validation as POST /api/news/rss.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "feeds": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "title": {"type": "string"},
+                                "url": {"type": "string"},
+                            },
+                            "required": ["url"],
+                        },
+                        "minItems": 1,
+                    },
+                    "limit_per_feed": {"type": "integer", "default": 8, "minimum": 1, "maximum": 20},
+                },
+                "required": ["feeds"],
             },
         ),
         Tool(
@@ -379,6 +479,14 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return _handle_search_stocks(arguments)
         elif name == "calculate_indicators":
             return _handle_calculate_indicators(arguments)
+        elif name == "get_money_flow":
+            return _handle_get_money_flow(arguments)
+        elif name == "get_sector_flow":
+            return _handle_get_sector_flow(arguments)
+        elif name == "get_hsgt_flow":
+            return _handle_get_hsgt_flow(arguments)
+        elif name == "get_source_market_artifact":
+            return _handle_get_source_market_artifact(arguments)
         elif name == "run_ranking_backtest":
             return await _handle_run_ranking_backtest(arguments)
         elif name == "generate_backtest_report":
@@ -389,6 +497,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return await _handle_analyze_macro(arguments)
         elif name == "generate_suggestions":
             return await _handle_generate_suggestions(arguments)
+        elif name == "fetch_rss_news":
+            return await _handle_fetch_rss_news(arguments)
         elif name == "submit_backtest_job":
             return await _handle_submit_backtest_job(arguments)
         elif name == "get_job_status":
@@ -529,6 +639,109 @@ def _handle_calculate_indicators(args: dict[str, Any]) -> list[TextContent]:
     })
 
 
+def _fetch_manager_payload(endpoint: str, cache_ttl: int, **kwargs: Any) -> dict[str, Any]:
+    result = _get_data_source_manager().fetch(endpoint, use_cache=True, cache_ttl=cache_ttl, **kwargs)
+    if result.get("success"):
+        return result
+    return {
+        "success": False,
+        "data": None,
+        "source": result.get("source", "none"),
+        "error": result.get("error") or "Data source error",
+        "from_cache": result.get("from_cache", False),
+    }
+
+
+def _handle_get_money_flow(args: dict[str, Any]) -> list[TextContent]:
+    symbol = args["symbol"]
+    result = _fetch_manager_payload(
+        "eastmoney_money_flow",
+        300,
+        symbol=symbol,
+        start_date=args.get("start_date"),
+        end_date=args.get("end_date"),
+        limit=args.get("limit", 60),
+    )
+    if not result.get("success"):
+        return _json_text({"ok": False, "symbol": symbol, "error": result.get("error"), "source": result.get("source")})
+    rows = result.get("data") or []
+    return _json_text({
+        "ok": True,
+        "symbol": symbol,
+        "market": "cn",
+        "count": len(rows) if isinstance(rows, list) else result.get("count", 0),
+        "source": result.get("source"),
+        "from_cache": result.get("from_cache", False),
+        "from_stale_cache": result.get("from_stale_cache", False),
+        "rows": rows,
+    })
+
+
+def _handle_get_sector_flow(args: dict[str, Any]) -> list[TextContent]:
+    sector_type = args.get("sector_type", "industry")
+    result = _fetch_manager_payload("eastmoney_sector_flow", 300, sector_type=sector_type)
+    if not result.get("success"):
+        return _json_text({"ok": False, "sector_type": sector_type, "error": result.get("error"), "source": result.get("source")})
+    rows = result.get("data") or []
+    return _json_text({
+        "ok": True,
+        "market": "cn",
+        "sector_type": sector_type,
+        "count": len(rows) if isinstance(rows, list) else result.get("count", 0),
+        "source": result.get("source"),
+        "from_cache": result.get("from_cache", False),
+        "from_stale_cache": result.get("from_stale_cache", False),
+        "rows": rows,
+    })
+
+
+def _handle_get_hsgt_flow(args: dict[str, Any]) -> list[TextContent]:
+    result = _fetch_manager_payload(
+        "tushare_hsgt_flow",
+        1800,
+        start_date=args.get("start_date"),
+        end_date=args.get("end_date"),
+    )
+    if not result.get("success"):
+        return _json_text({"ok": False, "error": result.get("error"), "source": result.get("source")})
+    rows = result.get("data") or []
+    return _json_text({
+        "ok": True,
+        "market": "cn",
+        "count": len(rows) if isinstance(rows, list) else result.get("count", 0),
+        "source": result.get("source"),
+        "from_cache": result.get("from_cache", False),
+        "from_stale_cache": result.get("from_stale_cache", False),
+        "rows": rows,
+    })
+
+
+def _handle_get_source_market_artifact(args: dict[str, Any]) -> list[TextContent]:
+    artifact = args.get("artifact", "summary")
+    result = _fetch_manager_payload(
+        "source_market_review",
+        300,
+        artifact=artifact,
+        date=args.get("date"),
+        limit=args.get("limit", 500),
+    )
+    if not result.get("success"):
+        return _json_text({"ok": False, "artifact": artifact, "error": result.get("error"), "source": result.get("source")})
+    metadata = result.get("metadata") or {}
+    data = result.get("data")
+    return _json_text({
+        "ok": True,
+        "artifact": metadata.get("artifact", artifact),
+        "date": metadata.get("date", args.get("date")),
+        "count": result.get("count", len(data) if isinstance(data, list) else 0),
+        "source": result.get("source"),
+        "from_cache": result.get("from_cache", False),
+        "from_stale_cache": result.get("from_stale_cache", False),
+        "data": data,
+        "metadata": metadata,
+    })
+
+
 async def _handle_run_ranking_backtest(args: dict[str, Any]) -> list[TextContent]:
     _ensure_src_path()
     from kronos_fincept.api.models import BacktestRequestIn
@@ -609,6 +822,17 @@ async def _handle_generate_suggestions(args: dict[str, Any]) -> list[TextContent
     suggestion_type = args.get("type", "analysis")
     result = await get_suggestions(type=suggestion_type)
     return _json_text({"ok": True, "type": suggestion_type, **result})
+
+
+async def _handle_fetch_rss_news(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.news import RssFetchRequest, fetch_rss
+
+    req = RssFetchRequest(
+        feeds=args["feeds"],
+        limit_per_feed=args.get("limit_per_feed", 8),
+    )
+    return _json_text(_model_to_dict(await fetch_rss(req)))
 
 
 async def _handle_submit_backtest_job(args: dict[str, Any]) -> list[TextContent]:

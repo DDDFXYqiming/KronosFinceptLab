@@ -1,6 +1,6 @@
 # KronosFinceptLab MCP Server
 
-Kronos MCP (Model Context Protocol) server for financial candlestick prediction, market data, backtesting, AI analysis, macro analysis, suggestions, and health checks.
+Kronos MCP (Model Context Protocol) server for financial candlestick prediction, market data, money-flow data, source-project cache artifacts, backtesting, AI analysis, macro analysis, jobs, alerts, watchlist research, suggestions, and health checks.
 
 ## Tools
 
@@ -11,11 +11,21 @@ Kronos MCP (Model Context Protocol) server for financial candlestick prediction,
 | `fetch_a_stock` | Fetch A-share daily candlestick data |
 | `search_stocks` | Search A-share stocks/instruments |
 | `calculate_indicators` | Calculate technical indicators such as RSI/MACD/SMA/EMA |
+| `get_money_flow` | Fetch EastMoney main-money-flow rows for an A-share/ETF |
+| `get_sector_flow` | Fetch EastMoney sector/concept/region money-flow rankings |
+| `get_hsgt_flow` | Fetch Stock Connect flow via Tushare when configured |
+| `get_source_market_artifact` | Read source-project market-review cache summary or artifact |
 | `run_ranking_backtest` | Run multi-symbol ranking backtest |
 | `generate_backtest_report` | Generate a backtest report |
 | `analyze_agent` | Natural-language stateless investment analysis agent |
 | `analyze_macro` | Macro and cross-market signal analysis |
 | `generate_suggestions` | Generate suggested analysis or macro prompts |
+| `fetch_rss_news` | Fetch HTTPS RSS/Atom news feeds |
+| `submit_backtest_job` | Submit an async backtest job |
+| `get_job_status` | Read an in-process async job result |
+| `create_prediction_deviation_alerts` | Create prediction-deviation alert rules |
+| `macro_provider_status` | Return macro provider status |
+| `watchlist_research` | Build weighted watchlist research summary |
 | `health_check` | Return API/model/runtime health information |
 
 ## Installation
@@ -59,6 +69,8 @@ Add to your MCP client configuration:
 
 For a real-model deployment, ensure the upstream Kronos repo and model cache are available. For local dry-run or degraded operation, configure the same environment variables used by the REST API/CLI.
 
+The server applies low-memory defaults and defers heavy imports until a tool is called. Optional providers such as Tushare, TDX network, TickFlow, source-project caches, and NBS live are skipped or reported as per-tool errors when not configured; they are not startup blockers.
+
 ## FinceptTerminal Agent Integration
 
 FinceptTerminal's Agent/Node Editor can invoke Kronos prediction and analysis capabilities via MCP:
@@ -67,7 +79,8 @@ FinceptTerminal's Agent/Node Editor can invoke Kronos prediction and analysis ca
 2. Agent calls `fetch_a_stock` to fetch 600036 historical data.
 3. Agent calls `forecast_ohlcv` or `batch_forecast_ohlcv` for prediction.
 4. Agent can call `calculate_indicators`, `run_ranking_backtest`, `analyze_agent`, or `analyze_macro` for additional context.
-5. Agent generates an analysis report based on the returned structured data.
+5. Agent can enrich A-share context with `get_money_flow`, `get_sector_flow`, and `get_source_market_artifact`.
+6. Agent generates an analysis report based on the returned structured data.
 
 ## Usage Examples
 
@@ -115,6 +128,27 @@ FinceptTerminal's Agent/Node Editor can invoke Kronos prediction and analysis ca
 }
 ```
 
+### Money Flow and Source Cache
+
+```json
+{
+  "tool": "get_money_flow",
+  "arguments": {
+    "symbol": "600036",
+    "limit": 60
+  }
+}
+```
+
+```json
+{
+  "tool": "get_source_market_artifact",
+  "arguments": {
+    "artifact": "summary"
+  }
+}
+```
+
 ### Agent Analysis
 
 ```json
@@ -137,6 +171,24 @@ FinceptTerminal's Agent/Node Editor can invoke Kronos prediction and analysis ca
     "question": "How do US yields and the dollar affect gold?",
     "symbols": ["GC=F", "DXY"],
     "market": "global"
+  }
+}
+```
+
+### RSS News
+
+```json
+{
+  "tool": "fetch_rss_news",
+  "arguments": {
+    "feeds": [
+      {
+        "id": "fed",
+        "title": "Federal Reserve",
+        "url": "https://www.federalreserve.gov/feeds/press_all.xml"
+      }
+    ],
+    "limit_per_feed": 5
   }
 }
 ```

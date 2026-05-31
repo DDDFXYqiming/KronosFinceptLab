@@ -1,6 +1,6 @@
 # KronosFinceptLab Architecture
 
-This document reflects the current local codebase at commit `c104a3a` (`Merge pull request #3 from DDDFXYqiming/codex/upstream-catchup`). It focuses on the implemented architecture rather than historical design intent.
+This document reflects the current local codebase after the v11 data-source and service-surface alignment work. It focuses on the implemented architecture rather than historical design intent.
 
 ## Product Shape
 
@@ -72,14 +72,15 @@ Implemented REST surfaces include:
 | Health | `GET /api/health`, `GET /api/health/deep` |
 | Forecast | `POST /api/forecast` |
 | Batch | `POST /api/batch` |
-| Data | `GET /api/data/global/{symbol}`, `GET /api/data/indicator/{symbol}`, `GET /api/data/a-stock/{symbol}`, `GET /api/data/search` |
+| Data | `POST /api/data/batch`, `GET /api/data/global/{symbol}`, `GET /api/data/indicator/{symbol}`, `GET /api/data/a-stock/{symbol}`, `GET /api/data/search`, `GET /api/data/money-flow/{symbol}`, `GET /api/data/sector-flow`, `GET /api/data/hsgt-flow`, `GET /api/data/source-market/{artifact}` |
 | Backtest | `POST /api/backtest/ranking`, `POST /api/backtest/report` |
 | Analysis | `POST /api/v1/analyze/agent`, `/macro`, `/ai`, `/dcf`, `/risk`, `/portfolio`, `/derivative` |
-| Alerts | `POST /api/alert/rules`, `GET /api/alert/rules`, `DELETE /api/alert/rules/{rule_id}`, `POST /api/alert/check` |
+| Alerts | `POST /api/alert/rules`, `GET /api/alert/rules`, `DELETE /api/alert/rules/{rule_id}`, `POST /api/alert/check`, `POST /api/alert/presets/prediction-deviation` |
 | News | `POST /api/news/rss` |
 | Suggestions | `GET /api/v1/suggestions` |
-| Jobs | `POST /api/jobs/forecast`, `POST /api/jobs/analyze`, `GET /api/jobs/{job_id}` |
-| Admin | `GET /api/admin/security/summary` |
+| Jobs | `GET /api/jobs`, `POST /api/jobs/forecast`, `POST /api/jobs/analyze`, `POST /api/jobs/batch`, `POST /api/jobs/backtest`, `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/cancel` |
+| Watchlist | `GET/POST/PUT/DELETE /api/watchlist/lists`, `POST /api/watchlist/research` |
+| Admin | `GET /api/admin/security/summary`, model cache clear/prewarm/status routes |
 
 ### Async Jobs
 
@@ -87,6 +88,7 @@ Implemented REST surfaces include:
 
 - Forecast jobs call the shared forecast path.
 - Analyze jobs call the shared natural-language agent path.
+- Batch and backtest jobs reuse the same request models as synchronous API routes.
 - Job state includes status, steps, result, error, timestamps, and progress-related metadata.
 - The store is bounded and time-limited, so it is suitable for a single-process local or small deployment, not a distributed queue.
 
@@ -120,6 +122,21 @@ Implemented REST surfaces include:
 
 The current shared provider order is DeepSeek first, then OpenRouter when configured. AnySearch is optional and only participates when `ANYSEARCH_ENABLED=true`. Generic web search is enabled through `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY`.
 
+For A-share questions, the agent also pulls local market-review context from the source-project cache when available. This gives the AI report access to locally accumulated market replay artifacts such as funds flow, dragon-tiger lists, limit-up/down records, and sector flow without requiring browser automation or heavyweight collectors at runtime.
+
+## Market Data Layer
+
+`src/kronos_fincept/data_sources/` contains the provider abstraction and concrete sources. `DataSourceManager.fetch(...)` handles endpoint routing, TTL-based local cache, circuit-breaker state, retries, and stale-cache fallback after live providers fail.
+
+Current data-source families:
+
+- **A-share live/public data**: EastMoney, AkShare, BaoStock, TDX local files, and optional Tushare enrichment.
+- **Global/crypto data**: Yahoo Finance, Stooq, Binance, and OKX.
+- **Market replay cache**: source-project market-review parquet/json artifacts, exposed as `source_market_review`.
+- **Optional heavy sources**: TDX network, TickFlow, and NBS live are feature-flagged and skipped when unavailable so Linux/Zeabur startup remains reliable.
+
+The same endpoints are exposed through REST, Web API client, CLI data commands, and MCP data tools where practical.
+
 ## Macro Data Layer
 
 The macro subsystem is centered around:
@@ -128,7 +145,7 @@ The macro subsystem is centered around:
 - `src/kronos_fincept/macro/providers/`
 - `src/kronos_fincept/macro/providers/digital_oracle.py`
 
-The Digital Oracle inspired provider layer normalizes heterogeneous external data into `MacroSignal` records. It includes provider-specific handling for Treasury/FiscalData, BIS, SEC/EDGAR, CFTC, Yahoo/Stooq style market data, web search, and AnySearch enrichment. Providers are expected to return empty results when optional dependencies or credentials are missing instead of fabricating values.
+The Digital Oracle inspired provider layer normalizes heterogeneous external data into `MacroSignal` records. It includes provider-specific handling for Treasury/FiscalData, FRED, China macro AkShare, ChinaDataLive, source-project macro cache, NBS cached datasets, optional NBS live data, BIS, SEC/EDGAR, CFTC, Yahoo/Stooq style market data, web search, and AnySearch enrichment. Providers are expected to return empty results when optional dependencies or credentials are missing instead of fabricating values.
 
 ## Frontend Architecture
 
@@ -167,11 +184,12 @@ Registered top-level commands:
 
 - `forecast`
 - `batch`
-- `data`
+- `data` (`fetch`, `search`, `indicator`, `money-flow`, `sector-flow`, `hsgt-flow`, `source-market`)
 - `backtest`
 - `serve`
 - `analyze`
 - `alert`
+- `news` (`rss`)
 - `health`
 - `suggestions`
 - `model`
@@ -187,11 +205,21 @@ The `model finetune-csv` command wraps upstream Kronos `finetune_csv` scripts. I
 - `fetch_a_stock`
 - `search_stocks`
 - `calculate_indicators`
+- `get_money_flow`
+- `get_sector_flow`
+- `get_hsgt_flow`
+- `get_source_market_artifact`
 - `run_ranking_backtest`
 - `generate_backtest_report`
 - `analyze_agent`
 - `analyze_macro`
 - `generate_suggestions`
+- `fetch_rss_news`
+- `submit_backtest_job`
+- `get_job_status`
+- `create_prediction_deviation_alerts`
+- `macro_provider_status`
+- `watchlist_research`
 - `health_check`
 
 This layer is suitable for agent clients that prefer tool calls over raw HTTP.
@@ -216,8 +244,11 @@ The Docker image is multi-stage:
 
 The public container port is 3000. The API listens internally on `127.0.0.1:8000`, and the frontend calls it through `INTERNAL_API_URL`.
 
+Startup defaults favor low memory: reload is off unless `KRONOS_API_RELOAD=1`, BLAS/tokenizer thread counts are capped when `KRONOS_LOW_MEMORY_DEFAULTS` is enabled, model prewarm is explicit, and MCP/CLI defer heavy imports until a tool or command actually needs them.
+
 ## Notes and Known Drift Risks
 
 - `pyproject.toml` and `web/package.json` use package version `2.0.0`, while deployment/build metadata can expose app version values such as `v10.8.9`. Treat these as separate package/build version surfaces unless the release process standardizes them.
 - `.env.example` is configuration reference text, not runtime truth. Runtime behavior should be checked against `config.py`, `agent.py`, and `api/security.py`.
 - External data providers can fail independently. The architecture is designed to prefer empty signals, fallback providers, or degraded reports over fabricated data.
+- Optional providers that require credentials or heavyweight runtimes are deliberately not startup blockers. Missing Tushare/FRED/NBS live/TDX network/TickFlow configuration should be surfaced as a skipped provider or per-request data-source error, not as a process crash.

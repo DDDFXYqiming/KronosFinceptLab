@@ -6,6 +6,7 @@ import concurrent.futures
 import json
 import logging
 import math
+import os
 import re
 import time
 from contextlib import redirect_stdout
@@ -147,11 +148,11 @@ MACRO_ALLOWED_PATTERNS = [
 
 MACRO_ROUTE_PROVIDER_IDS: dict[str, tuple[str, ...]] = {
     "geopolitical": ("polymarket", "kalshi", "yahoo_price", "cftc_cot", "bis"),
-    "recession": ("us_treasury", "cftc_cot", "bis", "fear_greed", "cme_fedwatch"),
-    "asset_pricing": ("yfinance_options", "yahoo_price", "cftc_cot", "anysearch", "fear_greed", "us_treasury"),
-    "stock_options": ("yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
-    "crypto": ("coingecko", "deribit", "fear_greed", "anysearch", "web_search"),
-    "default": ("polymarket", "us_treasury", "cftc_cot", "anysearch", "web_search"),
+    "recession": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "bis", "cme_fedwatch"),
+    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "cftc_cot", "fear_greed", "us_treasury", "anysearch"),
+    "stock_options": ("source_project_macro_cache", "yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
+    "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "anysearch", "web_search"),
+    "default": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "anysearch", "web_search"),
 }
 
 ALLOWED_MACRO_PROVIDER_IDS = frozenset(
@@ -174,6 +175,11 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "currency",
         "dbnomics",
         "stooq",
+        "fred",
+        "source_project_macro_cache",
+        "china_macro_akshare",
+        "china_macro_chinalive",
+        "china_nbs_live",
     }
 )
 MACRO_REQUIRED_DIMENSION_COUNT = 3
@@ -196,6 +202,11 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "coingecko": "market_price",
     "currency": "market_price",
     "dbnomics": "official_macro",
+    "fred": "official_macro",
+    "source_project_macro_cache": "official_macro",
+    "china_macro_akshare": "official_macro",
+    "china_macro_chinalive": "official_macro",
+    "china_nbs_live": "official_macro",
     "edgar": "filings",
     "bis": "official_macro",
     "worldbank": "official_macro",
@@ -226,6 +237,10 @@ MACRO_SIGNAL_DIMENSION_HINTS: tuple[tuple[str, str], ...] = (
     ("skew", "equity_options"),
     ("max_pain", "equity_options"),
     ("bis_", "official_macro"),
+    ("fred", "official_macro"),
+    ("source_project", "official_macro"),
+    ("china_macro", "official_macro"),
+    ("china_nbs", "official_macro"),
     ("worldbank", "official_macro"),
     ("macro", "official_macro"),
     ("price", "market_price"),
@@ -241,6 +256,10 @@ MACRO_SIGNAL_DIMENSION_HINTS: tuple[tuple[str, str], ...] = (
 
 def _active_kronos_model_id() -> str:
     return settings.kronos.model_id or DEFAULT_MODEL_ID
+
+
+def _optional_provider_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _build_chat_completions_url(base_url: str) -> str:
@@ -1858,9 +1877,12 @@ def _question_requires_macro(text: str) -> bool:
 def _select_embedded_macro_provider_ids(question: str, *, symbols: list[ResolvedSymbol]) -> list[str]:
     symbol_list = [item.symbol for item in symbols]
     market = symbols[0].market if symbols else None
+    cn_preferred = ["source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive"]
+    if _optional_provider_enabled("KRONOS_ENABLE_NBS_LIVE"):
+        cn_preferred.append("china_nbs_live")
     base = select_macro_provider_ids(question, symbols=symbol_list)
     preferred_by_market: dict[str, tuple[str, ...]] = {
-        "cn": ("fear_greed", "us_treasury", "cme_fedwatch", "yahoo_price"),
+        "cn": (*cn_preferred, "fear_greed", "us_treasury", "yahoo_price"),
         "hk": ("fear_greed", "us_treasury", "yahoo_price", "cftc_cot"),
         "us": ("us_treasury", "fear_greed", "yfinance_options", "yahoo_price"),
         "commodity": ("cftc_cot", "fear_greed", "us_treasury", "yahoo_price"),
@@ -1882,6 +1904,80 @@ def _tool_metadata(**fields: Any) -> dict[str, Any]:
     metadata = dict(fields)
     metadata.setdefault("request_id", get_request_id())
     return metadata
+
+
+def _build_local_market_review_context(symbol: str, market: str) -> dict[str, Any]:
+    if market != "cn":
+        return {"available": False, "reason": "market_review_cache_only_for_cn"}
+    try:
+        from kronos_fincept.data_sources.init import init_data_sources
+
+        manager = init_data_sources()
+        summary = manager.fetch(
+            "source_market_review",
+            use_cache=True,
+            cache_ttl=300,
+            artifact="summary",
+            limit=0,
+        )
+        if not summary.get("success"):
+            return {"available": False, "reason": summary.get("error", "source market cache unavailable")}
+
+        metadata = summary.get("metadata") if isinstance(summary.get("metadata"), dict) else {}
+        data = summary.get("data") if isinstance(summary.get("data"), dict) else {}
+        context: dict[str, Any] = {
+            "available": True,
+            "date": metadata.get("date") or data.get("date"),
+            "data_quality": metadata.get("data_quality"),
+            "artifact_count": data.get("artifact_count", summary.get("count", 0)),
+            "categories": data.get("categories", {}),
+            "artifacts": (data.get("artifacts") or [])[:20],
+            "symbol_hits": {},
+        }
+        normalized_symbol = _normalize_cn_symbol(symbol)
+        for artifact in ("stock_in", "stock_out", "dragon_tiger", "limit_up", "limit_down"):
+            result = manager.fetch(
+                "source_market_review",
+                use_cache=True,
+                cache_ttl=300,
+                artifact=artifact,
+                date=context["date"],
+                limit=500,
+            )
+            if not result.get("success"):
+                continue
+            hits = _filter_market_review_rows(result.get("data"), normalized_symbol)
+            if hits:
+                context["symbol_hits"][artifact] = hits[:5]
+        return context
+    except Exception as exc:
+        return {"available": False, "reason": _short_error(exc)}
+
+
+def _normalize_cn_symbol(symbol: str) -> str:
+    clean = re.sub(r"^(sh|sz|SH|SZ)", "", str(symbol or "").strip())
+    clean = re.sub(r"\.(SH|SZ|sh|sz)$", "", clean)
+    return clean
+
+
+def _filter_market_review_rows(rows: Any, symbol: str) -> list[dict[str, Any]]:
+    if not isinstance(rows, list) or not symbol:
+        return []
+    hits: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        values = [
+            row.get("代码"),
+            row.get("股票代码"),
+            row.get("code"),
+            row.get("symbol"),
+            row.get("证券代码"),
+        ]
+        normalized = {_normalize_cn_symbol(str(value)) for value in values if value not in (None, "")}
+        if symbol in normalized:
+            hits.append(row)
+    return hits
 
 
 def _build_asset_context(
@@ -1951,6 +2047,32 @@ def _build_asset_context(
             summary="已尝试获取财务摘要。" if financial_data else "当前数据源未返回可用财务摘要。",
             elapsed_ms=_elapsed_ms(started),
             metadata=_tool_metadata(symbol=item.symbol, market=item.market),
+        )
+    )
+
+    started = time.perf_counter()
+    local_market_review = _call_quietly(_build_local_market_review_context, item.symbol, item.market)
+    asset["local_market_review"] = local_market_review
+    local_available = bool(isinstance(local_market_review, dict) and local_market_review.get("available"))
+    symbol_hits = local_market_review.get("symbol_hits") if isinstance(local_market_review, dict) else {}
+    hit_count = sum(len(value) for value in symbol_hits.values()) if isinstance(symbol_hits, dict) else 0
+    calls.append(
+        AgentToolCall(
+            name="local_market_review",
+            status="completed" if local_available else "skipped",
+            summary=(
+                f"已载入本地市场复盘摘要，个股命中 {hit_count} 条。"
+                if local_available
+                else "本地市场复盘缓存不可用或不适用于该市场。"
+            ),
+            elapsed_ms=_elapsed_ms(started),
+            metadata=_tool_metadata(
+                symbol=item.symbol,
+                market=item.market,
+                date=local_market_review.get("date") if isinstance(local_market_review, dict) else None,
+                artifact_count=local_market_review.get("artifact_count") if isinstance(local_market_review, dict) else None,
+                hit_count=hit_count,
+            ),
         )
     )
 
@@ -2357,6 +2479,11 @@ def _ensure_macro_provider_dimension_floor(
     """Expand auto-routed provider choices so web macro has enough independent dimensions."""
     selected = _filter_macro_provider_ids(provider_ids)
     candidates = [
+        "source_project_macro_cache",
+        "fred",
+        "china_macro_akshare",
+        "china_macro_chinalive",
+        "china_nbs_live",
         "us_treasury",
         "cftc_cot",
         "dbnomics",
@@ -2430,6 +2557,19 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
         route = "default"
 
     selected: list[str] = []
+    local_first: tuple[str, ...] = ()
+    if re.search(r"A股|港股|中国|人民币|上证|深证|沪深|创业板|科创|恒生|社融|北向|南向|pmi|cpi|ppi", question, re.IGNORECASE):
+        local_first = ("source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive")
+        if _optional_provider_enabled("KRONOS_ENABLE_NBS_LIVE"):
+            local_first = (*local_first, "china_nbs_live")
+    elif re.search(r"美联储|美国|美元|美债|fed|treasury|cpi|gdp|pmi|unemployment|inflation|yield", text, re.IGNORECASE):
+        local_first = ("source_project_macro_cache", "fred")
+    elif route in {"recession", "asset_pricing", "stock_options", "crypto", "default"}:
+        local_first = ("source_project_macro_cache",)
+
+    for provider_id in local_first:
+        if provider_id not in selected:
+            selected.append(provider_id)
     for provider_id in MACRO_ROUTE_PROVIDER_IDS[route]:
         if provider_id not in selected:
             selected.append(provider_id)
@@ -2512,6 +2652,7 @@ def _build_macro_context(
             "provider_results": {},
             "errors": {"macro_signal": error_summary},
             "dimension_coverage": _macro_dimension_coverage([], {}),
+            "local_data_assets": _macro_local_data_assets([]),
             "policy": "provider_outputs_are_untrusted_research_data",
         }
         return context, AgentToolCall(
@@ -2530,6 +2671,7 @@ def _macro_context_from_gather(
 ) -> dict[str, Any]:
     payload = result.to_dict()
     dimension_coverage = _macro_dimension_coverage(payload["signals"], payload["provider_results"])
+    local_data_assets = _macro_local_data_assets(payload["signals"])
     return {
         "question": question,
         "selected_provider_ids": provider_ids,
@@ -2538,6 +2680,7 @@ def _macro_context_from_gather(
         "errors": payload["errors"],
         "ok": payload["ok"],
         "dimension_coverage": dimension_coverage,
+        "local_data_assets": local_data_assets,
         "policy": "provider_outputs_are_untrusted_research_data",
         "required_report_shape": [
             "信号来源表格",
@@ -2546,6 +2689,45 @@ def _macro_context_from_gather(
             "概率估计",
             "场景分析",
         ],
+    }
+
+
+def _macro_local_data_assets(signals: list[dict[str, Any]]) -> dict[str, Any]:
+    assets: list[dict[str, Any]] = []
+    markets: set[str] = set()
+    seen: set[str] = set()
+    for signal in signals:
+        if not isinstance(signal, dict):
+            continue
+        metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+        source = str(signal.get("source") or "").strip().lower()
+        quality = str(metadata.get("data_quality") or "").strip().lower()
+        if source != "source_project_macro_cache" and not quality.startswith("source_project"):
+            continue
+        series_id = str(metadata.get("series_id") or signal.get("signal_type") or "").strip()
+        if not series_id or series_id in seen:
+            continue
+        seen.add(series_id)
+        market = str(metadata.get("market") or "").strip().lower()
+        if market:
+            markets.add(market)
+        assets.append(
+            {
+                "series_id": series_id,
+                "label": metadata.get("label") or series_id,
+                "market": market or None,
+                "signal_type": signal.get("signal_type"),
+                "observed_at": signal.get("observed_at"),
+                "data_quality": metadata.get("data_quality"),
+                "source_url": signal.get("source_url"),
+            }
+        )
+    return {
+        "available": bool(assets),
+        "signal_count": len(assets),
+        "markets": sorted(markets),
+        "series": assets[:12],
+        "usage": "prefer_verified_local_cache_when_it_conflicts_with_generic_web_context",
     }
 
 

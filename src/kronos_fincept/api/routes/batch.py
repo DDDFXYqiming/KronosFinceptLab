@@ -14,7 +14,6 @@ from kronos_fincept.api.models import (
     RankedSignalOut,
 )
 from kronos_fincept.schemas import ForecastRequest
-from kronos_fincept.service import batch_forecast_from_requests
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,6 +44,8 @@ def _item_to_forecast_request(
 @router.post("/batch", response_model=BatchForecastResponseOut)
 async def batch_predict(req: BatchForecastRequestIn) -> BatchForecastResponseOut:
     """Run batch forecast on multiple assets and return ranked by predicted return."""
+    from kronos_fincept.service import batch_forecast_from_requests
+
     requests = [
         _item_to_forecast_request(item, req.pred_len, req.dry_run)
         for item in req.assets

@@ -8,7 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from kronos_fincept.runtime_env import apply_low_memory_defaults
 from kronos_fincept.schemas import ForecastRequest, build_error_response
+
+apply_low_memory_defaults()
+
 from kronos_fincept.service import forecast_from_request
 
 

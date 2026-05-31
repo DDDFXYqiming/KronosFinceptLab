@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 import tomllib
 from types import SimpleNamespace
@@ -32,12 +35,52 @@ def test_dockerfile_defaults_to_single_kronos_base_runtime_with_light_health():
 
     for env_name in [
         "MALLOC_ARENA_MAX=2",
+        "OPENBLAS_NUM_THREADS=1",
         "OMP_NUM_THREADS=1",
         "MKL_NUM_THREADS=1",
         "NUMEXPR_MAX_THREADS=1",
+        "VECLIB_MAXIMUM_THREADS=1",
         "TOKENIZERS_PARALLELISM=false",
     ]:
         assert env_name in dockerfile
+
+
+def test_api_app_import_keeps_heavy_numerical_stack_lazy():
+    code = """
+import os
+import sys
+import kronos_fincept.api.app  # noqa: F401
+blocked = [name for name in ("pandas", "numpy", "torch") if name in sys.modules]
+print("blocked=" + ",".join(blocked))
+print("OPENBLAS_NUM_THREADS=" + os.environ.get("OPENBLAS_NUM_THREADS", ""))
+raise SystemExit(1 if blocked else 0)
+"""
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "PYTHONPATH",
+            "OPENBLAS_NUM_THREADS",
+            "OMP_NUM_THREADS",
+            "MKL_NUM_THREADS",
+            "NUMEXPR_MAX_THREADS",
+            "VECLIB_MAXIMUM_THREADS",
+            "TOKENIZERS_PARALLELISM",
+        }
+    }
+    env.update({"PYTHONPATH": str(ROOT / "src"), "KRONOS_LOW_MEMORY_DEFAULTS": "1"})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=20,
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "blocked=\n" in proc.stdout
+    assert "OPENBLAS_NUM_THREADS=1" in proc.stdout
 
 
 def test_final_backend_stage_excludes_build_tools_and_git_metadata():

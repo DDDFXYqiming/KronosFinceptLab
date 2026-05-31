@@ -43,6 +43,41 @@ def _fetch_market_rows(symbol: str, market: str, start: str, end: str, adjust: s
     return source.fetch_data(symbol, start, end, market=market)
 
 
+def _data_manager_fetch(endpoint: str, cache_ttl: int, **kwargs: Any) -> dict[str, Any]:
+    from kronos_fincept.data_sources.init import init_data_sources
+
+    return init_data_sources().fetch(endpoint, use_cache=True, cache_ttl=cache_ttl, **kwargs)
+
+
+def _result_or_exit(ctx: click.Context, result: dict[str, Any], *, default_error: str = "Data source error") -> dict[str, Any]:
+    if result.get("success"):
+        return result
+
+    payload = {
+        "ok": False,
+        "source": result.get("source", "none"),
+        "error": result.get("error") or default_error,
+    }
+    if ctx.obj.get("output_format", "json") == "json":
+        output_json(payload)
+    else:
+        click.echo(f"Error: {payload['error']}", err=True)
+    raise SystemExit(1)
+
+
+def _render_rows_result(ctx: click.Context, payload: dict[str, Any], *, title: str, headers: list[str], keys: list[str]) -> None:
+    if ctx.obj.get("output_format", "json") == "json":
+        output_json(payload)
+        return
+
+    rows = payload.get("rows") or payload.get("data") or []
+    if isinstance(rows, list):
+        rows_data = [[str(row.get(key, "")) for key in keys] for row in rows[:20] if isinstance(row, dict)]
+        output_table(title, headers, rows_data)
+    else:
+        output_json(payload)
+
+
 @data_group.command("fetch")
 @click.option("--symbol", "-s", type=str, required=True, help="Symbol (e.g., 600036, AAPL, 00700)")
 @click.option("--market", type=click.Choice(["cn", "us", "hk", "commodity"]), default="cn", help="Market")
@@ -142,3 +177,155 @@ def data_search(ctx: click.Context, query: str) -> None:
         headers = ["Code", "Name", "Market"]
         rows_data = [[r["code"], r["name"], r["market"]] for r in result["results"]]
         output_table(f"[search] {query}", headers, rows_data)
+
+
+@data_group.command("money-flow")
+@click.option("--symbol", "-s", type=str, required=True, help="A-share/ETF symbol, e.g. 600036")
+@click.option("--start", "start_date", type=str, default=None, help="Optional start date YYYYMMDD")
+@click.option("--end", "end_date", type=str, default=None, help="Optional end date YYYYMMDD")
+@click.option("--limit", type=int, default=60, show_default=True, help="Maximum rows")
+@click.pass_context
+def data_money_flow(ctx: click.Context, symbol: str, start_date: str | None, end_date: str | None, limit: int) -> None:
+    """Fetch EastMoney main-money-flow rows."""
+    raw = _result_or_exit(
+        ctx,
+        _data_manager_fetch(
+            "eastmoney_money_flow",
+            300,
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+        ),
+    )
+    rows = raw.get("data") or []
+    payload = {
+        "ok": True,
+        "symbol": symbol,
+        "market": "cn",
+        "count": len(rows) if isinstance(rows, list) else raw.get("count", 0),
+        "source": raw.get("source"),
+        "from_cache": raw.get("from_cache", False),
+        "from_stale_cache": raw.get("from_stale_cache", False),
+        "rows": rows,
+    }
+    _render_rows_result(
+        ctx,
+        payload,
+        title=f"[money-flow] {symbol}",
+        headers=["Date", "Main Net", "Super Net", "Large Net", "Close", "Change"],
+        keys=["date", "main_net_amount", "super_net_amount", "large_net_amount", "close", "change_pct"],
+    )
+
+
+@data_group.command("sector-flow")
+@click.option(
+    "--sector-type",
+    type=str,
+    default="industry",
+    show_default=True,
+    help="industry, concept, region, or raw EastMoney market id like m:90+t:2",
+)
+@click.pass_context
+def data_sector_flow(ctx: click.Context, sector_type: str) -> None:
+    """Fetch EastMoney sector/concept/region money-flow rankings."""
+    raw = _result_or_exit(
+        ctx,
+        _data_manager_fetch("eastmoney_sector_flow", 300, sector_type=sector_type),
+    )
+    rows = raw.get("data") or []
+    payload = {
+        "ok": True,
+        "market": "cn",
+        "sector_type": sector_type,
+        "count": len(rows) if isinstance(rows, list) else raw.get("count", 0),
+        "source": raw.get("source"),
+        "from_cache": raw.get("from_cache", False),
+        "from_stale_cache": raw.get("from_stale_cache", False),
+        "rows": rows,
+    }
+    _render_rows_result(
+        ctx,
+        payload,
+        title=f"[sector-flow] {sector_type}",
+        headers=["Name", "Code", "Change", "Main Net", "Rank"],
+        keys=["name", "code", "change_pct", "main_net_amount", "rank"],
+    )
+
+
+@data_group.command("hsgt-flow")
+@click.option("--start", "start_date", type=str, default=None, help="Optional start date YYYYMMDD")
+@click.option("--end", "end_date", type=str, default=None, help="Optional end date YYYYMMDD")
+@click.pass_context
+def data_hsgt_flow(ctx: click.Context, start_date: str | None, end_date: str | None) -> None:
+    """Fetch Stock Connect north/south-bound flow via Tushare when configured."""
+    raw = _result_or_exit(
+        ctx,
+        _data_manager_fetch("tushare_hsgt_flow", 1800, start_date=start_date, end_date=end_date),
+        default_error="Tushare is not configured or returned no HSGT data",
+    )
+    rows = raw.get("data") or []
+    payload = {
+        "ok": True,
+        "market": "cn",
+        "count": len(rows) if isinstance(rows, list) else raw.get("count", 0),
+        "source": raw.get("source"),
+        "from_cache": raw.get("from_cache", False),
+        "from_stale_cache": raw.get("from_stale_cache", False),
+        "rows": rows,
+    }
+    _render_rows_result(
+        ctx,
+        payload,
+        title="[hsgt-flow]",
+        headers=["Date", "North Net", "South Net", "HK->SH", "HK->SZ"],
+        keys=["date", "north_money", "south_money", "ggt_ss", "ggt_sz"],
+    )
+
+
+@data_group.command("source-market")
+@click.option("--artifact", type=str, default="summary", show_default=True, help="summary, dragon_tiger, stock_in, stock_out, limit_up, ...")
+@click.option("--date", type=str, default=None, help="Review date YYYY-MM-DD; defaults to latest available cache")
+@click.option("--limit", type=int, default=500, show_default=True, help="Maximum artifact rows; 0 for metadata-only where supported")
+@click.pass_context
+def data_source_market(ctx: click.Context, artifact: str, date: str | None, limit: int) -> None:
+    """Read source-project market-review cache artifacts when configured."""
+    raw = _result_or_exit(
+        ctx,
+        _data_manager_fetch(
+            "source_market_review",
+            300,
+            artifact=artifact,
+            date=date,
+            limit=limit,
+        ),
+        default_error="Source market review cache is not configured",
+    )
+    metadata = raw.get("metadata") or {}
+    data = raw.get("data")
+    payload = {
+        "ok": True,
+        "artifact": metadata.get("artifact", artifact),
+        "date": metadata.get("date", date),
+        "count": raw.get("count", len(data) if isinstance(data, list) else 0),
+        "source": raw.get("source"),
+        "from_cache": raw.get("from_cache", False),
+        "from_stale_cache": raw.get("from_stale_cache", False),
+        "data": data,
+        "metadata": metadata,
+    }
+    if ctx.obj.get("output_format", "json") == "json":
+        output_json(payload)
+        return
+
+    if isinstance(data, list):
+        rows_data = []
+        for row in data[:20]:
+            if isinstance(row, dict):
+                rows_data.append([str(row.get(key, "")) for key in ("date", "symbol", "name", "net_amount", "reason")])
+        output_table(f"[source-market] {payload['artifact']}", ["Date", "Symbol", "Name", "Net", "Reason"], rows_data)
+    elif isinstance(data, dict):
+        rows_data = [[str(key), str(value)] for key, value in data.items() if key != "artifacts"][:20]
+        output_table(f"[source-market] {payload['artifact']}", ["Key", "Value"], rows_data)
+    else:
+        output_json(payload)

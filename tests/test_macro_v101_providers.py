@@ -42,6 +42,34 @@ class StaticProvider:
         ]
 
 
+class SourceCacheProvider(StaticProvider):
+    provider_id = "source_project_macro_cache"
+    display_name = "Source Cache Provider"
+
+    def fetch_signals(self, query):
+        from kronos_fincept.macro import MacroSignal
+
+        self.calls += 1
+        return [
+            MacroSignal(
+                source=self.provider_id,
+                signal_type="growth",
+                value=50.1,
+                interpretation=f"local cache query={query.question}",
+                time_horizon="mixed",
+                confidence=0.74,
+                observed_at="2026-05-01",
+                source_url="E:/AI_Projects/------/Stock Analysis System/data/macro/china_pmi.parquet",
+                metadata={
+                    "series_id": "china_pmi",
+                    "label": "China PMI",
+                    "market": "cn",
+                    "data_quality": "source_project_verified_cache",
+                },
+            )
+        ]
+
+
 class EmptyProvider:
     provider_id = "empty"
     display_name = "Empty Provider"
@@ -95,10 +123,15 @@ def test_v101_macro_manager_imports_and_registers_digital_oracle_providers():
     provider_ids = {item.provider_id for item in providers}
 
     assert MacroDataManager
-    assert len(providers) == 18
+    assert len(providers) >= 23
     assert {
         "polymarket",
         "kalshi",
+        "fred",
+        "source_project_macro_cache",
+        "china_macro_akshare",
+        "china_macro_chinalive",
+        "china_nbs_live",
         "us_treasury",
         "cftc_cot",
         "coingecko",
@@ -148,6 +181,50 @@ def test_v101_macro_manager_caches_provider_results():
     assert len(first.signals) == 1
     assert len(second.signals) == 1
     assert provider.calls == 1
+
+
+def test_v101_macro_manager_prioritizes_verified_source_cache_signals():
+    from kronos_fincept.macro import MacroDataManager
+
+    manager = MacroDataManager(
+        providers=[StaticProvider(), SourceCacheProvider()],
+        cache_ttl_seconds=0,
+        timeout_seconds=5,
+    )
+
+    result = manager.gather("中国PMI和A股流动性")
+
+    assert [signal.source for signal in result.signals][:2] == ["source_project_macro_cache", "static"]
+
+
+def test_v101_macro_router_prefers_local_cache_for_china_questions():
+    from kronos_fincept.agent import select_macro_provider_ids
+
+    provider_ids = select_macro_provider_ids("中国A股流动性、PMI和社融现在怎么样")
+
+    assert provider_ids[:3] == ["source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive"]
+
+
+def test_v101_macro_context_summarizes_local_cache_assets():
+    from kronos_fincept.agent import _macro_context_from_gather
+    from kronos_fincept.macro import MacroGatherResult, MacroProviderResult
+
+    signal = SourceCacheProvider().fetch_signals(type("Query", (), {"question": "中国PMI"})())[0]
+    result = MacroGatherResult(
+        signals=[signal],
+        provider_results={
+            "source_project_macro_cache": MacroProviderResult(
+                provider_id="source_project_macro_cache",
+                status="completed",
+                signals=[signal],
+            )
+        },
+    )
+
+    context = _macro_context_from_gather("中国PMI", ["source_project_macro_cache"], result)
+
+    assert context["local_data_assets"]["available"] is True
+    assert context["local_data_assets"]["series"][0]["series_id"] == "china_pmi"
 
 
 def test_v101_macro_manager_times_out_slow_provider_without_blocking_result():

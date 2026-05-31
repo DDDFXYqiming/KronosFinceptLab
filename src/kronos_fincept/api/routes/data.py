@@ -60,6 +60,12 @@ def _trim_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows[-MAX_RETURN_ROWS:] if len(rows) > MAX_RETURN_ROWS else rows
 
 
+def _get_data_source_manager():
+    from kronos_fincept.data_sources.init import init_data_sources
+
+    return init_data_sources()
+
+
 def fetch_market_rows_for_batch(
     symbol: str,
     market: str,
@@ -106,6 +112,154 @@ async def get_batch_market_data(req: BatchDataRequestIn) -> BatchDataResponseOut
         items.append(BatchDataItemOut(symbol=symbol, market=req.market, count=len(rows), rows=rows))
 
     return BatchDataResponseOut(ok=True, market=req.market, count=len(items), items=items, errors=errors)
+
+
+@router.get("/data/money-flow/{symbol}")
+async def get_money_flow_data(
+    symbol: str = Path(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN),
+    start_date: str | None = Query(None, min_length=8, max_length=8, description="Optional start date YYYYMMDD"),
+    end_date: str | None = Query(None, min_length=8, max_length=8, description="Optional end date YYYYMMDD"),
+    limit: int = Query(60, ge=1, le=5000, description="Maximum rows to request from the provider"),
+) -> dict[str, Any]:
+    """Fetch A-share/ETF main-money-flow rows via EastMoney Push2."""
+    if start_date and end_date:
+        _validate_date_range(start_date, end_date)
+    try:
+        def _fetch():
+            return _get_data_source_manager().fetch(
+                "eastmoney_money_flow",
+                use_cache=True,
+                cache_ttl=300,
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit,
+            )
+
+        result = await asyncio.to_thread(_fetch)
+        if not result.get("success"):
+            raise HTTPException(status_code=502, detail=result.get("error", "Data source error"))
+        rows = result.get("data", [])
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "market": "cn",
+            "count": len(rows),
+            "source": result.get("source"),
+            "rows": rows,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to fetch money flow for %s", symbol)
+        raise HTTPException(status_code=502, detail=f"Data source error: {exc}")
+
+
+@router.get("/data/sector-flow")
+async def get_sector_flow_data(
+    sector_type: str = Query("industry", pattern=r"^(industry|concept|region|m:[A-Za-z0-9+:\-]+)$"),
+) -> dict[str, Any]:
+    """Fetch EastMoney sector money-flow rankings."""
+    try:
+        def _fetch():
+            return _get_data_source_manager().fetch(
+                "eastmoney_sector_flow",
+                use_cache=True,
+                cache_ttl=300,
+                sector_type=sector_type,
+            )
+
+        result = await asyncio.to_thread(_fetch)
+        if not result.get("success"):
+            raise HTTPException(status_code=502, detail=result.get("error", "Data source error"))
+        rows = result.get("data", [])
+        return {
+            "ok": True,
+            "market": "cn",
+            "sector_type": sector_type,
+            "count": len(rows),
+            "source": result.get("source"),
+            "rows": rows,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to fetch sector flow")
+        raise HTTPException(status_code=502, detail=f"Data source error: {exc}")
+
+
+@router.get("/data/hsgt-flow")
+async def get_hsgt_flow_data(
+    start_date: str | None = Query(None, min_length=8, max_length=8, description="Optional start date YYYYMMDD"),
+    end_date: str | None = Query(None, min_length=8, max_length=8, description="Optional end date YYYYMMDD"),
+) -> dict[str, Any]:
+    """Fetch north/south-bound Stock Connect flow via Tushare when configured."""
+    if start_date and end_date:
+        _validate_date_range(start_date, end_date)
+    try:
+        def _fetch():
+            return _get_data_source_manager().fetch(
+                "tushare_hsgt_flow",
+                use_cache=True,
+                cache_ttl=1800,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+        result = await asyncio.to_thread(_fetch)
+        if not result.get("success"):
+            raise HTTPException(status_code=502, detail=result.get("error", "Tushare is not configured"))
+        rows = result.get("data", [])
+        return {
+            "ok": True,
+            "market": "cn",
+            "count": len(rows),
+            "source": result.get("source"),
+            "rows": rows,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to fetch HSGT flow")
+        raise HTTPException(status_code=502, detail=f"Data source error: {exc}")
+
+
+@router.get("/data/source-market/{artifact}")
+async def get_source_market_artifact(
+    artifact: str = Path(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_]+$"),
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    limit: int = Query(500, ge=0, le=5000),
+) -> dict[str, Any]:
+    """Fetch verified market-review artifacts from the configured source project cache."""
+    try:
+        def _fetch():
+            return _get_data_source_manager().fetch(
+                "source_market_review",
+                use_cache=True,
+                cache_ttl=300,
+                artifact=artifact,
+                date=date,
+                limit=limit,
+            )
+
+        result = await asyncio.to_thread(_fetch)
+        if not result.get("success"):
+            raise HTTPException(status_code=404, detail=result.get("error", "Source market cache not available"))
+        metadata = result.get("metadata", {})
+        return {
+            "ok": True,
+            "artifact": metadata.get("artifact", artifact),
+            "date": metadata.get("date", date),
+            "count": result.get("count", 0),
+            "source": result.get("source"),
+            "data": result.get("data"),
+            "metadata": metadata,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to fetch source market artifact %s", artifact)
+        raise HTTPException(status_code=502, detail=f"Data source error: {exc}")
 
 
 @router.get("/data/global/{symbol}", response_model=DataResponseOut)

@@ -15,6 +15,7 @@ rich>=13.0
 # A-stock data
 akshare>=1.10
 baostock>=0.8.8
+tushare>=1.4
 yfinance>=0.2
 requests>=2.31
 

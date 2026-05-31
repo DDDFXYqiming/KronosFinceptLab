@@ -27,6 +27,7 @@ kronos --output table <command>
 | `serve` | Start the FastAPI service |
 | `analyze` | AI, macro, valuation, risk, portfolio, indicator, strategy, and derivative analysis |
 | `alert` | Alert rule management and monitoring |
+| `news` | HTTPS RSS/Atom news fetching |
 | `health` | API/model health check |
 | `suggestions` | Suggested analysis or macro prompts |
 | `model` | Model utility wrappers such as upstream CSV fine-tuning |
@@ -53,9 +54,17 @@ kronos --output table batch --symbols 600036,000858
 
 ```bash
 kronos data fetch --symbol 600036 --start 20240101 --end 20260430
-kronos data indicator --symbol 600036 --indicator rsi
+kronos data fetch --symbol AAPL --market us --start 20240101 --end 20260430
+kronos data indicator --symbol 600036
 kronos data search --q "China Merchants Bank"
+kronos data money-flow --symbol 600036 --limit 60
+kronos data sector-flow --sector-type industry
+kronos data hsgt-flow --start 20250101 --end 20260430
+kronos data source-market --artifact summary
+kronos data source-market --artifact dragon_tiger --date 2026-05-26 --limit 100
 ```
+
+`money-flow` and `sector-flow` use EastMoney and do not require an API key. `hsgt-flow` requires `TUSHARE_TOKEN`. `source-market` reads the configured source-project market-review cache and exits with a normal JSON error if the cache is unavailable; it does not block CLI startup.
 
 ### Backtest
 
@@ -91,7 +100,7 @@ kronos analyze derivative --underlying 100 --strike 105 --expiry 0.5 --volatilit
 
 # Technical indicators and strategies
 kronos analyze indicator --symbol 600036 --indicator rsi
-kronos analyze strategy --symbol 600036 --strategy momentum
+kronos analyze strategy --symbol 600036 --strategy ma_crossover
 ```
 
 The shared LLM path currently prioritizes DeepSeek and falls back to OpenRouter when both providers are configured. Web-search enrichment is optional and controlled by `WEB_SEARCH_PROVIDER`, `WEB_SEARCH_API_KEY`, and `ANYSEARCH_ENABLED`.
@@ -101,7 +110,7 @@ The shared LLM path currently prioritizes DeepSeek and falls back to OpenRouter 
 ```bash
 kronos alert add --type price_change --symbol 600036 --threshold 3.0
 kronos alert list
-kronos alert remove --rule-id <id>
+kronos alert remove <id>
 kronos alert check
 kronos alert monitor --interval 5
 ```
@@ -116,6 +125,15 @@ kronos suggestions --type macro
 ```
 
 Suggestions use cache/singleflight behavior and deterministic fallback when LLM providers are unavailable.
+
+### News
+
+```bash
+kronos news rss --feed "fed|Federal Reserve|https://www.federalreserve.gov/feeds/press_all.xml" --limit 5
+kronos news rss --feed https://example.com/feed.xml --json
+```
+
+RSS URLs must be HTTPS and pass the same public-network safety validation used by the REST API.
 
 ### Serve
 

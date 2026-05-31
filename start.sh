@@ -7,6 +7,14 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+export KRONOS_LOW_MEMORY_DEFAULTS="${KRONOS_LOW_MEMORY_DEFAULTS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export NUMEXPR_MAX_THREADS="${NUMEXPR_MAX_THREADS:-1}"
+export VECLIB_MAXIMUM_THREADS="${VECLIB_MAXIMUM_THREADS:-1}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+
 # 颜色输出
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -52,7 +60,14 @@ echo -e "      地址: http://localhost:8000"
 echo -e "      文档: http://localhost:8000/docs"
 echo ""
 
-PYTHONPATH=src $PYTHON -m kronos_fincept.api.app &
+API_HOST="${API_HOST:-0.0.0.0}"
+API_PORT="${API_PORT:-8000}"
+API_RELOAD_ARGS=()
+if [ "${KRONOS_API_RELOAD:-0}" = "1" ]; then
+    API_RELOAD_ARGS=(--reload)
+fi
+
+PYTHONPATH=src $PYTHON -m uvicorn kronos_fincept.api.app:app --host "$API_HOST" --port "$API_PORT" "${API_RELOAD_ARGS[@]}" &
 API_PID=$!
 
 # 等待 API 启动

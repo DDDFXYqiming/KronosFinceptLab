@@ -7,6 +7,7 @@ The Kronos model service is deployed on Windows and can be used via:
 1. **FinceptTerminal PythonRunner** - Call directly from FinceptTerminal
 2. **Command-line tools** - Via batch scripts
 3. **MCP Server** - For AI Agent integration
+4. **REST/Web/CLI shared data tools** - Forecast, indicators, money flow, sector flow, source-market cache, macro, and AI reports use the same backend capabilities
 
 ## Requirements
 
@@ -201,6 +202,15 @@ FinceptTerminal's Agent can invoke Kronos through the MCP protocol:
 }
 ```
 
+Additional MCP tools expose the same data-source enhancements as the API/CLI:
+
+- `get_money_flow`
+- `get_sector_flow`
+- `get_hsgt_flow`
+- `get_source_market_artifact`
+- `analyze_agent`
+- `analyze_macro`
+
 ## Troubleshooting
 
 ### 1. Python Not Found
@@ -252,9 +262,12 @@ Error: Out of memory
 ```
 
 **Solution**:
-1. Use the `Kronos-mini` model (smaller footprint)
-2. Reduce the `pred_len` parameter
-3. Increase system memory
+1. Use `KRONOS_MODEL_ID=NeoQuasar/Kronos-mini`
+2. Keep `KRONOS_PREWARM_ON_STARTUP=0` unless the machine has enough memory
+3. Keep API reload disabled unless developing API code (`KRONOS_API_RELOAD=1` is opt-in)
+4. Reduce `pred_len` and `sample_count`
+5. Leave optional heavy sources such as TDX network, TickFlow, browser collectors, and NBS live disabled unless explicitly needed
+6. Increase system memory
 
 ## Performance Optimization
 

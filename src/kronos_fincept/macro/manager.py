@@ -10,6 +10,29 @@ from kronos_fincept.macro.providers import MacroProvider, MacroProviderUnavailab
 from kronos_fincept.macro.schemas import MacroGatherResult, MacroProviderResult, MacroQuery, MacroSignal
 
 
+SIGNAL_SOURCE_PRIORITY: dict[str, int] = {
+    "source_project_macro_cache": 0,
+    "fred": 10,
+    "china_macro_akshare": 10,
+    "china_macro_chinalive": 10,
+    "china_nbs_live": 10,
+    "us_treasury": 20,
+    "dbnomics": 25,
+    "worldbank": 25,
+    "bis": 25,
+    "cftc_cot": 35,
+    "stooq": 40,
+    "yahoo_price": 40,
+    "currency": 40,
+    "yfinance_options": 45,
+    "coingecko": 45,
+    "deribit": 45,
+    "fear_greed": 55,
+    "anysearch": 60,
+    "web_search": 65,
+}
+
+
 class MacroDataManager:
     """Run macro providers concurrently and normalize partial results."""
 
@@ -120,7 +143,7 @@ class MacroDataManager:
         signals: list[MacroSignal] = []
         for provider_id in [provider.provider_id for provider in selected]:
             signals.extend(results.get(provider_id, MacroProviderResult(provider_id, "empty")).signals)
-        return MacroGatherResult(signals=signals, provider_results=results)
+        return MacroGatherResult(signals=_prioritize_signals(signals), provider_results=results)
 
     def _select_providers(self, provider_ids: Iterable[str] | None) -> list[MacroProvider]:
         if provider_ids is None:
@@ -218,3 +241,17 @@ class MacroDataManager:
 def _short_error(exc: BaseException, *, limit: int = 180) -> str:
     message = " ".join((str(exc).strip() or type(exc).__name__).split())
     return message if len(message) <= limit else message[: limit - 3] + "..."
+
+
+def _prioritize_signals(signals: list[MacroSignal]) -> list[MacroSignal]:
+    return sorted(signals, key=_signal_rank)
+
+
+def _signal_rank(signal: MacroSignal) -> tuple[int, int, float, str, str]:
+    source = str(signal.source or "").strip().lower()
+    metadata = signal.metadata if isinstance(signal.metadata, dict) else {}
+    quality = str(metadata.get("data_quality") or "").strip().lower()
+    local_rank = 0 if source == "source_project_macro_cache" or quality.startswith("source_project") else 1
+    source_rank = SIGNAL_SOURCE_PRIORITY.get(source, 50)
+    confidence = signal.confidence if isinstance(signal.confidence, int | float) else 0.0
+    return (local_rank, source_rank, -float(confidence), source, str(signal.signal_type or ""))

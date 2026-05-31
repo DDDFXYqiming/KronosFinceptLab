@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
+
+from kronos_fincept.runtime_env import apply_low_memory_defaults
+
+apply_low_memory_defaults()
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,7 +20,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from kronos_fincept.api.routes import admin, backtest, batch, data, forecast, health, analyze, ai_analyze, alert, jobs, suggestions, news, watchlist
 from kronos_fincept.api.security import api_docs_enabled, check_request_security, max_body_bytes, record_security_decision
 from kronos_fincept.config import settings
 from kronos_fincept.logging_config import (
@@ -76,6 +80,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    from kronos_fincept.api.routes import admin, backtest, batch, data, forecast, health, analyze, ai_analyze, alert, jobs, suggestions, news, watchlist
+
     configure_logging()
     docs_enabled = api_docs_enabled()
     app = FastAPI(
@@ -322,11 +328,13 @@ async def _check_streamed_body_size(request: Request, request_id: str) -> JSONRe
 def main():
     """Entry point for `kronos-api` command."""
     import uvicorn
+
+    reload_enabled = os.environ.get("KRONOS_API_RELOAD", "0").strip().lower() in {"1", "true", "yes", "on"}
     uvicorn.run(
         "kronos_fincept.api.app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=os.environ.get("API_HOST", "0.0.0.0"),
+        port=int(os.environ.get("API_PORT", "8000")),
+        reload=reload_enabled,
         log_level="info",
     )
 

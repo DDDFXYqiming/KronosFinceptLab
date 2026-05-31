@@ -5,10 +5,15 @@ from __future__ import annotations
 import importlib
 import sys
 import types
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from kronos_fincept.api.app import create_app
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _install_fake_mcp(monkeypatch):
@@ -127,4 +132,9 @@ def test_mcp_exposes_v112_operations(monkeypatch):
         "create_prediction_deviation_alerts",
         "macro_provider_status",
         "watchlist_research",
+        "get_money_flow",
+        "get_sector_flow",
+        "get_hsgt_flow",
+        "get_source_market_artifact",
+        "fetch_rss_news",
     }.issubset(tools)

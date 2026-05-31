@@ -9,9 +9,18 @@ echo.
 
 cd /d "%~dp0"
 
+REM 低内存默认值：必须在 NumPy/Pandas/OpenBLAS 导入前设置
+set KRONOS_LOW_MEMORY_DEFAULTS=1
+set OPENBLAS_NUM_THREADS=1
+set OMP_NUM_THREADS=1
+set MKL_NUM_THREADS=1
+set NUMEXPR_MAX_THREADS=1
+set VECLIB_MAXIMUM_THREADS=1
+set TOKENIZERS_PARALLELISM=false
+
 REM 检查并安装 Python 依赖
 echo [0/3] 检查 Python 依赖...
-python -c "import fastapi" >nul 2>&1
+python -c "import fastapi, uvicorn" >nul 2>&1
 if errorlevel 1 (
     echo   正在安装缺失的依赖...
     pip install fastapi "uvicorn[standard]" pydantic python-multipart --quiet
@@ -52,7 +61,10 @@ echo.
 echo [2/3] 启动 API 后端...
 echo.
 
-start "KronosFinceptLab API" cmd /k "cd /d ""%~dp0"" && set PYTHONPATH=src && python -m kronos_fincept.api.app"
+set API_RELOAD_FLAG=
+if "%KRONOS_API_RELOAD%"=="1" set API_RELOAD_FLAG=--reload
+
+start "KronosFinceptLab API" cmd /k "cd /d ""%~dp0"" && set PYTHONPATH=src && python -m uvicorn kronos_fincept.api.app:app --host 0.0.0.0 --port 8000 %API_RELOAD_FLAG%"
 
 timeout /t 2 /nobreak >nul
 

@@ -7,10 +7,15 @@ import json
 import sys
 import types
 from dataclasses import dataclass
+from pathlib import Path
 
 from click.testing import CliRunner
 
 from kronos_fincept.cli.main import cli
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 class TestCLIAlignment:
@@ -113,10 +118,15 @@ class TestMCPAlignment:
             "fetch_a_stock",
             "search_stocks",
             "calculate_indicators",
+            "get_money_flow",
+            "get_sector_flow",
+            "get_hsgt_flow",
+            "get_source_market_artifact",
             "run_ranking_backtest",
             "generate_backtest_report",
             "analyze_agent",
             "analyze_macro",
             "generate_suggestions",
+            "fetch_rss_news",
             "health_check",
         }.issubset(tools)

@@ -37,6 +37,7 @@ class TestCLIStructure:
         assert "data" in result.output
         assert "backtest" in result.output
         assert "serve" in result.output
+        assert "news" in result.output
 
     def test_forecast_help(self, runner):
         result = runner.invoke(cli, ["forecast", "--help"])
@@ -55,6 +56,10 @@ class TestCLIStructure:
         assert result.exit_code == 0
         assert "fetch" in result.output
         assert "search" in result.output
+        assert "money-flow" in result.output
+        assert "sector-flow" in result.output
+        assert "hsgt-flow" in result.output
+        assert "source-market" in result.output
 
     def test_backtest_help(self, runner):
         result = runner.invoke(cli, ["backtest", "--help"])
@@ -66,6 +71,11 @@ class TestCLIStructure:
         assert result.exit_code == 0
         assert "--host" in result.output
         assert "--port" in result.output
+
+    def test_news_help(self, runner):
+        result = runner.invoke(cli, ["news", "--help"])
+        assert result.exit_code == 0
+        assert "rss" in result.output
 
 
 # ── Forecast command tests ────────────────────────────────
@@ -215,6 +225,65 @@ class TestDataCommand:
         import json
         data = json.loads(result.output)
         assert data["ok"] is True
+
+    def test_data_money_flow_uses_data_source_manager(self, runner):
+        """Test data money-flow command with mocked DataSourceManager fetch."""
+        mock_result = {
+            "success": True,
+            "source": "eastmoney",
+            "from_cache": False,
+            "data": [{"date": "2026-05-29", "main_net_amount": 123.4}],
+        }
+        with patch("kronos_fincept.cli.commands.data._data_manager_fetch", return_value=mock_result) as fetch:
+            result = runner.invoke(cli, ["data", "money-flow", "--symbol", "600036", "--limit", "1"])
+        assert result.exit_code == 0
+        fetch.assert_called_once()
+        import json
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["symbol"] == "600036"
+        assert data["count"] == 1
+
+    def test_data_source_market_uses_data_source_manager(self, runner):
+        """Test source-market command with mocked source-project cache."""
+        mock_result = {
+            "success": True,
+            "source": "source_market_cache",
+            "count": 2,
+            "metadata": {"artifact": "summary", "date": "2026-05-29"},
+            "data": {"artifact_count": 2, "categories": {"dragon_tiger": 1}},
+        }
+        with patch("kronos_fincept.cli.commands.data._data_manager_fetch", return_value=mock_result) as fetch:
+            result = runner.invoke(cli, ["data", "source-market", "--artifact", "summary"])
+        assert result.exit_code == 0
+        fetch.assert_called_once()
+        import json
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["artifact"] == "summary"
+        assert data["metadata"]["date"] == "2026-05-29"
+
+
+class TestNewsCommand:
+    def test_news_rss_uses_shared_route_parser(self, runner, monkeypatch):
+        """Test RSS command with mocked feed fetch."""
+        monkeypatch.setenv("KRONOS_RSS_VALIDATE_DNS", "0")
+        xml = (
+            "<?xml version=\"1.0\"?>"
+            "<rss><channel><title>Feed</title>"
+            "<item><title>Item</title><link>https://example.com/a</link></item>"
+            "</channel></rss>"
+        )
+        with patch("kronos_fincept.api.routes.news._fetch_text", return_value=xml):
+            result = runner.invoke(
+                cli,
+                ["news", "rss", "--feed", "feed|Feed|https://example.com/rss.xml", "--limit", "1"],
+            )
+        assert result.exit_code == 0
+        import json
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["items"][0]["title"] == "Item"
 
 
 # ── Backtest command tests ────────────────────────────────

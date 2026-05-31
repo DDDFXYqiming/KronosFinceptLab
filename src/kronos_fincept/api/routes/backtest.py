@@ -7,9 +7,8 @@ import logging
 import math
 import time
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, TYPE_CHECKING
 
-import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -22,8 +21,12 @@ from kronos_fincept.api.models import (
     ForecastMetadataOut,
 )
 from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
-from kronos_fincept.predictor import DryRunPredictor
 from kronos_fincept.schemas import RESEARCH_WARNING
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from kronos_fincept.predictor import DryRunPredictor
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -31,6 +34,18 @@ router = APIRouter()
 MAX_BACKTEST_RANGE_DAYS = 800
 MAX_BACKTEST_WORK_UNITS = 5000
 StrategyName = Literal["equal_weight", "momentum", "mean_reversion", "top_k_ranking"]
+
+
+def _load_pandas():
+    import pandas as pd
+
+    return pd
+
+
+def _new_dry_run_predictor() -> "DryRunPredictor":
+    from kronos_fincept.predictor import DryRunPredictor
+
+    return DryRunPredictor()
 
 
 class StrategyBacktestRequestIn(BacktestRequestIn):
@@ -133,6 +148,7 @@ def _fetch_and_prepare_data(
 
     valid_symbols = list(all_data.keys())
 
+    pd = _load_pandas()
     dfs: dict[str, pd.DataFrame] = {}
     for sym in valid_symbols:
         df = pd.DataFrame(all_data[sym])
@@ -170,6 +186,7 @@ def _run_ranking_backtest(
     total_trades = 0
     winning_trades = 0
     min_len = min(len(df) for df in dfs.values())
+    pd = _load_pandas()
 
     i = window_size
     while i + step <= min_len:
@@ -315,6 +332,7 @@ def _strategy_rankings(strategy: str, dfs: dict[str, pd.DataFrame], symbols: lis
             if predictor is None:
                 score = closes[-1] / closes[0] - 1.0 if closes[0] > 0 else 0.0
             else:
+                pd = _load_pandas()
                 ohlcv_df = window[["open", "high", "low", "close"]].astype(float)
                 timestamps = pd.Series(pd.to_datetime(window["timestamp"]))
                 pred = predictor.predict(df=ohlcv_df, x_timestamp=timestamps, pred_len=pred_len)
@@ -385,7 +403,7 @@ def _run_named_strategy_backtest(
 
 
 def _build_strategy_result(strategy: str, dfs: dict[str, pd.DataFrame], symbols: list[str], req: BacktestRequestIn) -> StrategyResultOut:
-    predictor = DryRunPredictor() if req.dry_run else None
+    predictor = _new_dry_run_predictor() if req.dry_run else None
     curve, trades, wins, turnover = _run_named_strategy_backtest(
         strategy, dfs, symbols, predictor, req.window_size, req.pred_len, req.step, req.top_k,
         req.initial_equity, req.fee_bps, req.slippage_bps,
@@ -489,7 +507,7 @@ async def backtest_ranking(req: BacktestRequestIn) -> BacktestResponseOut:
     """
     _validate_backtest_request(req)
     started = time.perf_counter()
-    predictor = DryRunPredictor() if req.dry_run else None
+    predictor = _new_dry_run_predictor() if req.dry_run else None
 
     def _run():
         dfs, symbols = _fetch_and_prepare_data(
@@ -538,7 +556,7 @@ async def backtest_report(req: BacktestReportRequestIn) -> BacktestReportRespons
     from kronos_fincept.backtest_report import BacktestReportGenerator
 
     started = time.perf_counter()
-    predictor = DryRunPredictor() if req.dry_run else None
+    predictor = _new_dry_run_predictor() if req.dry_run else None
 
     def _run():
         dfs, symbols = _fetch_and_prepare_data(
