@@ -27,6 +27,7 @@ external/
 .env
 .env.*
 !.env.example
+config.toml
 secrets/
 
 # Internal planning docs and local agent artifacts
