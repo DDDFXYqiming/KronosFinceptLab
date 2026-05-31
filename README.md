@@ -1,7 +1,5 @@
 # KronosFinceptLab
 
-Version: v10.9 + v11 data-source alignment - research-only quantitative finance cockpit.
-
 > Your local-first quantitative finance cockpit.
 
 An integrated quantitative finance analytics platform combining **market data, AI-powered forecasting, technical analysis, macroeconomic signals, AI investment research, news monitoring, alerts, and MCP integration** — all running locally on your machine with automatic data source fallback. Accessible via CLI, API, Web UI, and MCP.
