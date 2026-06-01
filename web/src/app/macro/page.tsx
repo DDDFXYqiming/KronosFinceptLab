@@ -10,6 +10,7 @@ import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { api, formatApiError } from "@/lib/api";
 import { demoMacroResult } from "@/lib/demoData";
 import { queryKeys } from "@/lib/queryKeys";
+import { getStoredRssFeeds } from "@/lib/rssFeeds";
 import { useSessionState } from "@/lib/useSessionState";
 import { useAppStore } from "@/stores/app";
 import type { Language } from "@/lib/i18n";
@@ -405,7 +406,7 @@ function StepStrip({ result, loading }: { result: AgentAnalyzeResponse | null; l
     ? result.steps
     : LOADING_STEPS.map((name, index) => ({
       name,
-      status: !loading ? "pending" : index < activeIndex ? "completed" : index === activeIndex ? "running" : "pending",
+      status: !loading ? "pending" : index <= activeIndex ? "running" : "pending",
       summary: "",
       elapsed_ms: index < activeIndex ? (index + 1) * 900 : index === activeIndex ? ((pulseTick % 4) + 1) * 220 : 0,
     }));
@@ -713,6 +714,7 @@ function MacroContent() {
 
   const buildRequest = useCallback((run: ActiveMacroRun) => ({
     question: run.question,
+    rss_feeds: getStoredRssFeeds(),
     context: {
       entry: "web-macro",
       version: VERSION,
@@ -771,7 +773,8 @@ function MacroContent() {
     if (inFlightRef.current) return;
     const prompt = (overrideQuestion || question).trim();
     if (!prompt) return;
-    const key = queryKeys.macro({ question: prompt, language });
+    const rssFeeds = getStoredRssFeeds();
+    const key = queryKeys.macro({ question: prompt, language, rssFeeds: rssFeeds.map((feed) => feed.url) });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
       applyCompletedRun(cached);

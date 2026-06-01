@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import json
 from typing import Any
 
 
@@ -17,7 +18,14 @@ class MacroQuery:
 
     def cache_key(self) -> str:
         symbols = ",".join(self.symbols)
-        return f"{self.question.strip().lower()}|{symbols}|{self.market or ''}|{self.time_horizon}|{self.limit}"
+        feed_urls = ""
+        rss_feeds = self.metadata.get("rss_feeds") if isinstance(self.metadata, dict) else None
+        if isinstance(rss_feeds, list):
+            feed_urls = ",".join(
+                sorted(str(item.get("url") or "").strip() for item in rss_feeds if isinstance(item, dict))
+            )
+        metadata_key = json.dumps({"rss_feeds": feed_urls}, sort_keys=True, ensure_ascii=False)
+        return f"{self.question.strip().lower()}|{symbols}|{self.market or ''}|{self.time_horizon}|{self.limit}|{metadata_key}"
 
 
 @dataclass(frozen=True)

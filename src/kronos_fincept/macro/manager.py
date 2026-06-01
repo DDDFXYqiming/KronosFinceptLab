@@ -28,6 +28,7 @@ SIGNAL_SOURCE_PRIORITY: dict[str, int] = {
     "coingecko": 45,
     "deribit": 45,
     "fear_greed": 55,
+    "rss_news": 58,
     "anysearch": 60,
     "web_search": 65,
 }

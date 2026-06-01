@@ -6,6 +6,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
+import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
 import { BacktestEquityChart } from "@/components/charts/BacktestEquityChart";
 import { api, formatApiError } from "@/lib/api";
 import { downloadTextFile, makeDatedFilename, toCsv, validateDateRange } from "@/lib/exportUtils";
@@ -22,6 +23,15 @@ const STRATEGY_OPTIONS: Array<AppSelectOption<StrategyName>> = [
   { value: "mean_reversion", label: "Mean Reversion" },
   { value: "top_k_ranking", label: "Top-K Ranking" },
 ];
+
+const BACKTEST_LIMITS = {
+  topK: { min: 1, max: 20 },
+  predLen: { min: 1, max: 30 },
+  windowSize: { min: 20, max: 250 },
+  step: { min: 1, max: 60 },
+  initialEquity: { min: 1000, max: 100000000 },
+  bps: { min: 0, max: 100 },
+} as const;
 
 export default function BacktestPage() {
   const queryClient = useQueryClient();
@@ -51,14 +61,14 @@ export default function BacktestPage() {
     symbols: normalizeSymbols(symbols),
     start_date: startDate,
     end_date: endDate,
-    top_k: topK,
-    pred_len: predLen,
-    window_size: windowSize,
-    step,
-    initial_equity: initialEquity,
+    top_k: clampNumber(topK, BACKTEST_LIMITS.topK.min, BACKTEST_LIMITS.topK.max),
+    pred_len: clampNumber(predLen, BACKTEST_LIMITS.predLen.min, BACKTEST_LIMITS.predLen.max),
+    window_size: clampNumber(windowSize, BACKTEST_LIMITS.windowSize.min, BACKTEST_LIMITS.windowSize.max),
+    step: clampNumber(step, BACKTEST_LIMITS.step.min, BACKTEST_LIMITS.step.max),
+    initial_equity: clampNumber(initialEquity, BACKTEST_LIMITS.initialEquity.min, BACKTEST_LIMITS.initialEquity.max),
     benchmark: benchmark.trim() || undefined,
-    fee_bps: feeBps,
-    slippage_bps: slippageBps,
+    fee_bps: clampNumber(feeBps, BACKTEST_LIMITS.bps.min, BACKTEST_LIMITS.bps.max),
+    slippage_bps: clampNumber(slippageBps, BACKTEST_LIMITS.bps.min, BACKTEST_LIMITS.bps.max),
     dry_run: false,
   });
 
@@ -182,23 +192,23 @@ export default function BacktestPage() {
           </div>
           <div>
             <label className="field-label">Top K</label>
-            <input type="number" value={topK} onChange={(e) => setTopK(Number(e.target.value))} min={1} className="app-input mt-1" />
+            <AppNumberInput value={topK} onChange={setTopK} min={BACKTEST_LIMITS.topK.min} max={BACKTEST_LIMITS.topK.max} ariaLabel="Top K" className="mt-1" />
           </div>
           <div>
             <label className="field-label">预测长度 predLen</label>
-            <input type="number" value={predLen} onChange={(e) => setPredLen(Number(e.target.value))} min={1} max={60} className="app-input mt-1" />
+            <AppNumberInput value={predLen} onChange={setPredLen} min={BACKTEST_LIMITS.predLen.min} max={BACKTEST_LIMITS.predLen.max} ariaLabel="预测长度 predLen" className="mt-1" />
           </div>
           <div>
             <label className="field-label">回看窗口 windowSize</label>
-            <input type="number" value={windowSize} onChange={(e) => setWindowSize(Number(e.target.value))} min={10} max={250} className="app-input mt-1" />
+            <AppNumberInput value={windowSize} onChange={setWindowSize} min={BACKTEST_LIMITS.windowSize.min} max={BACKTEST_LIMITS.windowSize.max} ariaLabel="回看窗口 windowSize" className="mt-1" />
           </div>
           <div>
             <label className="field-label">调仓步长 step</label>
-            <input type="number" value={step} onChange={(e) => setStep(Number(e.target.value))} min={1} className="app-input mt-1" />
+            <AppNumberInput value={step} onChange={setStep} min={BACKTEST_LIMITS.step.min} max={BACKTEST_LIMITS.step.max} ariaLabel="调仓步长 step" className="mt-1" />
           </div>
           <div>
             <label className="field-label">初始权益 initialEquity</label>
-            <input type="number" value={initialEquity} onChange={(e) => setInitialEquity(Number(e.target.value))} min={1} className="app-input mt-1" />
+            <AppNumberInput value={initialEquity} onChange={setInitialEquity} min={BACKTEST_LIMITS.initialEquity.min} max={BACKTEST_LIMITS.initialEquity.max} step={1000} ariaLabel="初始权益 initialEquity" className="mt-1" />
           </div>
           <div>
             <label className="field-label">基准 benchmark</label>
@@ -206,11 +216,11 @@ export default function BacktestPage() {
           </div>
           <div>
             <label className="field-label">手续费 feeBps</label>
-            <input type="number" value={feeBps} onChange={(e) => setFeeBps(Number(e.target.value))} min={0} className="app-input mt-1" />
+            <AppNumberInput value={feeBps} onChange={setFeeBps} min={BACKTEST_LIMITS.bps.min} max={BACKTEST_LIMITS.bps.max} step={0.1} integer={false} ariaLabel="手续费 feeBps" className="mt-1" />
           </div>
           <div>
             <label className="field-label">滑点 slippageBps</label>
-            <input type="number" value={slippageBps} onChange={(e) => setSlippageBps(Number(e.target.value))} min={0} className="app-input mt-1" />
+            <AppNumberInput value={slippageBps} onChange={setSlippageBps} min={BACKTEST_LIMITS.bps.min} max={BACKTEST_LIMITS.bps.max} step={0.1} integer={false} ariaLabel="滑点 slippageBps" className="mt-1" />
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row">

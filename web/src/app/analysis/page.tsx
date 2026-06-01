@@ -262,7 +262,7 @@ function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; lo
     ? result.steps
     : LOADING_STEPS.map((name, index) => ({
       name,
-      status: !loading ? "pending" : index < activeIndex ? "completed" : index === activeIndex ? "running" : "pending",
+      status: !loading ? "pending" : index <= activeIndex ? "running" : "pending",
       summary: "",
       elapsed_ms: index < activeIndex ? (index + 1) * 900 : index === activeIndex ? ((pulseTick % 4) + 1) * 220 : 0,
     }));

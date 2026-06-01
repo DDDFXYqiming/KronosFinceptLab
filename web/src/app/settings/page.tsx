@@ -5,6 +5,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
+import { AppNumberInput } from "@/components/ui/AppNumberInput";
 import {
   KRONOS_API_KEY_STORAGE_KEY,
   api,
@@ -12,9 +13,17 @@ import {
   getConfiguredApiKey,
   saveConfiguredApiKey,
 } from "@/lib/api";
-import { DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS } from "@/lib/defaults";
+import { DEFAULT_MODEL_ID } from "@/lib/defaults";
 import { LANGUAGE_OPTIONS, t } from "@/lib/i18n";
 import { getMarketOptions } from "@/lib/markets";
+import {
+  DEFAULT_RSS_FEEDS,
+  getStoredRssFeeds,
+  isDefaultRssFeed,
+  normalizeRssFeed,
+  resetStoredRssFeeds,
+  saveStoredRssFeeds,
+} from "@/lib/rssFeeds";
 import { downloadTextFile } from "@/lib/exportUtils";
 import { useAppStore } from "@/stores/app";
 import type {
@@ -23,6 +32,7 @@ import type {
   ModelCacheClearResponse,
   ModelCacheResponse,
   ModelPrewarmResponse,
+  RssFeed,
   SecuritySummaryResponse,
 } from "@/types/api";
 
@@ -46,6 +56,11 @@ export default function SettingsPage() {
   const [macroStatus, setMacroStatus] = useState<MacroProviderStatusResponse | null>(null);
   const [macroMode, setMacroMode] = useState<"fast" | "complete">("fast");
   const [macroStatusError, setMacroStatusError] = useState("");
+  const [rssFeeds, setRssFeeds] = useState<RssFeed[]>(() => getStoredRssFeeds());
+  const [rssTitle, setRssTitle] = useState("");
+  const [rssUrl, setRssUrl] = useState("");
+  const [rssTestResult, setRssTestResult] = useState("");
+  const [rssBusy, setRssBusy] = useState(false);
 
   const refreshHealth = async () => {
     setError("");
@@ -83,6 +98,7 @@ export default function SettingsPage() {
     }
     setApiKey("");
     setApiKeySaved(false);
+    setRssFeeds(DEFAULT_RSS_FEEDS);
     clearLocalState();
   };
 
@@ -153,8 +169,7 @@ export default function SettingsPage() {
     }
   };
   const modelOptions = Array.from(new Set([
-    ...(health?.supported_model_ids || SUPPORTED_MODEL_IDS),
-    preferences.defaultModelId || DEFAULT_MODEL_ID,
+    ...((health?.supported_model_ids?.length ? health.supported_model_ids : [health?.model_id || DEFAULT_MODEL_ID])),
   ].filter(Boolean)));
   const marketOptions = getMarketOptions(language);
   const macroModeOptions: Array<AppSelectOption<"fast" | "complete">> = [
@@ -175,6 +190,50 @@ export default function SettingsPage() {
     if (status === "suspended" || status === "cooldown") return t(language, "settings.statusSuspended");
     if (status === "failed") return t(language, "settings.statusFailed");
     return status;
+  };
+
+  const persistRssFeeds = (nextFeeds: RssFeed[]) => {
+    const normalized = nextFeeds.map(normalizeRssFeed).filter((feed) => feed.url);
+    setRssFeeds(normalized);
+    saveStoredRssFeeds(normalized);
+  };
+
+  const addRssFeed = () => {
+    const feed = normalizeRssFeed({ title: rssTitle, url: rssUrl }, rssFeeds.length);
+    if (!feed.url) return;
+    persistRssFeeds([...rssFeeds, feed]);
+    setRssTitle("");
+    setRssUrl("");
+    setRssTestResult("");
+  };
+
+  const removeRssFeed = (feedId: string) => {
+    persistRssFeeds(rssFeeds.filter((feed, index) => {
+      const normalized = normalizeRssFeed(feed, index);
+      return (normalized.id || normalized.url) !== feedId;
+    }));
+    setRssTestResult("");
+  };
+
+  const resetRssFeeds = () => {
+    setRssFeeds(resetStoredRssFeeds());
+    setRssTestResult("");
+  };
+
+  const testRssFeeds = async () => {
+    setRssBusy(true);
+    setRssTestResult("");
+    try {
+      const res = await api.fetchRss({ feeds: rssFeeds, limit_per_feed: 2 });
+      const errorCount = Object.keys(res.errors || {}).length;
+      setRssTestResult(t(language, "settings.rssTestResult")
+        .replace("{items}", String(res.items.length))
+        .replace("{errors}", String(errorCount)));
+    } catch (exc) {
+      setRssTestResult(formatApiError(exc, t(language, "settings.errRssTest")));
+    } finally {
+      setRssBusy(false);
+    }
   };
 
   return (
@@ -247,6 +306,59 @@ export default function SettingsPage() {
             {JSON.stringify(modelCacheResult, null, 2)}
           </pre>
         )}
+      </Card>
+
+      <Card>
+        <CardTitle subtitle={t(language, "settings.rssSubtitle")}>{t(language, "settings.rssTitle")}</CardTitle>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr_auto] md:items-end">
+          <div>
+            <label className="field-label">{t(language, "settings.rssName")}</label>
+            <input
+              value={rssTitle}
+              onChange={(event) => setRssTitle(event.target.value)}
+              className="app-input mt-1"
+              placeholder="Federal Reserve"
+            />
+          </div>
+          <div>
+            <label className="field-label">RSS URL</label>
+            <input
+              value={rssUrl}
+              onChange={(event) => setRssUrl(event.target.value)}
+              className="app-input mt-1 font-mono"
+              placeholder="https://..."
+            />
+          </div>
+          <Button onClick={addRssFeed}>{t(language, "settings.rssAdd")}</Button>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap">
+          <Button variant="secondary" onClick={testRssFeeds} loading={rssBusy}>{t(language, "settings.rssTest")}</Button>
+          <Button variant="secondary" onClick={resetRssFeeds}>{t(language, "settings.rssRestore")}</Button>
+        </div>
+        {rssTestResult && <p className="mt-3 text-sm text-muted-foreground">{rssTestResult}</p>}
+        <div className="mt-4 space-y-2">
+          {rssFeeds.map((feed, index) => {
+            const normalized = normalizeRssFeed(feed, index);
+            const key = normalized.id || normalized.url;
+            return (
+              <div key={key} className="flex flex-col gap-2 rounded-lg border border-border p-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-foreground">{normalized.title || normalized.id}</p>
+                    {isDefaultRssFeed(normalized) && (
+                      <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-xs text-accent">
+                        {t(language, "settings.rssDefault")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="truncate font-mono text-xs text-muted-foreground">{normalized.url}</p>
+                </div>
+                <Button variant="ghost" onClick={() => removeRssFeed(key)}>{t(language, "settings.rssRemove")}</Button>
+              </div>
+            );
+          })}
+          {!rssFeeds.length && <p className="text-sm text-muted-foreground">{t(language, "settings.rssEmpty")}</p>}
+        </div>
       </Card>
 
       <Card>
@@ -360,24 +472,30 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="field-label">{t(language, "settings.defaultPredLen")}</label>
-            <input
-              type="number"
-              min={1}
-              max={60}
+            <AppNumberInput
               value={preferences.defaultPredLen}
-              onChange={(e) => setPreferences({ defaultPredLen: Math.max(1, Number(e.target.value)) })}
-              className="app-input mt-1"
+              onChange={(defaultPredLen) => setPreferences({ defaultPredLen })}
+              min={1}
+              max={30}
+              ariaLabel={t(language, "settings.defaultPredLen")}
+              className="mt-1"
             />
           </div>
           <div>
             <label className="field-label">{t(language, "settings.defaultModel")}</label>
-            <AppSelect
-              value={preferences.defaultModelId || DEFAULT_MODEL_ID}
-              onChange={(defaultModelId) => setPreferences({ defaultModelId })}
-              options={modelSelectOptions}
-              ariaLabel={t(language, "settings.defaultModel")}
-              className="mt-1"
-            />
+            {modelSelectOptions.length > 1 ? (
+              <AppSelect
+                value={modelOptions.includes(preferences.defaultModelId) ? preferences.defaultModelId : modelOptions[0]}
+                onChange={(defaultModelId) => setPreferences({ defaultModelId })}
+                options={modelSelectOptions}
+                ariaLabel={t(language, "settings.defaultModel")}
+                className="mt-1"
+              />
+            ) : (
+              <div className="mt-1 flex min-h-11 items-center rounded-[10px] border border-slate-700 bg-slate-800 px-3 text-sm text-white">
+                {modelSelectOptions[0]?.label || DEFAULT_MODEL_ID.replace("NeoQuasar/", "")}
+              </div>
+            )}
           </div>
           <div>
             <label className="field-label">{t(language, "settings.language")}</label>

@@ -8,9 +8,10 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
+import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
 import { ReturnComparisonChart } from "@/components/charts/ReturnComparisonChart";
 import { ApiError, api, formatApiError } from "@/lib/api";
-import { DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS } from "@/lib/defaults";
+import { DEFAULT_MODEL_ID } from "@/lib/defaults";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_BATCH_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
@@ -96,7 +97,7 @@ function BatchContent() {
   const [market, setMarket] = useSessionState<Market>("kronos-batch-market", DEFAULT_MARKET);
   const [predLen, setPredLen] = useSessionState("kronos-batch-pred-len", 5);
   const [modelId, setModelId] = useSessionState("kronos-batch-model-id", preferences.defaultModelId || DEFAULT_MODEL_ID);
-  const [availableModelIds, setAvailableModelIds] = useState<string[]>([...SUPPORTED_MODEL_IDS]);
+  const [availableModelIds, setAvailableModelIds] = useState<string[]>([preferences.defaultModelId || DEFAULT_MODEL_ID]);
   const [sortKey, setSortKey] = useSessionState<SortKey>("kronos-batch-sort-key", "rank");
   const [results, setResults] = useSessionState<RankedSignal[]>("kronos-batch-results", []);
   const [failures, setFailures] = useSessionState<BatchFailure[]>("kronos-batch-failures", []);
@@ -121,10 +122,17 @@ function BatchContent() {
       queryFn: ({ signal }) => api.health({ signal }),
       staleTime: 60000,
     }).then((health) => {
-      if (health.supported_model_ids?.length) setAvailableModelIds(health.supported_model_ids);
-      if (!modelId && health.default_model_id) setModelId(health.default_model_id);
+      const supported = health.supported_model_ids?.length
+        ? health.supported_model_ids
+        : [health.model_id || health.default_model_id || DEFAULT_MODEL_ID];
+      setAvailableModelIds(supported);
+      const nextModelId = supported.includes(modelId) ? modelId : supported[0];
+      if (nextModelId && nextModelId !== modelId) {
+        setModelId(nextModelId);
+        setPreferences({ defaultModelId: nextModelId });
+      }
     }).catch(() => undefined);
-  }, [modelId, queryClient, setModelId]);
+  }, [modelId, queryClient, setModelId, setPreferences]);
 
   const refreshJobHistory = async () => {
     setHistoryLoading(true);
@@ -142,8 +150,9 @@ function BatchContent() {
     void refreshJobHistory();
   }, []);
 
+  const safePredLen = clampNumber(predLen, 1, 30);
   const selectedSymbols = useMemo(() => normalizeSymbols(input), [input]);
-  const modelOptions = useMemo(() => Array.from(new Set([...availableModelIds, preferences.defaultModelId, modelId].filter(Boolean))), [availableModelIds, modelId, preferences.defaultModelId]);
+  const modelOptions = useMemo(() => Array.from(new Set((availableModelIds.length ? availableModelIds : [DEFAULT_MODEL_ID]).filter(Boolean))), [availableModelIds]);
   const poolOptions: Array<AppSelectOption<PoolPreset>> = POOL_PRESETS.map((option) => ({ value: option.value, label: option.label }));
   const modelSelectOptions: Array<AppSelectOption<string>> = modelOptions.map((id) => ({ value: id, label: id.replace("NeoQuasar/", "") }));
   const sortOptions: Array<AppSelectOption<SortKey>> = [
@@ -185,7 +194,7 @@ function BatchContent() {
       start_date: BATCH_START_DATE,
       end_date: BATCH_END_DATE,
       adjust: "qfq",
-      pred_len: predLen,
+      pred_len: safePredLen,
       model_id: modelId,
       dry_run: false,
     }, { signal, timeoutMs: 30000 });
@@ -224,7 +233,7 @@ function BatchContent() {
   const handleCompare = async (forceRefresh = false, overrideSymbols?: string[]) => {
     const symbols = normalizeSymbols(overrideSymbols || input);
     if (symbols.length === 0) { setError("请至少输入一个股票代码。"); return; }
-    const key = queryKeys.batch({ symbols, market, predLen, modelId });
+    const key = queryKeys.batch({ symbols, market, predLen: safePredLen, modelId });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<BatchRunSnapshot>(key);
     if (cached) {
       setResults(cached.results);
@@ -290,8 +299,8 @@ function BatchContent() {
           <div><label className="field-label">股票池</label><AppSelect value={poolPreset} onChange={applyPoolPreset} options={poolOptions} ariaLabel="股票池" className="mt-1" /></div>
           <div className="md:col-span-2"><label className="field-label">股票代码（逗号分隔）</label><input value={input} onChange={(e) => { setPoolPreset("custom"); setInput(e.target.value); }} className="app-input mt-1 font-mono" placeholder={DEFAULT_BATCH_SYMBOLS} /></div>
           <div><label className="field-label">市场</label><AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel="市场" className="mt-1" /></div>
-          <div><label className="field-label">预测天数</label><input type="number" value={predLen} onChange={(e) => setPredLen(Math.max(1, Number(e.target.value)))} className="app-input mt-1" min={1} max={60} /></div>
-          <div><label className="field-label">模型</label><AppSelect value={modelId} onChange={(nextModelId) => { setModelId(nextModelId); setPreferences({ defaultModelId: nextModelId }); }} options={modelSelectOptions} ariaLabel="模型" className="mt-1" /></div>
+          <div><label className="field-label">预测天数</label><AppNumberInput value={predLen} onChange={setPredLen} min={1} max={30} ariaLabel="预测天数" className="mt-1" /></div>
+          <div><label className="field-label">模型</label>{modelSelectOptions.length > 1 ? <AppSelect value={modelOptions.includes(modelId) ? modelId : modelOptions[0]} onChange={(nextModelId) => { setModelId(nextModelId); setPreferences({ defaultModelId: nextModelId }); }} options={modelSelectOptions} ariaLabel="模型" className="mt-1" /> : <div className="mt-1 flex min-h-11 items-center rounded-[10px] border border-slate-700 bg-slate-800 px-3 text-sm text-white">{modelSelectOptions[0]?.label || DEFAULT_MODEL_ID.replace("NeoQuasar/", "")}</div>}</div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap"><Button onClick={() => handleCompare(false)} loading={loading}>开始对比</Button><Button variant="secondary" onClick={() => handleCompare(true)} disabled={loading}>刷新对比</Button>{loading && <Button variant="danger" onClick={handleCancel}>取消任务</Button>}<Button variant="secondary" onClick={downloadBatchCsv} disabled={results.length === 0}>导出 CSV</Button><Button variant="secondary" onClick={retryFailed} disabled={failures.length === 0 || loading}>重试失败项</Button><Link className="btn-secondary flex h-12 items-center justify-center rounded-xl px-6 text-sm font-medium" href={`/backtest?symbols=${selectedSymbols.join(",")}`}>组合回测</Link></div>
       </Card>

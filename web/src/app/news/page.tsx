@@ -4,34 +4,18 @@ import { useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { AppNumberInput } from "@/components/ui/AppNumberInput";
 import { api, formatApiError } from "@/lib/api";
+import {
+  DEFAULT_RSS_FEEDS,
+  normalizeRssFeed,
+  resetStoredRssFeeds,
+  saveStoredRssFeeds,
+} from "@/lib/rssFeeds";
 import { useSessionState } from "@/lib/useSessionState";
 import { useAppStore } from "@/stores/app";
 import type { Language } from "@/lib/i18n";
 import type { RssFeed, RssItem } from "@/types/api";
-
-const DEFAULT_FEEDS: RssFeed[] = [
-  { id: "fed", title: "Federal Reserve", url: "https://www.federalreserve.gov/feeds/press_all.xml" },
-  { id: "sec", title: "SEC", url: "https://www.sec.gov/news/pressreleases.rss" },
-  { id: "ecb", title: "ECB", url: "https://www.ecb.europa.eu/rss/press.html" },
-];
-
-const DEFAULT_FEED_IDS = new Set(DEFAULT_FEEDS.map((feed) => feed.id).filter(Boolean));
-const DEFAULT_FEED_URLS = new Set(DEFAULT_FEEDS.map((feed) => feed.url));
-
-function normalizeFeed(feed: RssFeed, index: number): RssFeed {
-  const title = feed.title?.trim();
-  const url = feed.url.trim();
-  return {
-    id: feed.id?.trim() || title || `feed-${index + 1}`,
-    title: title || undefined,
-    url,
-  };
-}
-
-function isDefaultFeed(feed: RssFeed): boolean {
-  return Boolean((feed.id && DEFAULT_FEED_IDS.has(feed.id)) || DEFAULT_FEED_URLS.has(feed.url));
-}
 
 function tx(language: Language, zh: string, en: string): string {
   return language === "en-US" ? en : zh;
@@ -46,7 +30,7 @@ function formatDate(value: string | null | undefined, language: Language): strin
 
 export default function NewsPage() {
   const language = useAppStore((state) => state.preferences.language);
-  const [feeds, setFeeds] = useSessionState<RssFeed[]>("kronos-news-feeds", DEFAULT_FEEDS);
+  const [feeds, setFeeds] = useSessionState<RssFeed[]>("kronos-news-feeds", DEFAULT_RSS_FEEDS);
   const [title, setTitle] = useSessionState("kronos-news-title", "");
   const [url, setUrl] = useSessionState("kronos-news-url", "");
   const [limit, setLimit] = useSessionState("kronos-news-limit", 8);
@@ -55,25 +39,28 @@ export default function NewsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const activeFeeds = useMemo(() => feeds.map(normalizeFeed).filter((feed) => feed.url), [feeds]);
+  const activeFeeds = useMemo(() => feeds.map(normalizeRssFeed).filter((feed) => feed.url), [feeds]);
 
   const addFeed = () => {
-    const feed = normalizeFeed({ title, url }, feeds.length);
+    const feed = normalizeRssFeed({ title, url }, feeds.length);
     if (!feed.url) return;
     setFeeds((current) => [...current, feed]);
+    saveStoredRssFeeds([...feeds, feed]);
     setTitle("");
     setUrl("");
   };
 
   const removeFeed = (feedId: string) => {
-    setFeeds((current) => current.filter((feed, index) => {
-      const normalized = normalizeFeed(feed, index);
-      return isDefaultFeed(normalized) || normalized.id !== feedId;
-    }));
+    const nextFeeds = feeds.filter((feed, index) => {
+      const normalized = normalizeRssFeed(feed, index);
+      return (normalized.id || normalized.url) !== feedId;
+    });
+    setFeeds(nextFeeds);
+    saveStoredRssFeeds(nextFeeds);
   };
 
   const resetFeeds = () => {
-    setFeeds(DEFAULT_FEEDS);
+    setFeeds(resetStoredRssFeeds());
     setItems([]);
     setErrors({});
     setError("");
@@ -115,7 +102,7 @@ export default function NewsPage() {
           </div>
           <div>
             <label className="field-label">{tx(language, "每源条数", "Items per feed")}</label>
-            <input type="number" min={1} max={20} value={limit} onChange={(event) => setLimit(Math.min(20, Math.max(1, Number(event.target.value))))} className="app-input mt-1" />
+            <AppNumberInput value={limit} onChange={setLimit} min={1} max={20} ariaLabel={tx(language, "每源条数", "Items per feed")} className="mt-1" />
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap">
@@ -131,7 +118,6 @@ export default function NewsPage() {
         <CardTitle>{tx(language, "已启用源", "Enabled Feeds")} ({activeFeeds.length})</CardTitle>
         <div className="space-y-2">
           {activeFeeds.map((feed) => {
-            const defaultFeed = isDefaultFeed(feed);
             return (
               <div key={feed.id || feed.url} className="flex flex-col gap-2 rounded-lg border border-border p-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
@@ -139,7 +125,7 @@ export default function NewsPage() {
                   <p className="truncate font-mono text-xs text-muted-foreground">{feed.url}</p>
                   {errors[feed.id || feed.url] && <p className="mt-1 text-xs text-error">{errors[feed.id || feed.url]}</p>}
                 </div>
-                <Button variant="ghost" disabled={defaultFeed} onClick={() => removeFeed(feed.id || feed.url)}>{tx(language, "移除", "Remove")}</Button>
+                <Button variant="ghost" onClick={() => removeFeed(feed.id || feed.url)}>{tx(language, "移除", "Remove")}</Button>
               </div>
             );
           })}

@@ -188,10 +188,10 @@ MACRO_ALLOWED_PATTERNS = [
 MACRO_ROUTE_PROVIDER_IDS: dict[str, tuple[str, ...]] = {
     "geopolitical": ("polymarket", "kalshi", "yahoo_price", "cftc_cot", "bis"),
     "recession": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "bis", "cme_fedwatch"),
-    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "cftc_cot", "fear_greed", "us_treasury", "anysearch"),
+    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "cftc_cot", "fear_greed", "rss_news", "us_treasury", "anysearch"),
     "stock_options": ("source_project_macro_cache", "yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
     "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "anysearch", "web_search"),
-    "default": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "anysearch", "web_search"),
+    "default": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "rss_news", "anysearch", "web_search"),
 }
 
 ALLOWED_MACRO_PROVIDER_IDS = frozenset(
@@ -206,6 +206,7 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "worldbank",
         "yfinance_options",
         "fear_greed",
+        "rss_news",
         "cme_fedwatch",
         "web_search",
         "anysearch",
@@ -251,6 +252,7 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "worldbank": "official_macro",
     "yfinance_options": "equity_options",
     "fear_greed": "sentiment_news",
+    "rss_news": "sentiment_news",
     "cme_fedwatch": "rates",
     "web_search": "sentiment_news",
     "anysearch": "sentiment_news",
@@ -360,9 +362,9 @@ def _llm_provider_chain() -> list[LLMChatProvider]:
         LLMChatProvider(
             name="llm",
             display_name="LLM",
-            api_key=str(getattr(provider, "api_key", "") or ""),
-            base_url=str(getattr(provider, "base_url", "https://api.openai.com/v1/chat/completions") or ""),
-            model=str(getattr(provider, "model", "gpt-4o-mini") or "gpt-4o-mini"),
+            api_key=str(getattr(provider, "api_key", "") or "").strip(),
+            base_url=str(getattr(provider, "base_url", "https://api.openai.com/v1/chat/completions") or "").strip(),
+            model=str(getattr(provider, "model", "gpt-4o-mini") or "gpt-4o-mini").strip(),
         )
     ]
 
@@ -450,6 +452,10 @@ def _report_llm_fallback_summary(failures: list[dict[str, Any]]) -> str:
             status_code = failure.get("status_code")
             if status_code == 429:
                 parts.append(f"{provider} 限流")
+            elif status_code == 401:
+                parts.append(f"{provider} API Key 无效或未授权（HTTP 401）")
+            elif status_code == 403:
+                parts.append(f"{provider} API Key 权限不足（HTTP 403）")
             elif status_code:
                 parts.append(f"{provider} 返回 HTTP {status_code}")
             else:
@@ -530,8 +536,14 @@ def _call_structured_llm_json(
                 timeout=provider_timeout,
             )
             if response.status_code != 200:
+                response_body = str(getattr(response, "text", ""))[:500]
                 if purpose == "report":
-                    _record_report_llm_failure(provider, "http_error", status_code=response.status_code)
+                    _record_report_llm_failure(
+                        provider,
+                        "http_error",
+                        status_code=response.status_code,
+                        response_body=response_body[:200],
+                    )
                 log_event(
                     logger,
                     logging.WARNING,
@@ -542,7 +554,7 @@ def _call_structured_llm_json(
                     status_code=response.status_code,
                     endpoint=endpoint,
                     timeout_seconds=provider_timeout,
-                    response_body=str(getattr(response, "text", ""))[:500],
+                    response_body=response_body,
                 )
                 continue
             try:
@@ -1120,8 +1132,12 @@ def analyze_investment_question(
     steps.append(
         AgentStep(
             name="生成报告",
-            status="completed",
-            summary=f"结构化报告已生成，包含顶部汇总和 {len(asset_results)} 个标的分析卡片。",
+            status="fallback" if llm_call.status == "fallback" else "completed",
+            summary=(
+                f"本地结构化报告已生成，包含顶部汇总和 {len(asset_results)} 个标的分析卡片。"
+                if llm_call.status == "fallback"
+                else f"结构化报告已生成，包含顶部汇总和 {len(asset_results)} 个标的分析卡片。"
+            ),
             elapsed_ms=_elapsed_ms(started_at),
         )
     )
@@ -1159,6 +1175,7 @@ def analyze_macro_question(
     symbols: list[str] | None = None,
     market: str | None = None,
     provider_ids: list[str] | None = None,
+    rss_feeds: list[dict[str, Any]] | None = None,
     context: dict[str, Any] | None = None,
     language: str | None = None,
 ) -> AgentAnalysisResult:
@@ -1249,6 +1266,7 @@ def analyze_macro_question(
         symbols=effective_symbols,
         market=effective_market,
         provider_ids=selected_provider_ids,
+        rss_feeds=rss_feeds,
         fast_mode=web_macro,
     )
     tool_calls = [macro_call]
@@ -1305,8 +1323,12 @@ def analyze_macro_question(
     steps.append(
         AgentStep(
             name="生成宏观报告",
-            status="completed",
-            summary="宏观信号报告已生成，包含信号表格、交叉验证、矛盾分析和概率场景。",
+            status="fallback" if llm_call.status == "fallback" else "completed",
+            summary=(
+                "本地宏观信号报告已生成，包含信号表格、交叉验证、矛盾分析和概率场景。"
+                if llm_call.status == "fallback"
+                else "宏观信号报告已生成，包含信号表格、交叉验证、矛盾分析和概率场景。"
+            ),
             elapsed_ms=_elapsed_ms(started_at),
         )
     )
@@ -2507,6 +2529,7 @@ def _ensure_macro_provider_dimension_floor(
         "china_nbs_live",
         "dbnomics",
         "currency",
+        "rss_news",
         "anysearch",
         *select_macro_provider_ids(question, symbols=symbols),
         *MACRO_ROUTE_PROVIDER_IDS["default"],
@@ -2609,6 +2632,7 @@ def _build_macro_context(
     symbols: list[str],
     market: str | None,
     provider_ids: list[str],
+    rss_feeds: list[dict[str, Any]] | None = None,
     fast_mode: bool = False,
 ) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
@@ -2618,7 +2642,7 @@ def _build_macro_context(
         market=market,
         time_horizon="mixed",
         limit=5,
-        metadata={"route": "macro_signal"},
+        metadata={"route": "macro_signal", "rss_feeds": rss_feeds or []},
     )
     try:
         if fast_mode:

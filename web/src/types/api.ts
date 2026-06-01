@@ -509,6 +509,7 @@ export interface MacroAnalyzeRequest {
   market?: string;
   provider_ids?: string[];
   mode?: "fast" | "complete";
+  rss_feeds?: RssFeed[];
   context?: Record<string, any>;
   language?: "zh-CN" | "en-US";
 }

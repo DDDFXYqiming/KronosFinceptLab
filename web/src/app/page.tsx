@@ -22,7 +22,6 @@ function quickLinks(language: Language) {
     { href: "/forecast", label: tx(language, "预测", "Forecast"), desc: tx(language, "单标的 Kronos 预测", "Single-asset Kronos forecast") },
     { href: "/analysis", label: tx(language, "分析", "Analysis"), desc: tx(language, "AI 深度分析", "AI research report") },
     { href: "/macro", label: tx(language, "宏观洞察", "Macro"), desc: tx(language, "宏观信号与证据", "Macro signals and evidence") },
-    { href: "/news", label: tx(language, "新闻", "News"), desc: tx(language, "RSS 聚合", "RSS aggregation") },
     { href: "/watchlist", label: tx(language, "自选股", "Watchlist"), desc: tx(language, "研究工作台", "Research workspace") },
     { href: "/batch", label: tx(language, "批量对比", "Batch"), desc: tx(language, "多标的排序", "Multi-asset ranking") },
     { href: "/backtest", label: tx(language, "回测", "Backtest"), desc: tx(language, "组合策略验证", "Portfolio strategy test") },

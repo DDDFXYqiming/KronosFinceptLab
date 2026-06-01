@@ -80,13 +80,14 @@ export const queryKeys = {
       params.market || "",
       params.language || "",
     ] as const,
-  macro: (params: { question: string; market?: Market | string | null; providers?: string[]; language?: string | null }) =>
+  macro: (params: { question: string; market?: Market | string | null; providers?: string[]; language?: string | null; rssFeeds?: string[] }) =>
     [
       ...queryKeys.all,
       "macro",
       params.question.trim(),
       params.market || "",
       (params.providers || []).join(","),
+      (params.rssFeeds || []).join(","),
       params.language || "",
     ] as const,
 };

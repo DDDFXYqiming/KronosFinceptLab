@@ -141,6 +141,7 @@ def test_v101_macro_manager_imports_and_registers_digital_oracle_providers():
         "yfinance_options",
         "fear_greed",
         "cme_fedwatch",
+        "rss_news",
         "web_search",
         "anysearch",
         "yahoo_price",
@@ -298,6 +299,34 @@ def test_v101_anysearch_provider_emits_public_web_signals():
     assert len(signals) == 1
     assert signals[0].source == "anysearch"
     assert signals[0].metadata["search_provider"] == "anysearch"
+
+
+def test_v101_rss_news_provider_uses_configured_feeds(monkeypatch):
+    from kronos_fincept.macro import MacroQuery, RssNewsProvider
+
+    monkeypatch.setenv("KRONOS_RSS_VALIDATE_DNS", "0")
+    xml = (
+        "<rss><channel><title>Macro Feed</title>"
+        "<item><title>Fed cuts rates</title><link>https://example.com/fed</link>"
+        "<pubDate>Mon, 01 Jun 2026 10:00:00 GMT</pubDate>"
+        "<description>Policy update.</description></item>"
+        "</channel></rss>"
+    )
+    monkeypatch.setattr("kronos_fincept.api.routes.news._fetch_text", lambda url: xml)
+
+    signals = RssNewsProvider().fetch_signals(
+        MacroQuery(
+            "美联储降息影响",
+            limit=2,
+            metadata={"rss_feeds": [{"id": "fed", "title": "Fed", "url": "https://example.com/rss.xml"}]},
+        )
+    )
+
+    assert len(signals) == 1
+    assert signals[0].source == "rss_news"
+    assert signals[0].signal_type == "rss_news_item"
+    assert signals[0].value == "Fed cuts rates"
+    assert signals[0].metadata["feed_id"] == "fed"
 
 
 
