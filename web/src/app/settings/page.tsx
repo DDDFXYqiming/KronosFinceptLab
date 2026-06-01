@@ -30,20 +30,6 @@ function isSensitiveStorageKey(key: string): boolean {
   return /api[-_]?key|token|secret|authorization|cookie/i.test(key);
 }
 
-function maskModelId(id: string | undefined | null): string {
-  if (!id) return "-";
-  const parts = id.split("/");
-  if (parts.length > 1) {
-    const provider = parts[0];
-    const model = parts.slice(1).join("/");
-    if (model.length <= 4) return `${provider}/${model[0]}***`;
-    return `${provider}/${model.slice(0, 2)}${"*".repeat(Math.min(6, model.length - 4))}${model.slice(-2)}`;
-  }
-  // Single-part model ID
-  if (id.length <= 4) return `${id[0]}***`;
-  return `${id.slice(0, 2)}${"*".repeat(Math.min(6, id.length - 4))}${id.slice(-2)}`;
-}
-
 export default function SettingsPage() {
   const { preferences, setPreferences, clearLocalState } = useAppStore();
   const language = preferences.language;
@@ -225,7 +211,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">{t(language, "common.model")}</p>
-            <p className="truncate font-mono text-xl font-bold" title={health?.model_id || health?.default_model_id || "-"}>{maskModelId(health?.model_id || health?.default_model_id)}</p>
+            <p className="truncate font-mono text-xl font-bold" title={health?.model_id || health?.default_model_id || "-"}>{health?.model_id || health?.default_model_id || "-"}</p>
           </div>
           <div>
             <p className="text-sm text-muted-foreground">{t(language, "settings.modelLoadStatus")}</p>
