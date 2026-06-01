@@ -16,6 +16,9 @@ const DEFAULT_FEEDS: RssFeed[] = [
   { id: "ecb", title: "ECB", url: "https://www.ecb.europa.eu/rss/press.html" },
 ];
 
+const DEFAULT_FEED_IDS = new Set(DEFAULT_FEEDS.map((feed) => feed.id).filter(Boolean));
+const DEFAULT_FEED_URLS = new Set(DEFAULT_FEEDS.map((feed) => feed.url));
+
 function normalizeFeed(feed: RssFeed, index: number): RssFeed {
   const title = feed.title?.trim();
   const url = feed.url.trim();
@@ -24,6 +27,10 @@ function normalizeFeed(feed: RssFeed, index: number): RssFeed {
     title: title || undefined,
     url,
   };
+}
+
+function isDefaultFeed(feed: RssFeed): boolean {
+  return Boolean((feed.id && DEFAULT_FEED_IDS.has(feed.id)) || DEFAULT_FEED_URLS.has(feed.url));
 }
 
 function tx(language: Language, zh: string, en: string): string {
@@ -59,7 +66,10 @@ export default function NewsPage() {
   };
 
   const removeFeed = (feedId: string) => {
-    setFeeds((current) => current.filter((feed, index) => normalizeFeed(feed, index).id !== feedId));
+    setFeeds((current) => current.filter((feed, index) => {
+      const normalized = normalizeFeed(feed, index);
+      return isDefaultFeed(normalized) || normalized.id !== feedId;
+    }));
   };
 
   const resetFeeds = () => {
@@ -120,16 +130,19 @@ export default function NewsPage() {
       <Card>
         <CardTitle>{tx(language, "已启用源", "Enabled Feeds")} ({activeFeeds.length})</CardTitle>
         <div className="space-y-2">
-          {activeFeeds.map((feed) => (
-            <div key={feed.id || feed.url} className="flex flex-col gap-2 rounded-lg border border-border p-3 md:flex-row md:items-center md:justify-between">
-              <div className="min-w-0">
-                <p className="font-medium">{feed.title || feed.id}</p>
-                <p className="truncate font-mono text-xs text-muted-foreground">{feed.url}</p>
-                {errors[feed.id || feed.url] && <p className="mt-1 text-xs text-error">{errors[feed.id || feed.url]}</p>}
+          {activeFeeds.map((feed) => {
+            const defaultFeed = isDefaultFeed(feed);
+            return (
+              <div key={feed.id || feed.url} className="flex flex-col gap-2 rounded-lg border border-border p-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <p className="font-medium">{feed.title || feed.id}</p>
+                  <p className="truncate font-mono text-xs text-muted-foreground">{feed.url}</p>
+                  {errors[feed.id || feed.url] && <p className="mt-1 text-xs text-error">{errors[feed.id || feed.url]}</p>}
+                </div>
+                <Button variant="ghost" disabled={defaultFeed} onClick={() => removeFeed(feed.id || feed.url)}>{tx(language, "移除", "Remove")}</Button>
               </div>
-              <Button variant="ghost" onClick={() => removeFeed(feed.id || feed.url)}>{tx(language, "移除", "Remove")}</Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
 
