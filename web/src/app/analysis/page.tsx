@@ -321,7 +321,7 @@ function ReportSection({ title, value }: { title: string; value?: unknown }) {
   return (
     <div className="border-b border-border last:border-b-0 py-4 first:pt-0 last:pb-0">
       <h3 className="text-sm font-semibold text-foreground mb-2">{title}</h3>
-      <MarkdownText text={text} />
+      <MarkdownText text={text} className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
     </div>
   );
 }

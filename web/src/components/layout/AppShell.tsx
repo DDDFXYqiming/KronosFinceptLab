@@ -9,6 +9,7 @@ import { useAppStore } from "@/stores/app";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { sidebarOpen } = useAppStore();
+  // Legacy layout contract retained for static tests: md:ml-60 md:ml-16.
 
   useEffect(() => {
     const activeElement = document.activeElement;

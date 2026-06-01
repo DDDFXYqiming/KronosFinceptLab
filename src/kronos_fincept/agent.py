@@ -151,6 +151,19 @@ SYMBOL_ALIASES: dict[str, tuple[str, str, str]] = {
     "tsla": ("TSLA", "us", "Tesla"),
     "tesla": ("TSLA", "us", "Tesla"),
     "特斯拉": ("TSLA", "us", "Tesla"),
+    "黄金": ("GC=F", "commodity", "黄金期货"),
+    "gold": ("GC=F", "commodity", "黄金期货"),
+    "白银": ("SI=F", "commodity", "白银期货"),
+    "silver": ("SI=F", "commodity", "白银期货"),
+    "原油": ("CL=F", "commodity", "WTI 原油期货"),
+    "wti": ("CL=F", "commodity", "WTI 原油期货"),
+    "crude": ("CL=F", "commodity", "WTI 原油期货"),
+    "铜": ("HG=F", "commodity", "铜期货"),
+    "copper": ("HG=F", "commodity", "铜期货"),
+    "spy": ("SPY", "us", "SPDR S&P 500 ETF"),
+    "qqq": ("QQQ", "us", "Invesco QQQ ETF"),
+    "gld": ("GLD", "us", "SPDR Gold Shares ETF"),
+    "slv": ("SLV", "us", "iShares Silver Trust"),
 }
 
 ALLOWED_SCOPE_PATTERNS = [
@@ -924,8 +937,24 @@ def analyze_investment_question(
 
     if _is_web_analysis_context(context):
         route = replace(route, needs_macro=route.needs_macro or _web_analysis_requires_embedded_macro(clean_question))
+        if route.needs_macro and not route.symbols and route.source != "local_fallback":
+            log_event(
+                logger,
+                logging.INFO,
+                "agent.analysis.macro_redirect",
+                "Delegating LLM-routed symbol-less web analysis question to macro agent",
+                router=route.source,
+            )
+            return analyze_macro_question(
+                clean_question,
+                market=market,
+                context=_web_analysis_macro_context(context),
+                language=output_language,
+            )
 
     resolved = route.symbols or resolve_symbols(clean_question, explicit_symbol=symbol, explicit_market=market)
+    if resolved and any(_asset_needs_macro_context(item, clean_question) for item in resolved):
+        route = replace(route, needs_macro=True)
     if web_analysis and _should_delegate_web_analysis_to_macro(clean_question, resolved, route=route):
         log_event(
             logger,
@@ -964,7 +993,7 @@ def analyze_investment_question(
         AgentStep(
             name="解析标的",
             status="completed",
-            summary=f"识别到 {len(resolved)} 个标的：" + ", ".join(item.symbol for item in resolved),
+            summary=f"识别到 {len(resolved)} 个标的：" + ", ".join(_asset_display_name(item) for item in resolved),
             elapsed_ms=_elapsed_ms(started_at),
         ),
     ]
@@ -1671,7 +1700,7 @@ def _normalize_route_decision(
             market = str(item.get("market") or _infer_market(symbol)).strip().lower()
             if market not in {"cn", "hk", "us", "commodity"}:
                 market = _infer_market(symbol)
-            normalized_symbol = symbol.upper() if market == "us" else symbol
+            normalized_symbol = _normalize_resolved_symbol(symbol, market)
             key = f"{market}:{normalized_symbol.upper()}"
             if key in seen:
                 continue
@@ -1764,7 +1793,7 @@ def _with_explicit_symbol(
         return decision
 
     market = explicit_market or _infer_market(explicit_symbol)
-    explicit = ResolvedSymbol(explicit_symbol.upper() if market == "us" else explicit_symbol, market)
+    explicit = ResolvedSymbol(_normalize_resolved_symbol(explicit_symbol, market), market)
     existing = {f"{item.market}:{item.symbol.upper()}" for item in decision.symbols}
     explicit_key = f"{explicit.market}:{explicit.symbol.upper()}"
     if explicit_key in existing:
@@ -1794,7 +1823,7 @@ def resolve_symbols(
 
     if explicit_symbol:
         market = explicit_market or _infer_market(explicit_symbol)
-        resolved.append(ResolvedSymbol(explicit_symbol.upper() if market == "us" else explicit_symbol, market))
+        resolved.append(ResolvedSymbol(_normalize_resolved_symbol(explicit_symbol, market), market))
         seen.add(explicit_symbol.upper())
 
     lowered = question.lower()
@@ -1802,8 +1831,15 @@ def resolve_symbols(
         if alias in lowered or alias in question:
             key = symbol.upper()
             if key not in seen:
-                resolved.append(ResolvedSymbol(symbol, explicit_market or market, name))
+                resolved.append(ResolvedSymbol(_normalize_resolved_symbol(symbol, explicit_market or market), explicit_market or market, name))
                 seen.add(key)
+
+    for match in re.finditer(r"\b[A-Z]{1,4}=F\b", question, flags=re.IGNORECASE):
+        symbol = match.group(0).upper()
+        key = symbol.upper()
+        if key not in seen:
+            resolved.append(ResolvedSymbol(symbol, explicit_market or "commodity"))
+            seen.add(key)
 
     for match in re.finditer(r"\b\d{6}\b", question):
         symbol = match.group(0)
@@ -1814,6 +1850,10 @@ def resolve_symbols(
 
     for match in re.finditer(r"\b[A-Z]{1,5}(?:\.[A-Z]{1,3})?\b", question):
         symbol = match.group(0)
+        previous_char = question[match.start() - 1] if match.start() > 0 else ""
+        next_char = question[match.end()] if match.end() < len(question) else ""
+        if previous_char == "=" or next_char == "=":
+            continue
         if symbol in {"AI", "API", "CLI", "WEB", "A"}:
             continue
         key = symbol.upper()
@@ -1926,7 +1966,7 @@ def _select_embedded_macro_provider_ids(question: str, *, symbols: list[Resolved
         "cn": (*cn_preferred, "fear_greed", "us_treasury", "yahoo_price"),
         "hk": ("fear_greed", "us_treasury", "yahoo_price", "cftc_cot"),
         "us": ("us_treasury", "fear_greed", "yfinance_options", "yahoo_price"),
-        "commodity": ("cftc_cot", "fear_greed", "us_treasury", "yahoo_price"),
+        "commodity": ("yahoo_price", "cftc_cot", "us_treasury", "fear_greed"),
     }
     preferred = list(preferred_by_market.get(market or "", ()))
     selected: list[str] = []
@@ -2035,6 +2075,7 @@ def _build_asset_context(
         "symbol": item.symbol,
         "market": item.market,
         "name": item.name,
+        "asset_class": _asset_class(item.symbol, item.market),
         "model": _active_kronos_model_id(),
     }
     log_event(
@@ -2079,15 +2120,23 @@ def _build_asset_context(
         )
 
     started = time.perf_counter()
-    financial_data = _call_quietly(_fetch_financial_summary, item.symbol, item.market)
+    if asset["asset_class"] == "commodity_future":
+        financial_data = None
+        financial_summary = "商品期货不适用公司财务摘要，后续使用行情、风险、Kronos 与宏观信号。"
+    else:
+        financial_data = _call_quietly(_fetch_financial_summary, item.symbol, item.market)
+        if asset["asset_class"] == "etf":
+            financial_summary = "已尝试获取 ETF/基金资料；没有公司三表时不按个股基本面解释。"
+        else:
+            financial_summary = "已尝试获取财务摘要。" if financial_data else "当前数据源未返回可用财务摘要。"
     asset["financial_data"] = financial_data
     calls.append(
         AgentToolCall(
             name="financial_data",
             status="completed" if financial_data else "skipped",
-            summary="已尝试获取财务摘要。" if financial_data else "当前数据源未返回可用财务摘要。",
+            summary=financial_summary,
             elapsed_ms=_elapsed_ms(started),
-            metadata=_tool_metadata(symbol=item.symbol, market=item.market),
+            metadata=_tool_metadata(symbol=item.symbol, market=item.market, asset_class=asset["asset_class"]),
         )
     )
 
@@ -3075,9 +3124,24 @@ def _fetch_financial_summary(symbol: str, market: str) -> dict[str, Any] | None:
             info = ticker.info
             if not info:
                 return None
+            quote_type = str(info.get("quoteType") or "").upper()
+            if quote_type in {"ETF", "MUTUALFUND", "FUND"} or _asset_class(symbol, market) == "etf":
+                return {
+                    "symbol": symbol,
+                    "name": info.get("longName") or info.get("shortName"),
+                    "quote_type": quote_type or "ETF",
+                    "category": info.get("category"),
+                    "fund_family": info.get("fundFamily"),
+                    "total_assets": info.get("totalAssets"),
+                    "expense_ratio": info.get("annualReportExpenseRatio") or info.get("expenseRatio"),
+                    "yield": info.get("yield") or info.get("trailingAnnualDividendYield"),
+                    "nav_price": info.get("navPrice"),
+                    "period": None,
+                }
             return {
                 "symbol": symbol,
                 "name": info.get("longName") or info.get("shortName"),
+                "quote_type": quote_type or None,
                 "pe": info.get("trailingPE"),
                 "pb": info.get("priceToBook"),
                 "roe": info.get("returnOnEquity"),
@@ -3419,6 +3483,13 @@ def _default_asset_report(asset: dict[str, Any]) -> dict[str, Any]:
     risk_metrics = asset.get("risk_metrics") or {}
     risk_level = _risk_level_from_metrics(risk_metrics)
     short_term, expected_return = _prediction_summary(market_data, prediction, prediction_error)
+    asset_class = str(asset.get("asset_class") or "equity")
+    if asset_class == "commodity_future":
+        fundamentals_text = "商品期货不适用公司财务三表；本报告优先使用价格趋势、波动风险、持仓/利率等宏观信号。"
+    elif asset_class == "etf":
+        fundamentals_text = "ETF/基金不适用单一公司基本面；本报告优先关注底层资产、费用、流动性、跟踪标的和市场环境。"
+    else:
+        fundamentals_text = "已尝试获取财务摘要；未返回时不编造基本面数据。"
     confidence = 0.58 if market_data and prediction else 0.42 if market_data else 0.25
     recommendation = "持有"
     if expected_return is not None:
@@ -3432,7 +3503,7 @@ def _default_asset_report(asset: dict[str, Any]) -> dict[str, Any]:
             "conclusion": f"{label} 的工具链分析已完成；结论基于真实行情、Kronos 预测、风险指标和可用公开信息。",
             "short_term_prediction": short_term,
             "technical": "已基于可用 K 线计算技术指标；若指标缺失，通常是历史样本不足或数据源失败。",
-            "fundamentals": "已尝试获取财务摘要；未返回时不编造基本面数据。",
+            "fundamentals": fundamentals_text,
             "risk": f"风险等级暂定为{risk_level}，请结合波动率、最大回撤、VaR 与网页检索结果判断。",
             "uncertainties": "行情源延迟、模型误差、突发事件、财务数据缺失和网页信息时效都会影响结论。",
             "recommendation": recommendation,
@@ -4748,6 +4819,8 @@ def _extract_json_object(text: Any) -> dict[str, Any] | None:
 
 
 def _infer_market(symbol: str) -> str:
+    if re.fullmatch(r"[A-Z]{1,4}=F", str(symbol).strip(), flags=re.IGNORECASE):
+        return "commodity"
     if re.fullmatch(r"\d{6}", symbol):
         return "cn"
     if symbol.upper().endswith(".HK") or re.fullmatch(r"\d{4,5}", symbol):
@@ -4755,9 +4828,61 @@ def _infer_market(symbol: str) -> str:
     return "us"
 
 
+def _normalize_resolved_symbol(symbol: str, market: str) -> str:
+    clean = str(symbol).strip()
+    if market == "commodity":
+        alias = SYMBOL_ALIASES.get(clean.lower()) or SYMBOL_ALIASES.get(clean)
+        if alias and alias[1] == "commodity":
+            return alias[0].upper()
+    if market in {"us", "commodity"}:
+        return clean.upper()
+    return clean
+
+
+def _asset_display_name(item: ResolvedSymbol) -> str:
+    return f"{item.name}({item.symbol})" if item.name else item.symbol
+
+
+def _asset_class(symbol: str, market: str) -> str:
+    normalized = str(symbol or "").strip().upper()
+    if market == "commodity" or re.fullmatch(r"[A-Z]{1,4}=F", normalized):
+        return "commodity_future"
+    if normalized in {
+        "SPY",
+        "QQQ",
+        "DIA",
+        "IWM",
+        "VTI",
+        "VOO",
+        "IVV",
+        "GLD",
+        "SLV",
+        "USO",
+        "TLT",
+        "HYG",
+        "LQD",
+        "EEM",
+        "FXI",
+        "ASHR",
+        "KWEB",
+    }:
+        return "etf"
+    if market == "cn" and re.fullmatch(r"5\d{5}", normalized):
+        return "etf"
+    return "equity"
+
+
+def _asset_needs_macro_context(item: ResolvedSymbol, question: str) -> bool:
+    if _asset_class(item.symbol, item.market) == "commodity_future":
+        return True
+    return _web_analysis_requires_embedded_macro(question)
+
+
 def _market_source_name(market: str) -> str:
     if market == "cn":
         return "AkShare/BaoStock fallback"
+    if market == "commodity":
+        return "Yahoo Finance futures"
     return "Yahoo Finance"
 
 

@@ -23,6 +23,11 @@ _MAX_FEEDS = 12
 _MAX_LIMIT_PER_FEED = 20
 _MAX_FEED_BYTES = 1_000_000
 _HTTP_USER_AGENT = "KronosFinceptLab/10.9 RSS Reader"
+DEFAULT_RSS_FEEDS: tuple[dict[str, str], ...] = (
+    {"id": "fed", "title": "Federal Reserve", "url": "https://www.federalreserve.gov/feeds/press_all.xml"},
+    {"id": "sec", "title": "SEC", "url": "https://www.sec.gov/news/pressreleases.rss"},
+    {"id": "ecb", "title": "ECB", "url": "https://www.ecb.europa.eu/rss/press.html"},
+)
 
 
 class RssFeedIn(BaseModel):

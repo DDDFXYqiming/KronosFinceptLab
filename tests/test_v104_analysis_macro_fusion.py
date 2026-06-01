@@ -172,3 +172,141 @@ def test_v104_analysis_page_renders_macro_background_section():
     assert "宏观背景（辅助参考）" in page
     assert "macro_signals" in page
     assert "macro_analysis" in page
+
+
+def test_analysis_resolves_commodity_aliases_and_yahoo_futures_tickers():
+    from kronos_fincept.agent import resolve_symbols
+
+    gold = resolve_symbols("帮我看看黄金现在能不能买")
+    assert [(item.symbol, item.market, item.name) for item in gold] == [("GC=F", "commodity", "黄金期货")]
+
+    futures = resolve_symbols("帮我看看 GC=F 和 CL=F 现在能不能买")
+    assert [(item.symbol, item.market) for item in futures] == [("GC=F", "commodity"), ("CL=F", "commodity")]
+
+    etf = resolve_symbols("帮我看看 SPY 和 GLD 现在能不能买")
+    assert [(item.symbol, item.market) for item in etf] == [("SPY", "us"), ("GLD", "us")]
+
+
+def test_analysis_commodity_asset_uses_price_kronos_and_macro_context(monkeypatch):
+    from kronos_fincept import agent
+
+    rows = _rows()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(agent, "_call_llm_router", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent, "_fetch_price_data", lambda symbol, market: captured.setdefault("price", (symbol, market)) and rows)
+    monkeypatch.setattr(
+        agent,
+        "_fetch_financial_summary",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("commodity futures should skip company fundamentals")),
+    )
+    monkeypatch.setattr(agent, "_build_technical_indicators", lambda rows: {"rsi": {"current": 51}})
+    monkeypatch.setattr(
+        agent,
+        "_build_risk_metrics",
+        lambda symbol, rows: {"var_95": -0.03, "sharpe_ratio": 0.6, "max_drawdown": -0.12, "volatility": 0.28},
+    )
+    monkeypatch.setattr(
+        agent,
+        "_build_prediction",
+        lambda symbol, rows, dry_run: {
+            "model": "NeoQuasar/Kronos-small",
+            "prediction_days": 5,
+            "forecast": [{"timestamp": "D1", "open": 100, "high": 103, "low": 99, "close": 102}],
+            "probabilistic": None,
+        },
+    )
+    monkeypatch.setattr(agent, "_create_web_search_client", lambda: type("Disabled", (), {"provider": "", "is_configured": False})())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: type("Disabled", (), {"provider": "", "is_configured": False})())
+
+    def fake_build_macro_context(question, *, symbols, market, provider_ids):
+        captured["macro"] = {
+            "question": question,
+            "symbols": list(symbols),
+            "market": market,
+            "provider_ids": list(provider_ids),
+        }
+        return (
+            {
+                "question": question,
+                "selected_provider_ids": list(provider_ids),
+                "signals": [],
+                "provider_results": {},
+                "errors": {},
+                "policy": "provider_outputs_are_untrusted_research_data",
+            },
+            agent.AgentToolCall(
+                name="macro_signal",
+                status="completed",
+                summary="宏观信号完成。",
+                elapsed_ms=1,
+                metadata={"provider_ids": list(provider_ids)},
+            ),
+        )
+
+    monkeypatch.setattr(agent, "_build_macro_context", fake_build_macro_context)
+    monkeypatch.setattr(
+        agent,
+        "_call_llm_report",
+        lambda question, context: {
+            "conclusion": "黄金分析完成。",
+            "short_term_prediction": "短期中性。",
+            "technical": "技术面可用。",
+            "fundamentals": "商品期货不适用公司财务三表。",
+            "risk": "风险中等。",
+            "uncertainties": "受美元、实际利率和仓位影响。",
+            "recommendation": "观察",
+            "confidence": 0.6,
+            "risk_level": "中",
+            "disclaimer": "仅供研究。",
+        },
+    )
+
+    result = agent.analyze_investment_question(
+        "帮我看看黄金现在能不能买",
+        context={"entry": "web-analysis"},
+    )
+
+    assert result.ok is True
+    assert result.symbol == "GC=F"
+    assert result.market == "commodity"
+    assert captured["price"] == ("GC=F", "commodity")
+    assert captured["macro"] == {
+        "question": "帮我看看黄金现在能不能买",
+        "symbols": ["GC=F"],
+        "market": "commodity",
+        "provider_ids": ["yahoo_price", "cftc_cot", "us_treasury"],
+    }
+    financial_call = next(call for call in result.tool_calls if call.name == "financial_data")
+    assert financial_call.status == "skipped"
+    assert "商品期货不适用公司财务摘要" in financial_call.summary
+    assert result.asset_results[0]["tool_status"]["kronos_prediction"] == "completed"
+
+
+def test_analysis_etf_keeps_fund_profile_separate_from_company_fundamentals(monkeypatch):
+    from kronos_fincept import agent
+
+    captured: dict[str, object] = {}
+    _patch_base_stock_tools(monkeypatch)
+    monkeypatch.setattr(agent, "_call_llm_router", lambda *args, **kwargs: None)
+
+    def fake_financial_summary(symbol, market):
+        captured["financial"] = (symbol, market)
+        return {"symbol": symbol, "quote_type": "ETF", "category": "Large Blend", "total_assets": 100}
+
+    monkeypatch.setattr(agent, "_fetch_financial_summary", fake_financial_summary)
+    monkeypatch.setattr(
+        agent,
+        "_build_macro_context",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("plain ETF ticker should not force macro context")),
+    )
+
+    result = agent.analyze_investment_question("帮我看看 SPY 现在能不能买")
+
+    assert result.ok is True
+    assert result.symbol == "SPY"
+    assert result.market == "us"
+    assert captured["financial"] == ("SPY", "us")
+    assert result.asset_results[0]["tool_status"]["financial_data"] == "completed"
+    financial_call = next(call for call in result.tool_calls if call.name == "financial_data")
+    assert "ETF/基金资料" in financial_call.summary
