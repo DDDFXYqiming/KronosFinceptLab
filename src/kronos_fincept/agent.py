@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import ast
 import json
 import logging
 import math
@@ -4432,6 +4433,37 @@ def _normalize_time_layered_conclusions(value: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _report_text(value: Any) -> str:
+    """Normalize LLM report field values into user-readable prose."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ""
+        if text[:1] in {"{", "["}:
+            try:
+                return _report_text(json.loads(text))
+            except Exception:
+                try:
+                    return _report_text(ast.literal_eval(text))
+                except Exception:
+                    return text
+        return text
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, item in value.items():
+            item_text = _report_text(item)
+            if not item_text:
+                continue
+            label = str(key).strip()
+            parts.append(f"{label}：{item_text}" if label else item_text)
+        return "；".join(parts)
+    if isinstance(value, (list, tuple, set)):
+        return "；".join(item for item in (_report_text(item) for item in value) if item)
+    return str(value).strip()
+
+
 def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     confidence = payload.get("confidence", 0.5)
     try:
@@ -4443,16 +4475,16 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     confidence = max(0.0, min(1.0, confidence))
 
     normalized = {
-        "conclusion": str(payload.get("conclusion") or payload.get("summary") or ""),
-        "short_term_prediction": str(payload.get("short_term_prediction") or ""),
-        "technical": str(payload.get("technical") or ""),
-        "fundamentals": str(payload.get("fundamentals") or ""),
-        "risk": str(payload.get("risk") or ""),
-        "uncertainties": str(payload.get("uncertainties") or ""),
+        "conclusion": _report_text(payload.get("conclusion") or payload.get("summary")),
+        "short_term_prediction": _report_text(payload.get("short_term_prediction")),
+        "technical": _report_text(payload.get("technical")),
+        "fundamentals": _report_text(payload.get("fundamentals")),
+        "risk": _report_text(payload.get("risk")),
+        "uncertainties": _report_text(payload.get("uncertainties")),
         "recommendation": str(payload.get("recommendation") or "持有"),
         "confidence": confidence,
         "risk_level": str(payload.get("risk_level") or "中"),
-        "disclaimer": str(payload.get("disclaimer") or RESEARCH_DISCLAIMER),
+        "disclaimer": _report_text(payload.get("disclaimer") or RESEARCH_DISCLAIMER),
     }
     asset_reports = _normalize_asset_reports(payload.get("asset_reports"))
     if asset_reports:
@@ -4462,7 +4494,7 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
         normalized["macro_signals"] = macro_signals
     for key in ("macro_analysis", "cross_validation", "contradictions"):
         if payload.get(key):
-            normalized[key] = str(payload.get(key))
+            normalized[key] = _report_text(payload.get(key))
     probability_scenarios = _normalize_probability_scenarios(payload.get("probability_scenarios"))
     if probability_scenarios:
         normalized["probability_scenarios"] = probability_scenarios

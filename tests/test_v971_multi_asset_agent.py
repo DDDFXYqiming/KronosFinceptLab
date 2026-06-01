@@ -173,3 +173,26 @@ def test_v971_web_analysis_page_renders_summary_and_per_asset_cards():
     assert "各标的分析" in page
     assert "AssetAnalysisCard" in page
     assert "getAssetResults(result)" in page
+    assert "formatReportText" in page
+    assert "parseReportLiteral" in page
+
+
+def test_v971_report_normalization_formats_per_asset_mapping_as_prose():
+    from kronos_fincept.agent import _normalize_report
+
+    report = _normalize_report(
+        {
+            "conclusion": "比较结论。",
+            "technical": {
+                "招商银行": "RSI 中性，MACD 收敛。",
+                "兴业银行": "RSI 偏高，短期有回调风险。",
+            },
+            "fundamentals": "{'招商银行': '资产质量较优。', '兴业银行': '息差承压。'}",
+            "risk": ["招商银行：零售业务受经济影响。", "兴业银行：同业监管风险。"],
+        }
+    )
+
+    assert report["technical"] == "招商银行：RSI 中性，MACD 收敛。；兴业银行：RSI 偏高，短期有回调风险。"
+    assert report["fundamentals"] == "招商银行：资产质量较优。；兴业银行：息差承压。"
+    assert report["risk"] == "招商银行：零售业务受经济影响。；兴业银行：同业监管风险。"
+    assert "{" not in report["technical"]

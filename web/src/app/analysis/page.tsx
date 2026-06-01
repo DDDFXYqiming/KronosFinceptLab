@@ -91,6 +91,44 @@ function cleanUserVisibleText(value?: unknown): string {
     .trim();
 }
 
+function parseReportLiteral(text: string): unknown {
+  const trimmed = text.trim();
+  if (!/^[{[]/.test(trimmed)) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {}
+  try {
+    return JSON.parse(
+      trimmed
+        .replace(/\bNone\b/g, "null")
+        .replace(/\bTrue\b/g, "true")
+        .replace(/\bFalse\b/g, "false")
+        .replace(/'/g, "\"")
+    );
+  } catch {
+    return null;
+  }
+}
+
+function formatReportText(value?: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) {
+    return value.map(formatReportText).filter(Boolean).join("；");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => {
+        const text = formatReportText(item);
+        return text ? `${key}：${text}` : "";
+      })
+      .filter(Boolean)
+      .join("；");
+  }
+  const text = cleanUserVisibleText(value);
+  const parsed = parseReportLiteral(text);
+  return parsed ? formatReportText(parsed) : text;
+}
+
 function buildEvidenceSummary(result: AgentAnalyzeResponse): string {
   const completed = result.tool_calls
     .filter((call) => ["completed", "fallback", "skipped"].includes(call.status))
@@ -341,12 +379,13 @@ function ToolCallList({ result }: { result: AgentAnalyzeResponse }) {
   );
 }
 
-function ReportSection({ title, value }: { title: string; value?: string }) {
-  if (!value) return null;
+function ReportSection({ title, value }: { title: string; value?: unknown }) {
+  const text = formatReportText(value);
+  if (!text) return null;
   return (
     <div className="border-b border-border last:border-b-0 py-4 first:pt-0 last:pb-0">
       <h3 className="text-sm font-semibold text-foreground mb-2">{title}</h3>
-      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{value}</p>
+      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{text}</p>
     </div>
   );
 }
