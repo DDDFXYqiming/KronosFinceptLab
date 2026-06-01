@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar />
       <div
         className={`min-w-0 transition-all duration-300 ${
-          sidebarOpen ? "md:ml-60" : "md:ml-16"
+          sidebarOpen ? "md:ml-72" : "md:ml-20"
         }`}
       >
         <Header />

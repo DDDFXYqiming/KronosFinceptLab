@@ -18,7 +18,7 @@ function compactModelName(modelId?: string): string {
 
 export function Header() {
   const pathname = usePathname();
-  const { sidebarOpen, toggleSidebar, preferences } = useAppStore();
+  const { sidebarOpen, preferences } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerHidden, setHeaderHidden] = useState(false);
   const [headerFloating, setHeaderFloating] = useState(false);
@@ -98,7 +98,7 @@ export function Header() {
         className={`mobile-safe-top fixed left-0 right-0 top-0 z-40 border-b bg-card/95 backdrop-blur-md transition-[transform,box-shadow,border-color] duration-200 ease-out will-change-transform md:z-30 md:translate-y-0 md:transition-all ${
           headerHidden ? "-translate-y-full" : "translate-y-0"
         } ${headerFloating ? "border-border/80 shadow-lg" : "border-border shadow-sm"} ${
-          sidebarOpen ? "md:left-60" : "md:left-16"
+          sidebarOpen ? "md:left-72" : "md:left-20"
         }`}
       >
         <div className="flex h-16 min-w-0 items-center gap-3 px-4 md:px-6">
@@ -117,16 +117,6 @@ export function Header() {
             <span className="text-xl font-bold gradient-text">K</span>
             <span className="truncate font-display text-lg gradient-text">KronosFinceptLab</span>
           </Link>
-
-          <button
-            onClick={toggleSidebar}
-            className="hidden min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:flex"
-            aria-label={t(preferences.language, "common.toggleSidebar")}
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-            </svg>
-          </button>
 
           <div className="min-w-0 flex-1" />
 
