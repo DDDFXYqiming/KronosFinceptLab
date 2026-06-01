@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { api, formatApiError } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { getMarketOptions, type Market } from "@/lib/markets";
@@ -48,6 +49,14 @@ export default function AlertsPage() {
   const enabledRules = useMemo(() => rules.filter((rule) => rule.enabled).length, [rules]);
 
   const alertTypeLabel = (value: string) => t(language, ALERT_TYPE_KEYS[value] || value);
+  const alertTypeOptions: Array<AppSelectOption<string>> = ALERT_TYPES.map((value) => ({
+    value,
+    label: alertTypeLabel(value),
+  }));
+  const channelOptions: Array<AppSelectOption<string>> = [
+    { value: "feishu", label: t(language, "alerts.channelFeishu") },
+    { value: "email", label: t(language, "alerts.channelEmail") },
+  ];
 
   const loadRules = async () => {
     setError("");
@@ -150,15 +159,11 @@ export default function AlertsPage() {
           </div>
           <div>
             <label className="field-label">{t(language, "common.market")}</label>
-            <select className="app-input mt-1" value={market} onChange={(e) => setMarket(e.target.value as Market)}>
-              {marketOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
+            <AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel={t(language, "common.market")} className="mt-1" />
           </div>
           <div>
             <label className="field-label">{t(language, "common.type")}</label>
-            <select className="app-input mt-1" value={alertType} onChange={(e) => setAlertType(e.target.value)}>
-              {ALERT_TYPES.map((value) => <option key={value} value={value}>{alertTypeLabel(value)}</option>)}
-            </select>
+            <AppSelect value={alertType} onChange={setAlertType} options={alertTypeOptions} ariaLabel={t(language, "common.type")} className="mt-1" />
           </div>
           <div>
             <label className="field-label">{t(language, "common.threshold")}</label>
@@ -166,10 +171,7 @@ export default function AlertsPage() {
           </div>
           <div>
             <label className="field-label">{t(language, "alerts.channel")}</label>
-            <select className="app-input mt-1" value={channel} onChange={(e) => setChannel(e.target.value)}>
-              <option value="feishu">{t(language, "alerts.channelFeishu")}</option>
-              <option value="email">{t(language, "alerts.channelEmail")}</option>
-            </select>
+            <AppSelect value={channel} onChange={setChannel} options={channelOptions} ariaLabel={t(language, "alerts.channel")} className="mt-1" />
           </div>
           <div className="md:col-span-2">
             <label className="field-label">{t(language, "common.webhookUrl")}</label>

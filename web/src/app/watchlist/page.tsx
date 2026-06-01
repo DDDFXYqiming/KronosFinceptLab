@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { AppSelect } from "@/components/ui/AppSelect";
 import { useAppStore, type WatchlistItem } from "@/stores/app";
 import { DEFAULT_MARKET, MARKET_OPTIONS, getMarketLabel, getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
@@ -347,7 +348,7 @@ export default function WatchlistPage() {
           </div>
           <div>
             <label className="field-label">市场</label>
-            <select value={market} onChange={(e) => setMarket(e.target.value as Market)} className="app-input mt-1">{marketOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
+            <AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel="市场" className="mt-1" />
           </div>
           <div>
             <label className="field-label">名称</label>

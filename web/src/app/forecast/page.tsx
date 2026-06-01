@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
@@ -113,6 +114,10 @@ function ForecastContent() {
   const modelOptions = useMemo(() => {
     return Array.from(new Set([...availableModelIds, preferences.defaultModelId, modelId].filter(Boolean)));
   }, [availableModelIds, modelId, preferences.defaultModelId]);
+  const modelSelectOptions: Array<AppSelectOption<string>> = useMemo(
+    () => modelOptions.map((id) => ({ value: id, label: id.replace("NeoQuasar/", "") })),
+    [modelOptions]
+  );
 
   useEffect(() => {
     void queryClient.fetchQuery({
@@ -410,17 +415,7 @@ function ForecastContent() {
           </div>
           <div>
             <label className="field-label">{tx(language, "市场", "Market")}</label>
-            <select
-              value={market}
-              onChange={(e) => setMarket(e.target.value as Market)}
-              className="app-input mt-1"
-            >
-              {marketOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            <AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel={tx(language, "市场", "Market")} className="mt-1" />
           </div>
           <div>
             <label className="field-label">{tx(language, "开始日期", "Start date")}</label>
@@ -444,20 +439,16 @@ function ForecastContent() {
           </div>
           <div>
             <label className="field-label">{tx(language, "模型", "Model")}</label>
-            <select
+            <AppSelect
               value={modelId}
-              onChange={(e) => {
-                setModelId(e.target.value);
-                setPreferences({ defaultModelId: e.target.value });
+              onChange={(nextModelId) => {
+                setModelId(nextModelId);
+                setPreferences({ defaultModelId: nextModelId });
               }}
-              className="app-input mt-1"
-            >
-              {modelOptions.map((id) => (
-                <option key={id} value={id}>
-                  {id.replace("NeoQuasar/", "")}
-                </option>
-              ))}
-            </select>
+              options={modelSelectOptions}
+              ariaLabel={tx(language, "模型", "Model")}
+              className="mt-1"
+            />
           </div>
           <div className="flex items-end">
             <Button

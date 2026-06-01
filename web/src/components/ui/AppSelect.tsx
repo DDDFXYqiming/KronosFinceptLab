@@ -16,6 +16,7 @@ interface AppSelectProps<T extends string> {
   className?: string;
   disabled?: boolean;
   placeholder?: string;
+  buttonClassName?: string;
 }
 
 export function AppSelect<T extends string>({
@@ -26,6 +27,7 @@ export function AppSelect<T extends string>({
   className = "",
   disabled = false,
   placeholder,
+  buttonClassName = "",
 }: AppSelectProps<T>) {
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -131,7 +133,7 @@ export function AppSelect<T extends string>({
           setActiveValue(value);
         }}
         onKeyDown={handleKeyDown}
-        className="app-input flex items-center justify-between gap-3 text-left text-sm shadow-sm transition-all duration-200 hover:border-accent/40 focus:ring-4 focus:ring-accent/10 disabled:cursor-not-allowed disabled:opacity-50"
+        className={`group flex min-h-11 w-full min-w-0 items-center justify-between gap-3 rounded-[10px] border border-slate-700 bg-slate-800 px-3 py-2.5 text-left text-sm text-white shadow-sm ring-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-[0_10px_24px_rgba(0,82,255,0.14)] focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-50 ${open ? "border-accent/70 shadow-[0_10px_24px_rgba(0,82,255,0.18)]" : ""} ${buttonClassName}`}
       >
         <span className="min-w-0 truncate">
           {selected?.label || placeholder || ariaLabel}
@@ -139,7 +141,7 @@ export function AppSelect<T extends string>({
         <svg
           aria-hidden="true"
           viewBox="0 0 20 20"
-          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          className={`h-4 w-4 shrink-0 text-slate-300 transition-transform duration-200 group-hover:text-white ${open ? "rotate-180 text-white" : ""}`}
           fill="none"
         >
           <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -151,9 +153,10 @@ export function AppSelect<T extends string>({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
-          className={`absolute left-0 z-50 w-full min-w-[12rem] overflow-hidden rounded-xl border border-[#374151] bg-[#111827] p-1 shadow-2xl shadow-black/35 ring-1 ring-white/10 backdrop-blur ${placement === "top" ? "bottom-[calc(100%+0.5rem)]" : "top-[calc(100%+0.5rem)]"}`}
+          className={`absolute left-0 z-50 w-full min-w-[12rem] overflow-hidden rounded-xl border border-slate-700/80 bg-slate-950/95 p-1.5 shadow-2xl shadow-slate-950/35 ring-1 ring-white/10 backdrop-blur-xl ${placement === "top" ? "bottom-[calc(100%+0.5rem)]" : "top-[calc(100%+0.5rem)]"}`}
         >
-          <div className="max-h-64 overflow-y-auto overscroll-contain">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-accent via-accent-secondary to-transparent" />
+          <div className="max-h-64 overflow-y-auto overscroll-contain py-0.5">
             {options.map((option) => {
               const selectedOption = option.value === value;
               const activeOption = option.value === activeValue;
@@ -165,15 +168,15 @@ export function AppSelect<T extends string>({
                   aria-selected={selectedOption}
                   onMouseEnter={() => setActiveValue(option.value)}
                   onClick={() => commitValue(option.value)}
-                  className={`flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors duration-150 ${
+                  className={`flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-all duration-150 ${
                     activeOption
-                      ? "bg-accent/20 text-white"
+                      ? "bg-gradient-to-r from-accent/80 to-accent-secondary/70 text-white shadow-sm"
                       : "text-slate-300 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   <span
                     aria-hidden="true"
-                    className={`h-2 w-2 shrink-0 rounded-full ${selectedOption ? "bg-accent" : "bg-transparent"}`}
+                    className={`h-2 w-2 shrink-0 rounded-full ${selectedOption ? "bg-white" : activeOption ? "bg-white/70" : "bg-transparent"}`}
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{option.label}</span>

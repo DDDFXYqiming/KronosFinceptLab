@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { PriceLineChart } from "@/components/charts/PriceLineChart";
 import { api, formatApiError } from "@/lib/api";
 import { MARKET_OPTIONS, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
@@ -32,6 +33,7 @@ const ADJUST_OPTIONS = [
   { value: "hfq", label: "后复权" },
   { value: "", label: "不复权" },
 ];
+type AdjustValue = "qfq" | "hfq" | "";
 
 function formatYmd(date: Date): string {
   const y = date.getFullYear();
@@ -50,6 +52,8 @@ function DataPageInner() {
   const queryClient = useQueryClient();
   const { addToWatchlist, preferences } = useAppStore();
   const marketOptions = getMarketOptions(preferences.language);
+  const rangeOptions: Array<AppSelectOption<RangePreset>> = RANGE_PRESETS.map((option) => ({ value: option.value, label: option.label }));
+  const adjustOptions: Array<AppSelectOption<AdjustValue>> = ADJUST_OPTIONS.map((option) => ({ value: option.value as AdjustValue, label: option.label }));
   const [query, setQuery] = useSessionState("kronos-data-query", "");
   const [searchResults, setSearchResults] = useSessionState<SearchResult[]>("kronos-data-search-results", []);
   const [symbol, setSymbol] = useSessionState("kronos-data-symbol", DEFAULT_SYMBOL);
@@ -212,11 +216,11 @@ function DataPageInner() {
         <CardTitle>获取数据</CardTitle>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div><label className="field-label">代码</label><input type="text" value={symbol} onChange={(e) => setSymbol(e.target.value)} className="app-input mt-1 font-mono" placeholder={DEFAULT_SYMBOL} /></div>
-          <div><label className="field-label">市场</label><select value={market} onChange={(e) => setMarket(e.target.value as Market)} className="app-input mt-1">{marketOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select></div>
-          <div><label className="field-label">周期</label><select value={rangePreset} onChange={(e) => applyRangePreset(e.target.value as RangePreset)} className="app-input mt-1">{RANGE_PRESETS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select></div>
+          <div><label className="field-label">市场</label><AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel="市场" className="mt-1" /></div>
+          <div><label className="field-label">周期</label><AppSelect value={rangePreset} onChange={applyRangePreset} options={rangeOptions} ariaLabel="周期" className="mt-1" /></div>
           <div><label className="field-label">开始日期</label><input type="text" value={startDate} onChange={(e) => { setRangePreset("custom"); setStartDate(e.target.value); }} className="app-input mt-1 font-mono" /></div>
           <div><label className="field-label">结束日期</label><input type="text" value={endDate} onChange={(e) => { setRangePreset("custom"); setEndDate(e.target.value); }} className="app-input mt-1 font-mono" /></div>
-          <div><label className="field-label">复权 adjust</label><select value={adjust} onChange={(e) => setAdjust(e.target.value)} disabled={market !== "cn"} className="app-input mt-1">{ADJUST_OPTIONS.map((opt) => <option key={opt.value || "none"} value={opt.value}>{opt.label}</option>)}</select></div>
+          <div><label className="field-label">复权 adjust</label><AppSelect value={adjust as AdjustValue} onChange={setAdjust} options={adjustOptions} ariaLabel="复权 adjust" className="mt-1" disabled={market !== "cn"} /></div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row">
           <Button onClick={() => handleFetch(false)} loading={loading} className="w-full md:w-auto">获取</Button><Button variant="secondary" onClick={() => handleFetch(true)} loading={loading} className="w-full md:w-auto">刷新数据</Button><Button variant="secondary" onClick={downloadDataCsv} disabled={!data} className="w-full md:w-auto">导出 CSV</Button><Button variant="secondary" onClick={handleAddToWatchlist} className="w-full md:w-auto">加入自选</Button><Link className="btn-secondary flex h-12 items-center justify-center rounded-xl px-6 text-sm font-medium" href={`/forecast?symbol=${normalizeSymbol(symbol)}&market=${market}`}>去预测</Link><Link className="btn-secondary flex h-12 items-center justify-center rounded-xl px-6 text-sm font-medium" href={`/analysis?symbol=${normalizeSymbol(symbol)}&market=${market}`}>去分析</Link>

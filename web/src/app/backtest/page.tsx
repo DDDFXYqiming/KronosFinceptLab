@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
+import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { BacktestEquityChart } from "@/components/charts/BacktestEquityChart";
 import { api, formatApiError } from "@/lib/api";
 import { downloadTextFile, makeDatedFilename, toCsv, validateDateRange } from "@/lib/exportUtils";
@@ -15,6 +16,12 @@ import { useSessionState } from "@/lib/useSessionState";
 import type { BacktestReportResponse, BacktestResponse, StrategyBacktestResponse, StrategyName, StrategyRollingResponse, StrategyScanResponse } from "@/types/api";
 
 const CSV_HEADERS = "date,equity,return,selected";
+const STRATEGY_OPTIONS: Array<AppSelectOption<StrategyName>> = [
+  { value: "equal_weight", label: "Equal Weight" },
+  { value: "momentum", label: "Momentum" },
+  { value: "mean_reversion", label: "Mean Reversion" },
+  { value: "top_k_ranking", label: "Top-K Ranking" },
+];
 
 export default function BacktestPage() {
   const queryClient = useQueryClient();
@@ -219,12 +226,7 @@ export default function BacktestPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <label className="field-label">扫描策略</label>
-            <select value={strategy} onChange={(e) => setStrategy(e.target.value as StrategyName)} className="app-input mt-1">
-              <option value="equal_weight">Equal Weight</option>
-              <option value="momentum">Momentum</option>
-              <option value="mean_reversion">Mean Reversion</option>
-              <option value="top_k_ranking">Top-K Ranking</option>
-            </select>
+            <AppSelect value={strategy} onChange={setStrategy} options={STRATEGY_OPTIONS} ariaLabel="扫描策略" className="mt-1" />
           </div>
           <div className="md:col-span-2 flex items-end">
             <Button onClick={handleStrategyLab} loading={strategyLoading}>运行策略实验室</Button>
