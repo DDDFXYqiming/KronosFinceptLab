@@ -12,7 +12,7 @@ from typing import Any
 from . import DataSource, DataSourceConfig
 
 
-DEFAULT_MARKET_REVIEW_DIR = Path(r"E:\AI_Projects\------\Stock Analysis System\data\market_review")
+DEFAULT_MARKET_REVIEW_DIR = Path("external/stock-analysis-system/data/market_review")
 
 ARTIFACT_FILES = {
     "dragon_tiger": "dragon_tiger.parquet",

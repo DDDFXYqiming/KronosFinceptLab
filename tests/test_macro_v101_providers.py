@@ -59,7 +59,7 @@ class SourceCacheProvider(StaticProvider):
                 time_horizon="mixed",
                 confidence=0.74,
                 observed_at="2026-05-01",
-                source_url="E:/AI_Projects/------/Stock Analysis System/data/macro/china_pmi.parquet",
+                source_url="external/stock-analysis-system/data/macro/china_pmi.parquet",
                 metadata={
                     "series_id": "china_pmi",
                     "label": "China PMI",

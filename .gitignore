@@ -34,6 +34,7 @@ secrets/
 .claude/
 .hermes/
 .trae/
+.understand-anything/
 .onboarded
 plan_*/
 skills/
