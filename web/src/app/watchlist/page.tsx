@@ -7,7 +7,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { useAppStore, type WatchlistItem } from "@/stores/app";
-import { DEFAULT_MARKET, MARKET_OPTIONS, getMarketLabel, type Market } from "@/lib/markets";
+import { DEFAULT_MARKET, MARKET_OPTIONS, getMarketLabel, getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
 import { api, formatApiError } from "@/lib/api";
 import { downloadTextFile, makeDatedFilename, parseCsv, toCsv } from "@/lib/exportUtils";
@@ -116,7 +116,8 @@ function compareValues(a: string | number, b: string | number, direction: SortDi
 export default function WatchlistPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { watchlist, addToWatchlist, removeFromWatchlist, updateWatchlistItem, replaceWatchlist } = useAppStore();
+  const { watchlist, addToWatchlist, removeFromWatchlist, updateWatchlistItem, replaceWatchlist, preferences } = useAppStore();
+  const marketOptions = getMarketOptions(preferences.language);
   const [symbol, setSymbol] = useSessionState("kronos-watchlist-symbol", "");
   const [market, setMarket] = useSessionState<Market>("kronos-watchlist-market", DEFAULT_MARKET);
   const [name, setName] = useSessionState("kronos-watchlist-name", "");
@@ -346,7 +347,7 @@ export default function WatchlistPage() {
           </div>
           <div>
             <label className="field-label">市场</label>
-            <select value={market} onChange={(e) => setMarket(e.target.value as Market)} className="app-input mt-1">{MARKET_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
+            <select value={market} onChange={(e) => setMarket(e.target.value as Market)} className="app-input mt-1">{marketOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
           </div>
           <div>
             <label className="field-label">名称</label>
@@ -435,8 +436,8 @@ export default function WatchlistPage() {
                       <td className="py-3"><input type="checkbox" checked={selectedKeys.includes(key)} onChange={() => toggleSelected(item)} /></td>
                       <td className="py-3 font-mono font-bold text-white">{item.symbol}</td>
                       <td className="py-3">
-                        <input className="app-input h-9" value={item.name || ""} onChange={(e) => updateWatchlistItem(item.symbol, item.market, { name: e.target.value })} placeholder={getMarketLabel(item.market)} />
-                        <p className="mt-1 text-xs text-muted-foreground">{getMarketLabel(item.market)}</p>
+                        <input className="app-input h-9" value={item.name || ""} onChange={(e) => updateWatchlistItem(item.symbol, item.market, { name: e.target.value })} placeholder={getMarketLabel(item.market, preferences.language)} />
+                        <p className="mt-1 text-xs text-muted-foreground">{getMarketLabel(item.market, preferences.language)}</p>
                       </td>
                       <td className="py-3 text-right">{quote?.latestPrice == null ? "-" : formatNumber(quote.latestPrice, 2)}</td>
                       <td className={`py-3 text-right ${quote?.changePct == null ? "" : quote.changePct >= 0 ? "text-accent-green" : "text-accent-red"}`}>{quote?.changePct == null ? "-" : `${(quote.changePct * 100).toFixed(2)}%`}</td>

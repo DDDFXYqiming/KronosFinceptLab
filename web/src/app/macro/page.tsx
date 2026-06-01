@@ -11,6 +11,8 @@ import { api, formatApiError } from "@/lib/api";
 import { demoMacroResult } from "@/lib/demoData";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
+import { useAppStore } from "@/stores/app";
+import type { Language } from "@/lib/i18n";
 import type {
   AgentAnalyzeResponse,
   AgentToolCall,
@@ -45,6 +47,26 @@ const LOADING_STEPS = [
   "LLM 汇总",
   "生成宏观报告",
 ];
+
+function tx(language: Language, zh: string, en: string): string {
+  return language === "en-US" ? en : zh;
+}
+
+function defaultMacroQuestion(language: Language): string {
+  return tx(language, DEFAULT_QUESTION, "Is now a good time to buy gold?");
+}
+
+function fallbackMacroExamples(language: Language): string[] {
+  if (language === "en-US") {
+    return [
+      "What is the probability of WW3?",
+      "Is now a good time to buy gold?",
+      "Is the AI trade a bubble?",
+      "Has Bitcoin bottomed yet?",
+    ];
+  }
+  return _HARDCODED_EXAMPLES;
+}
 
 function formatElapsedMs(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "-";
@@ -641,15 +663,16 @@ function MonitoringTable({ rows }: { rows: MacroMonitoringSignal[] }) {
 function MacroContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const language = useAppStore((state) => state.preferences.language);
   const demoMode = searchParams.get("demo") === "1";
   const inFlightRef = useRef(false);
-  const [question, setQuestion] = useSessionState("kronos-macro-question", DEFAULT_QUESTION);
+  const [question, setQuestion] = useSessionState("kronos-macro-question", defaultMacroQuestion(language));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-macro-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-macro-result", null);
   const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-macro-history", []);
   const [activeRun, setActiveRun] = useSessionState<ActiveMacroRun | null>("kronos-macro-active-run", null);
-  const [examples, setExamples] = useState<string[]>(_HARDCODED_EXAMPLES);
+  const [examples, setExamples] = useState<string[]>(() => fallbackMacroExamples(language));
   const activeRunFetching = useIsFetching({
     queryKey: activeRun?.queryKey ?? ["kronos-macro-no-active-run"],
     exact: true,
@@ -658,7 +681,9 @@ function MacroContent() {
 
   // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
   useEffect(() => {
-    const cacheKey = "kronos-macro-suggestions";
+    setExamples(fallbackMacroExamples(language));
+    // Legacy cache key prefix retained for tests and migration: "kronos-macro-suggestions"
+    const cacheKey = `kronos-macro-suggestions-${language}`;
     try {
       const cached = window.sessionStorage.getItem(cacheKey);
       if (cached) {
@@ -675,7 +700,7 @@ function MacroContent() {
         try { window.sessionStorage.setItem(cacheKey, JSON.stringify(res)); } catch {}
       }
     }).catch(() => {});
-  }, []);
+  }, [language]);
 
   const appendHistory = useCallback((entry: AgentAnalyzeResponse) => {
     setHistory((current) => {
@@ -693,8 +718,10 @@ function MacroContent() {
       version: VERSION,
       turn_index: run.turnIndex,
       max_turns: MAX_MACRO_TURNS,
+      language,
     },
-  }), []);
+    language,
+  }), [language]);
 
   const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse) => {
     setResult(entry);
@@ -716,7 +743,7 @@ function MacroContent() {
 
     const state = queryClient.getQueryState<AgentAnalyzeResponse>(key);
     if (state?.status === "error") {
-      setError(formatApiError(state.error, "宏观分析请求失败"));
+      setError(formatApiError(state.error, tx(language, "宏观分析请求失败", "Macro analysis request failed")));
       setActiveRun(null);
       setLoading(false);
       return;
@@ -732,7 +759,7 @@ function MacroContent() {
       });
       applyCompletedRun(res);
     } catch (e) {
-      setError(formatApiError(e, "宏观分析请求失败"));
+      setError(formatApiError(e, tx(language, "宏观分析请求失败", "Macro analysis request failed")));
       setActiveRun(null);
     } finally {
       inFlightRef.current = false;
@@ -744,7 +771,7 @@ function MacroContent() {
     if (inFlightRef.current) return;
     const prompt = (overrideQuestion || question).trim();
     if (!prompt) return;
-    const key = queryKeys.macro({ question: prompt });
+    const key = queryKeys.macro({ question: prompt, language });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
       applyCompletedRun(cached);
@@ -773,7 +800,7 @@ function MacroContent() {
       });
       applyCompletedRun(res);
     } catch (e) {
-      setError(formatApiError(e, "宏观分析请求失败"));
+      setError(formatApiError(e, tx(language, "宏观分析请求失败", "Macro analysis request failed")));
       setActiveRun(null);
     } finally {
       inFlightRef.current = false;
@@ -788,7 +815,7 @@ function MacroContent() {
 
   const handleNewChat = () => {
     queryClient.removeQueries({ queryKey: [...queryKeys.all, "macro"] });
-    setQuestion(DEFAULT_QUESTION);
+    setQuestion(defaultMacroQuestion(language));
     setResult(null);
     setHistory([]);
     setActiveRun(null);
@@ -822,12 +849,12 @@ function MacroContent() {
 
   return (
     <div className="page-shell space-y-6">
-      <SectionLabel>宏观洞察</SectionLabel>
-      <h1 className="page-title">宏观信号分析</h1>
+      <SectionLabel>{tx(language, "宏观洞察", "Macro Insight")}</SectionLabel>
+      <h1 className="page-title">{tx(language, "宏观信号分析", "Macro Signal Analysis")}</h1>
       <ApiKeyNotice />
       {demoMode && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-          当前展示固定宏观演示样例，不调用 provider 或 LLM。
+          {tx(language, "当前展示固定宏观演示样例，不调用 provider 或 LLM。", "Showing a fixed macro demo sample. Providers and LLM are not called.")}
         </div>
       )}
 
@@ -838,7 +865,7 @@ function MacroContent() {
             onChange={(event) => setQuestion(event.target.value)}
             rows={4}
             className="app-input min-h-36 resize-none px-4 py-3"
-            placeholder="例如：现在适合买黄金吗？"
+            placeholder={tx(language, "例如：现在适合买黄金吗？", "Example: is now a good time to buy gold?")}
           />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-wrap gap-2">
@@ -854,7 +881,7 @@ function MacroContent() {
               ))}
             </div>
             <Button type="submit" loading={displayLoading} className="w-full lg:w-auto">
-              开始洞察
+              {tx(language, "开始洞察", "Start Insight")}
             </Button>
             <Button
               type="button"
@@ -863,7 +890,7 @@ function MacroContent() {
               onClick={handleNewChat}
               className="w-full lg:w-auto"
             >
-              新建对话/清空本轮
+              {tx(language, "新建对话/清空本轮", "New Conversation / Clear")}
             </Button>
             {result && (
               <Button
@@ -873,7 +900,7 @@ function MacroContent() {
                 onClick={() => handleAnalyze(undefined, true)}
                 className="w-full lg:w-auto"
               >
-                重新分析
+                {tx(language, "重新分析", "Rerun Analysis")}
               </Button>
             )}
           </div>
@@ -882,7 +909,7 @@ function MacroContent() {
 
       {(displayLoading || result) && (
         <Card>
-          <CardTitle>宏观执行进度</CardTitle>
+          <CardTitle>{tx(language, "宏观执行进度", "Macro Progress")}</CardTitle>
           <StepStrip result={result} loading={displayLoading} />
         </Card>
       )}
@@ -890,9 +917,9 @@ function MacroContent() {
       {history.length > 1 && (
         <Card>
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <CardTitle>本轮历史</CardTitle>
+            <CardTitle>{tx(language, "本轮历史", "Current Session History")}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              保留最近 {MAX_MACRO_TURNS} 轮临时结果，不写入长期记忆。
+              {tx(language, `保留最近 ${MAX_MACRO_TURNS} 轮临时结果，不写入长期记忆。`, `Keeps the latest ${MAX_MACRO_TURNS} temporary results without long-term memory.`)}
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -914,7 +941,7 @@ function MacroContent() {
                   </span>
                 </div>
                 <p className="line-clamp-2 text-xs text-muted-foreground">
-                  {item.report?.macro_analysis || item.report?.conclusion || "无摘要"}
+                  {item.report?.macro_analysis || item.report?.conclusion || tx(language, "无摘要", "No summary")}
                 </p>
               </button>
             ))}
@@ -927,7 +954,7 @@ function MacroContent() {
       {result && (
         <>
           <Card>
-            <CardTitle>宏观结论</CardTitle>
+            <CardTitle>{tx(language, "宏观结论", "Macro Conclusion")}</CardTitle>
             {evidence && (
               <div className="mb-4 flex flex-wrap gap-2">
                 <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
@@ -935,10 +962,10 @@ function MacroContent() {
                     ? "border-green-200 bg-green-50 text-green-700"
                     : "border-amber-200 bg-amber-50 text-amber-700"
                 }`}>
-                  {evidence.sufficient_evidence ? "证据满足" : "证据不足"}
+                  {evidence.sufficient_evidence ? tx(language, "证据满足", "Evidence sufficient") : tx(language, "证据不足", "Evidence insufficient")}
                 </span>
                 <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground">
-                  独立维度 {evidence.dimension_count}/{evidence.required_dimension_count}
+                  {tx(language, `独立维度 ${evidence.dimension_count}/${evidence.required_dimension_count}`, `Independent dimensions ${evidence.dimension_count}/${evidence.required_dimension_count}`)}
                 </span>
                 {(evidence.dimension_labels || []).slice(0, 5).map((label) => (
                   <span key={label} className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground">
@@ -950,18 +977,18 @@ function MacroContent() {
             <div className="mb-4 rounded-2xl border border-accent/20 bg-accent/5 p-4">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">操作结论</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tx(language, "操作结论", "Action View")}</p>
                   <p className="mt-1 text-xl font-semibold leading-snug text-foreground">{macroAction}</p>
                 </div>
                 <RecommendationBadge rec={result.recommendation} />
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {report?.macro_analysis || report?.conclusion || "暂无结论。"}
+                {report?.macro_analysis || report?.conclusion || tx(language, "暂无结论。", "No conclusion yet.")}
               </p>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
-                <p className="mb-1 text-sm text-muted-foreground">置信度</p>
+                <p className="mb-1 text-sm text-muted-foreground">{tx(language, "置信度", "Confidence")}</p>
                 <div className="flex items-center gap-2">
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                     <div
@@ -975,11 +1002,11 @@ function MacroContent() {
                 </div>
               </div>
               <div>
-                <p className="mb-1 text-sm text-muted-foreground">风险等级</p>
+                <p className="mb-1 text-sm text-muted-foreground">{tx(language, "风险等级", "Risk Level")}</p>
                 <RiskBadge level={result.risk_level} />
               </div>
               <div>
-                <p className="mb-1 text-sm text-muted-foreground">时间</p>
+                <p className="mb-1 text-sm text-muted-foreground">{tx(language, "时间", "Time")}</p>
                 <p className="text-sm font-mono text-foreground">{result.timestamp.slice(0, 19)}</p>
               </div>
             </div>
@@ -990,49 +1017,49 @@ function MacroContent() {
           <ProviderCoverageMatrix rows={providerRows} />
 
           <Card>
-            <CardTitle>信号来源（分层）</CardTitle>
+            <CardTitle>{tx(language, "信号来源（分层）", "Signal Sources")}</CardTitle>
             <MacroSignalsTable signals={macroSignals} />
           </Card>
 
           <Card>
-            <CardTitle>信号一致性评估</CardTitle>
+            <CardTitle>{tx(language, "信号一致性评估", "Signal Consistency")}</CardTitle>
             <div className="space-y-4">
               <div className="rounded-lg border border-border bg-background p-3">
-                <p className="mb-1 text-sm font-semibold text-foreground">共振信号</p>
+                <p className="mb-1 text-sm font-semibold text-foreground">{tx(language, "共振信号", "Confirming Signals")}</p>
                 <p className="text-sm text-muted-foreground">
-                  {report?.cross_validation || "暂无交叉验证结论。"}
+                  {report?.cross_validation || tx(language, "暂无交叉验证结论。", "No cross-validation conclusion yet.")}
                 </p>
               </div>
               <div className="rounded-lg border border-border bg-background p-3">
-                <p className="mb-1 text-sm font-semibold text-foreground">矛盾信号</p>
+                <p className="mb-1 text-sm font-semibold text-foreground">{tx(language, "矛盾信号", "Conflicting Signals")}</p>
                 <p className="text-sm text-muted-foreground">
-                  {report?.contradictions || "暂无矛盾信号说明。"}
+                  {report?.contradictions || tx(language, "暂无矛盾信号说明。", "No conflicting-signal explanation yet.")}
                 </p>
               </div>
             </div>
           </Card>
 
           <Card>
-            <CardTitle>概率估计</CardTitle>
+            <CardTitle>{tx(language, "概率估计", "Probability Scenarios")}</CardTitle>
             {scenarios.length ? (
               <ProbabilityTable scenarios={scenarios} />
             ) : (
-              <p className="text-sm text-muted-foreground">暂无概率场景。</p>
+              <p className="text-sm text-muted-foreground">{tx(language, "暂无概率场景。", "No probability scenarios yet.")}</p>
             )}
           </Card>
 
           <Card>
-            <CardTitle>待监控信号</CardTitle>
+            <CardTitle>{tx(language, "待监控信号", "Signals to Monitor")}</CardTitle>
             {monitoring.length ? (
               <MonitoringTable rows={monitoring} />
             ) : (
-              <p className="text-sm text-muted-foreground">暂无监控信号。</p>
+              <p className="text-sm text-muted-foreground">{tx(language, "暂无监控信号。", "No monitoring signals yet.")}</p>
             )}
           </Card>
 
           {result.tool_calls.length > 0 && (
             <Card>
-              <CardTitle>工具调用时间线</CardTitle>
+              <CardTitle>{tx(language, "工具调用时间线", "Tool Timeline")}</CardTitle>
               <ToolCalls calls={result.tool_calls} />
             </Card>
           )}
@@ -1042,8 +1069,8 @@ function MacroContent() {
       {!result && !error && !displayLoading && (
         <Card>
           <div className="flex flex-col items-center py-16 text-center">
-            <p className="text-lg font-semibold text-foreground mb-2">输入一个宏观问题</p>
-            <p className="text-sm text-muted-foreground">例如：现在适合买黄金吗、WW3 的概率是多少。</p>
+            <p className="text-lg font-semibold text-foreground mb-2">{tx(language, "输入一个宏观问题", "Enter a macro question")}</p>
+            <p className="text-sm text-muted-foreground">{tx(language, "例如：现在适合买黄金吗、WW3 的概率是多少。", "Example: is now a good time to buy gold, or what is the probability of WW3?")}</p>
           </div>
         </Card>
       )}

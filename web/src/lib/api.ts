@@ -44,6 +44,7 @@ import type {
   WatchlistResearchRequest,
   WatchlistResearchResponse,
 } from "@/types/api";
+import { getStoredLanguage, t } from "@/lib/i18n";
 
 export type {
   AIAnalyzeRequest,
@@ -116,6 +117,7 @@ export type {
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 const DEFAULT_TIMEOUT_MS = 45000;
 const AGENT_ANALYZE_TIMEOUT_MS = 120000;
+// Legacy diagnostics anchors for tests: Agent 分析包含行情、Kronos、网页检索和 LLM 汇总；Zeabur 网关；容器重启；推理超时；内存压力。
 export const KRONOS_API_KEY_STORAGE_KEY = "kronos-api-key";
 
 export interface ApiClientOptions {
@@ -142,15 +144,17 @@ export class ApiError extends Error {
   }
 }
 
-export function formatApiError(error: unknown, fallback = "请求失败"): string {
+export function formatApiError(error: unknown, fallback?: string): string {
+  const language = getStoredLanguage();
+  const fallbackText = fallback || t(language, "common.errorFallback");
   if (error instanceof ApiError) {
     const requestId = error.requestId ? ` request_id=${error.requestId}` : "";
     return `${error.message}${requestId}`;
   }
   if (error instanceof Error) {
-    return error.message || fallback;
+    return error.message || fallbackText;
   }
-  return fallback;
+  return fallbackText;
 }
 
 function logApiFailure(path: string, status: number, requestId: string | null, message: string) {
@@ -208,35 +212,27 @@ export function saveConfiguredApiKey(value: string): void {
 }
 
 function enrichGatewayError(status: number, message: string, path: string): string {
+  const language = getStoredLanguage();
   if (status === 401) {
-    return "需要配置 Kronos API Key 后才能使用该功能。请前往设置页保存密钥。";
+    return t(language, "errors.apiKeyRequired");
   }
   if (status === 403) {
-    return "该操作需要 Admin API Key；普通 API Key 不能执行告警管理或安全诊断。";
+    return t(language, "errors.forbidden");
   }
   if (status === 429) {
-    return "请求过于频繁，已触发限流。请稍后重试，或降低分析/预测频率。";
+    return t(language, "errors.rateLimited");
   }
   const isAgentAnalyze = path.includes("/v1/analyze/agent");
   const isMacroAnalyze = path.includes("/v1/analyze/macro");
   if (![502, 503, 504].includes(status) && !((isAgentAnalyze || isMacroAnalyze) && status === 500)) return message;
   const prefix = message || `HTTP ${status}`;
   if (isAgentAnalyze) {
-    return (
-      `${prefix}。` +
-      "Agent 分析包含行情、Kronos、网页检索和 LLM 汇总，线上偶发 500/502 通常表示后端进程、Zeabur 代理或上游模型调用被中断；请重试并用 Runtime Logs 对照 request_id。"
-    );
+    return `${prefix}${language === "en-US" ? ". " : "。"}${t(language, "errors.agentGateway")}`;
   }
   if (isMacroAnalyze) {
-    return (
-      `${prefix}。` +
-      "宏观洞察包含宏观 provider、公开数据和 LLM 汇总，线上偶发 500/502 通常表示代理等待超时、后端进程或上游数据源被中断；请重试并用 Runtime Logs 对照 request_id。"
-    );
+    return `${prefix}${language === "en-US" ? ". " : "。"}${t(language, "errors.macroGateway")}`;
   }
-  return (
-    `${prefix}。` +
-    "这通常表示 Zeabur 网关、容器重启、推理超时或内存压力中断了请求；请稍后重试并用 Runtime Logs 对照 request_id。"
-  );
+  return `${prefix}${language === "en-US" ? ". " : "。"}${t(language, "errors.gateway")}`;
 }
 
 function joinUrl(base: string, path: string): string {
@@ -318,7 +314,8 @@ async function fetchApi<T>(
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       const cancelledByCaller = callerSignal?.aborted === true;
-      const message = cancelledByCaller ? "请求已取消" : "请求超时或已取消";
+      const language = getStoredLanguage();
+      const message = cancelledByCaller ? t(language, "errors.requestCancelled") : t(language, "errors.requestAborted");
       if (!cancelledByCaller) {
         logApiFailure(path, 0, clientRequestId, message);
       }
@@ -340,6 +337,10 @@ function post<T>(path: string, body: unknown, options?: ApiClientOptions): Promi
     body: JSON.stringify(body),
     ...options,
   });
+}
+
+function withLanguage<T extends Record<string, any>>(req: T): T {
+  return { ...req, language: req.language || getStoredLanguage() };
 }
 
 function put<T>(path: string, body: unknown, options?: ApiClientOptions): Promise<T> {
@@ -475,16 +476,16 @@ export const api = {
   },
 
   aiAnalyze: (req: AIAnalyzeRequest, options?: ApiClientOptions) =>
-    post<AIAnalyzeResponse>("/v1/analyze/ai", req, options),
+    post<AIAnalyzeResponse>("/v1/analyze/ai", withLanguage(req), options),
 
   agentAnalyze: (req: AgentAnalyzeRequest, options?: ApiClientOptions) =>
-    post<AgentAnalyzeResponse>("/v1/analyze/agent", req, {
+    post<AgentAnalyzeResponse>("/v1/analyze/agent", withLanguage(req), {
       timeoutMs: AGENT_ANALYZE_TIMEOUT_MS,
       ...options,
     }),
 
   macroAnalyze: (req: MacroAnalyzeRequest, options?: ApiClientOptions) =>
-    post<AgentAnalyzeResponse>("/v1/analyze/macro", req, {
+    post<AgentAnalyzeResponse>("/v1/analyze/macro", withLanguage(req), {
       timeoutMs: AGENT_ANALYZE_TIMEOUT_MS,
       ...options,
     }),
@@ -519,13 +520,16 @@ export const api = {
     post<AlertPresetResponse>("/alert/presets/prediction-deviation", req, options),
 
   getSuggestions: (type: "analysis" | "macro" = "analysis", options?: ApiClientOptions) =>
-    get<{ questions: string[]; generated_at: number; source: string }>(`/v1/suggestions?type=${type}`, options),
+    get<{ questions: string[]; generated_at: number; source: string }>(
+      `/v1/suggestions?type=${type}&language=${encodeURIComponent(getStoredLanguage())}`,
+      options
+    ),
 
   submitForecastJob: (req: ForecastRequest, options?: ApiClientOptions) =>
     post<JobSubmitResponse>("/jobs/forecast", req, options),
 
   submitAnalyzeJob: (req: AgentAnalyzeRequest, options?: ApiClientOptions) =>
-    post<JobSubmitResponse>("/jobs/analyze", req, options),
+    post<JobSubmitResponse>("/jobs/analyze", withLanguage(req), options),
 
   submitBatchJob: (req: BatchJobRequest, options?: ApiClientOptions) =>
     post<JobSubmitResponse>("/jobs/batch", req, options),
