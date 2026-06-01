@@ -19,7 +19,7 @@ The Kronos model service is deployed on Windows and can be used via:
 ## Model Location
 
 ```
-E:\AI_Projects\KronosFinceptLab\external\
+<PROJECT_ROOT>\external\
 ├── Kronos\                    # Kronos upstream source
 ├── Kronos-base\              # Kronos-base model (98MB)
 ├── Kronos-Tokenizer-base\     # Tokenizer (15MB)
@@ -33,7 +33,7 @@ E:\AI_Projects\KronosFinceptLab\external\
 
 ```batch
 # Enter FinceptTerminal scripts directory
-cd E:\FinceptTerminal\scripts
+cd <FINCEPT_TERMINAL_SCRIPTS>
 
 # Run test forecast
 run_kronos_forecast.bat --test
@@ -49,7 +49,7 @@ echo {"symbol":"600036",...} | run_kronos_forecast.bat --stdin
 
 ```batch
 # Enter project directory
-cd E:\AI_Projects\KronosFinceptLab
+cd <PROJECT_ROOT>
 
 # Run test
 kronos_forecast.bat --test
@@ -65,12 +65,12 @@ kronos_forecast.bat --mcp
 
 ```batch
 # Set environment variables
-set KRONOS_REPO_PATH=E:\AI_Projects\KronosFinceptLab\external\Kronos
-set HF_HOME=E:\AI_Projects\KronosFinceptLab\external
-set PYTHONPATH=E:\AI_Projects\KronosFinceptLab\src
+set KRONOS_REPO_PATH=%CD%\external\Kronos
+set HF_HOME=%CD%\external
+set PYTHONPATH=%CD%\src
 
 # Enter scripts directory
-cd E:\FinceptTerminal\scripts
+cd <FINCEPT_TERMINAL_SCRIPTS>
 
 # Run forecast
 python kronos_forecast.py --input request.json
@@ -240,7 +240,7 @@ Error: kronos_fincept package not found
 
 **Solution**: Install the package:
 ```batch
-cd E:\AI_Projects\KronosFinceptLab
+cd <PROJECT_ROOT>
 pip install -e .
 ```
 

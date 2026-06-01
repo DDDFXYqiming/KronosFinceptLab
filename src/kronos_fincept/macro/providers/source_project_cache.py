@@ -11,7 +11,7 @@ from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderUnav
 from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
 
 
-DEFAULT_SOURCE_PROJECT = Path(r"E:\AI_Projects\------\Stock Analysis System")
+DEFAULT_SOURCE_PROJECT = Path("external/stock-analysis-system")
 
 
 def _series(

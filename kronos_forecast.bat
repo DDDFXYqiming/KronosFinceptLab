@@ -6,10 +6,11 @@ REM 用于在 FinceptTerminal 中运行 Kronos 模型推理
 setlocal enabledelayedexpansion
 
 REM 设置项目路径
-set PROJECT_ROOT=E:\AI_Projects\KronosFinceptLab
-set KRONOS_REPO_PATH=%PROJECT_ROOT%\external\Kronos
-set HF_HOME=%PROJECT_ROOT%\external
-set PYTHONPATH=%PROJECT_ROOT%\src
+set "PROJECT_ROOT=%~dp0"
+if "%PROJECT_ROOT:~-1%"=="\" set "PROJECT_ROOT=%PROJECT_ROOT:~0,-1%"
+set "KRONOS_REPO_PATH=%PROJECT_ROOT%\external\Kronos"
+set "HF_HOME=%PROJECT_ROOT%\external"
+set "PYTHONPATH=%PROJECT_ROOT%\src"
 set KRONOS_LOW_MEMORY_DEFAULTS=1
 set OPENBLAS_NUM_THREADS=1
 set OMP_NUM_THREADS=1
@@ -19,7 +20,7 @@ set VECLIB_MAXIMUM_THREADS=1
 set TOKENIZERS_PARALLELISM=false
 
 REM 设置 FinceptTerminal 路径
-set FINCEPT_SCRIPTS=E:\FinceptTerminal\scripts
+if not defined FINCEPT_SCRIPTS set "FINCEPT_SCRIPTS=%PROJECT_ROOT%\integrations\fincept_terminal\scripts"
 
 echo === Kronos Forecast - Windows 批处理脚本 ===
 echo.

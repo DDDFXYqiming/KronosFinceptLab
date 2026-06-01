@@ -3,15 +3,14 @@
 Sets up the correct Windows paths for Kronos model resolution,
 then delegates to the CLI forecast command.
 
-Usage (from WSL):
-    /mnt/c/Users/39795/AppData/Local/Programs/Python/Python313/python.exe \\
-        scripts/win_launcher.py forecast --symbol 601398 --pred-len 5
+Usage:
+    python scripts/win_launcher.py forecast --symbol 601398 --pred-len 5
 """
 import os
 import sys
 
 # ── Resolve Windows-style project root ──
-# __file__ = E:\AI_Projects\KronosFinceptLab\scripts\win_launcher.py
+# __file__ = <project-root>\scripts\win_launcher.py
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _kronos_repo = os.path.join(_project_root, "external", "Kronos")
 _src_dir = os.path.join(_project_root, "src")
