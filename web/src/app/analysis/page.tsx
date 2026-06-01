@@ -7,6 +7,7 @@ import { Card, CardTitle, CardGrid } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
+import { AgentProgress } from "@/components/ui/AgentProgress";
 import { MarkdownText } from "@/components/ui/MarkdownText";
 import { api, formatApiError } from "@/lib/api";
 import { demoAgentResult } from "@/lib/demoData";
@@ -115,10 +116,6 @@ function statusLabel(status: string): string {
     needs_clarification: "需澄清",
   };
   return labels[status] || status;
-}
-
-function isFinishedStepStatus(status: string): boolean {
-  return ["completed", "fallback", "skipped"].includes(status);
 }
 
 const TECHNICAL_DETAIL_PATTERN = /(?:^|\s)(?:[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=$|[\s,.;，。；])/gi;
@@ -234,113 +231,6 @@ function RiskBadge({ level }: { level: string }) {
 
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${bg}`}>{level}</span>;
 }
-
-function StepList({ result, loading }: { result: AgentAnalyzeResponse | null; loading: boolean }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [pulseTick, setPulseTick] = useState(0);
-
-  useEffect(() => {
-    if (!loading || result) {
-      setActiveIndex(0);
-      setPulseTick(0);
-      return;
-    }
-    setActiveIndex(0);
-    setPulseTick(0);
-    const stepTimer = window.setInterval(() => {
-      setActiveIndex((current) => Math.min(current + 1, LOADING_STEPS.length - 1));
-    }, 900);
-    const pulseTimer = window.setInterval(() => {
-      setPulseTick((current) => current + 1);
-    }, 220);
-    return () => {
-      window.clearInterval(stepTimer);
-      window.clearInterval(pulseTimer);
-    };
-  }, [loading, result]);
-
-  const steps = result?.steps?.length
-    ? result.steps
-    : LOADING_STEPS.map((name, index) => ({
-      name,
-      status: !loading ? "pending" : index <= activeIndex ? "running" : "pending",
-      summary: "",
-      elapsed_ms: index < activeIndex ? (index + 1) * 900 : index === activeIndex ? ((pulseTick % 4) + 1) * 220 : 0,
-    }));
-
-  const completedCount = steps.filter((step) => isFinishedStepStatus(step.status)).length;
-  const baseProgress = result
-    ? completedCount / Math.max(steps.length, 1)
-    : loading
-      ? (activeIndex + 0.4 + (pulseTick % 4) * 0.08) / LOADING_STEPS.length
-      : 0;
-  const progressPercent = Math.max(0, Math.min(100, baseProgress * 100));
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          进度 {Math.min(completedCount, steps.length)}/{steps.length}
-        </p>
-        {loading && !result && <p className="text-xs text-muted-foreground">正在实时推进…</p>}
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${loading && !result ? "timeline-progress-live" : "bg-accent"}`}
-          style={{ width: `${progressPercent}%` }}
-        />
-      </div>
-
-      <div className="table-scroll">
-        <div className="grid grid-flow-col auto-cols-[minmax(9.5rem,1fr)] gap-2 pb-1 sm:auto-cols-[minmax(11rem,1fr)]">
-          {steps.map((step, index) => {
-            const completed = isFinishedStepStatus(step.status);
-            const failed = ["failed", "blocked"].includes(step.status);
-            const running = step.status === "running";
-            return (
-              <div
-                key={`${step.name}-${index}`}
-                className={`rounded-lg border px-3 py-2 ${
-                  failed
-                    ? "border-red-200 bg-red-50"
-                    : completed
-                      ? "border-green-200 bg-green-50"
-                      : running
-                        ? "border-blue-200 bg-blue-50"
-                        : "border-border bg-muted"
-                }`}
-                title={step.summary || step.name}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                        failed
-                          ? "bg-red-100 text-red-700"
-                          : completed
-                            ? "bg-green-100 text-green-700"
-                            : running
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-background text-muted-foreground"
-                      }`}
-                    >
-                      {index + 1}
-                    </span>
-                    <span className="line-clamp-1 text-sm font-semibold text-foreground">{step.name}</span>
-                  </div>
-                </div>
-                <p className="mt-1 font-mono text-xs text-muted-foreground">
-                  {statusLabel(step.status)} · {formatElapsedMs(step.elapsed_ms)}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 
 function EvidenceGraphViewer({ result }: { result: AgentAnalyzeResponse }) {
   const pack = result.evidence_pack;
@@ -1092,7 +982,7 @@ function AnalysisContent() {
       {(displayLoading || result) && (
         <Card>
           <CardTitle>{tx(language, "Agent 执行进度", "Agent Progress")}</CardTitle>
-          <StepList result={result} loading={displayLoading} />
+          <AgentProgress result={result} loading={displayLoading} loadingSteps={LOADING_STEPS} />
         </Card>
       )}
 
