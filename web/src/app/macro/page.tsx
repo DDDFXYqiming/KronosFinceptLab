@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
+import { AgentProgress } from "@/components/ui/AgentProgress";
 import { api, formatApiError } from "@/lib/api";
 import { demoMacroResult } from "@/lib/demoData";
 import { queryKeys } from "@/lib/queryKeys";
@@ -87,10 +88,6 @@ function statusLabel(status: string): string {
     needs_clarification: "需澄清",
   };
   return labels[status] || status;
-}
-
-function isFinishedStepStatus(status: string): boolean {
-  return ["completed", "fallback", "skipped"].includes(status);
 }
 
 function getConfidenceColor(value: number): string {
@@ -375,108 +372,6 @@ function ProviderCoverageMatrix({ rows }: { rows: MacroProviderResultView[] }) {
         </div>
       </div>
     </Card>
-  );
-}
-
-function StepStrip({ result, loading }: { result: AgentAnalyzeResponse | null; loading: boolean }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [pulseTick, setPulseTick] = useState(0);
-
-  useEffect(() => {
-    if (!loading || result) {
-      setActiveIndex(0);
-      setPulseTick(0);
-      return;
-    }
-    setActiveIndex(0);
-    setPulseTick(0);
-    const stepTimer = window.setInterval(() => {
-      setActiveIndex((current) => Math.min(current + 1, LOADING_STEPS.length - 1));
-    }, 900);
-    const pulseTimer = window.setInterval(() => {
-      setPulseTick((current) => current + 1);
-    }, 220);
-    return () => {
-      window.clearInterval(stepTimer);
-      window.clearInterval(pulseTimer);
-    };
-  }, [loading, result]);
-
-  const steps = result?.steps?.length
-    ? result.steps
-    : LOADING_STEPS.map((name, index) => ({
-      name,
-      status: !loading ? "pending" : index <= activeIndex ? "running" : "pending",
-      summary: "",
-      elapsed_ms: index < activeIndex ? (index + 1) * 900 : index === activeIndex ? ((pulseTick % 4) + 1) * 220 : 0,
-    }));
-
-  const completed = steps.filter((step) => isFinishedStepStatus(step.status)).length;
-  const baseProgress = result
-    ? completed / Math.max(steps.length, 1)
-    : loading
-      ? (activeIndex + 0.4 + (pulseTick % 4) * 0.08) / LOADING_STEPS.length
-      : 0;
-  const progressPercent = Math.max(0, Math.min(100, baseProgress * 100));
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          进度 {Math.min(completed, steps.length)}/{steps.length}
-        </p>
-        {loading && !result && <p className="text-xs text-muted-foreground">正在实时推进…</p>}
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${loading && !result ? "timeline-progress-live" : "bg-accent"}`}
-          style={{ width: `${progressPercent}%` }}
-        />
-      </div>
-      <div className="table-scroll">
-        <div className="grid grid-flow-col auto-cols-[minmax(9.5rem,1fr)] gap-2 pb-1 sm:auto-cols-[minmax(12rem,1fr)]">
-          {steps.map((step, index) => {
-            const failed = ["failed", "blocked"].includes(step.status);
-            const completedStep = isFinishedStepStatus(step.status);
-            const running = step.status === "running";
-            return (
-              <div
-                key={`${step.name}-${index}`}
-                className={`rounded-lg border px-3 py-2 ${
-                  failed
-                    ? "border-red-200 bg-red-50"
-                    : completedStep
-                      ? "border-green-200 bg-green-50"
-                      : running
-                        ? "border-blue-200 bg-blue-50"
-                        : "border-border bg-muted"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                      failed
-                        ? "bg-red-100 text-red-700"
-                        : completedStep
-                          ? "bg-green-100 text-green-700"
-                          : running
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-background text-muted-foreground"
-                    }`}
-                  >
-                    {index + 1}
-                  </span>
-                  <span className="line-clamp-1 text-sm font-semibold text-foreground">{step.name}</span>
-                </div>
-                <p className="mt-1 text-xs font-mono text-muted-foreground">
-                  {statusLabel(step.status)} · {formatElapsedMs(step.elapsed_ms)}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -913,7 +808,7 @@ function MacroContent() {
       {(displayLoading || result) && (
         <Card>
           <CardTitle>{tx(language, "宏观执行进度", "Macro Progress")}</CardTitle>
-          <StepStrip result={result} loading={displayLoading} />
+          <AgentProgress result={result} loading={displayLoading} loadingSteps={LOADING_STEPS} />
         </Card>
       )}
 
