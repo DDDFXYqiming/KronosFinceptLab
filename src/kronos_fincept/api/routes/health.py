@@ -25,6 +25,12 @@ def _site_api_configured() -> bool:
     )
 
 
+def _supported_model_ids(active_model_id: str) -> list[str]:
+    if env_bool("KRONOS_ALLOW_MODEL_SWITCH", False):
+        return list(SUPPORTED_MODEL_IDS)
+    return [active_model_id]
+
+
 @router.get("/health", response_model=HealthResponseOut)
 async def health_check(request: Request) -> HealthResponseOut:
     """Return lightweight service health status."""
@@ -53,8 +59,8 @@ def _build_health_response(request: Request, deep: bool) -> HealthResponseOut:
         model_loaded=model_info["model_loaded"],
         model_id=model_info["model_id"],
         tokenizer_id=model_info["tokenizer_id"],
-        default_model_id=DEFAULT_MODEL_ID,
-        supported_model_ids=list(SUPPORTED_MODEL_IDS),
+        default_model_id=model_info["model_id"],
+        supported_model_ids=_supported_model_ids(model_info["model_id"]),
         device=model_info["device"],
         uptime_seconds=round(uptime, 1),
         runtime_mode=model_info["runtime_mode"],

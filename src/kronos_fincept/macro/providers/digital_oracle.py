@@ -1144,6 +1144,71 @@ class AnySearchProvider(WebSearchProvider):
         return AnySearchClient()
 
 
+class RssNewsProvider(MacroProvider):
+    provider_id = "rss_news"
+    display_name = "Configured RSS News"
+    capabilities = ("rss", "news", "official_updates")
+    requires_api_key = False
+
+    default_feeds: tuple[dict[str, str], ...] = (
+        {"id": "fed", "title": "Federal Reserve", "url": "https://www.federalreserve.gov/feeds/press_all.xml"},
+        {"id": "sec", "title": "SEC", "url": "https://www.sec.gov/news/pressreleases.rss"},
+        {"id": "ecb", "title": "ECB", "url": "https://www.ecb.europa.eu/rss/press.html"},
+    )
+
+    def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        from kronos_fincept.api.routes.news import RssFeedIn, _normalize_feed, _parse_feed, _fetch_text
+
+        feeds = self._feeds_from_query(query)[:4]
+        signals: list[MacroSignal] = []
+        for index, feed_payload in enumerate(feeds):
+            try:
+                feed = _normalize_feed(RssFeedIn(**feed_payload), index)
+                text = _fetch_text(feed.url)
+                items = _parse_feed(feed, text, max(1, min(query.limit, 5)))
+            except Exception:
+                continue
+            for item in items:
+                signals.append(
+                    _signal(
+                        source=self.provider_id,
+                        signal_type="rss_news_item",
+                        value=item.title,
+                        interpretation=f"{item.feed_title}: {item.summary or item.title}",
+                        time_horizon="short",
+                        confidence=0.52,
+                        observed_at=item.published_at,
+                        source_url=item.url,
+                        metadata={
+                            "feed_id": item.feed_id,
+                            "feed_title": item.feed_title,
+                            "data_quality": "configured_rss_feed",
+                        },
+                    )
+                )
+                if len(signals) >= query.limit:
+                    return signals
+        return signals
+
+    def _feeds_from_query(self, query: MacroQuery) -> list[dict[str, str]]:
+        raw = query.metadata.get("rss_feeds") if isinstance(query.metadata, dict) else None
+        if not isinstance(raw, list):
+            raw = list(self.default_feeds)
+        feeds: list[dict[str, str]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or "").strip()
+            if not url:
+                continue
+            feeds.append({
+                "id": str(item.get("id") or item.get("title") or f"feed-{len(feeds) + 1}")[:80],
+                "title": str(item.get("title") or item.get("id") or f"Feed {len(feeds) + 1}")[:120],
+                "url": url,
+            })
+        return feeds
+
+
 class CurrencyProvider(MacroProvider):
     """Major currency pair data via Yahoo Finance.
 
@@ -1497,6 +1562,7 @@ def create_default_providers() -> list[MacroProvider]:
         YFinanceProvider(),
         FearGreedProvider(),
         CMEFedWatchProvider(),
+        RssNewsProvider(),
         WebSearchProvider(),
         AnySearchProvider(),
         YahooPriceProvider(),

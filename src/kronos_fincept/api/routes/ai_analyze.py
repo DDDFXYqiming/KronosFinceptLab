@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
 
 from pydantic import BaseModel, Field, field_validator
 
-from kronos_fincept.security_utils import contains_prompt_injection, sanitize_client_context
+from kronos_fincept.security_utils import contains_prompt_injection, sanitize_client_context, validate_public_https_url
 
 
 class AIAnalyzeRequest(BaseModel):
@@ -74,11 +74,23 @@ class AgentAnalyzeRequest(BaseModel):
         return value
 
 
+class MacroRssFeedIn(BaseModel):
+    id: str | None = Field(default=None, max_length=80)
+    title: str | None = Field(default=None, max_length=120)
+    url: str = Field(..., min_length=8, max_length=500)
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, value: str) -> str:
+        return validate_public_https_url(value, dns_env_key="KRONOS_RSS_VALIDATE_DNS")
+
+
 class MacroAnalyzeRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000, description="Macro or cross-market analysis question")
     symbols: list[str] = Field(default_factory=list, max_length=20, description="Optional related symbols")
     market: str | None = Field(default=None, max_length=16, description="Optional market hint")
     provider_ids: list[str] | None = Field(default=None, max_length=20, description="Optional provider id override")
+    rss_feeds: list[MacroRssFeedIn] = Field(default_factory=list, max_length=12, description="Optional configured RSS feeds for rss_news provider")
     mode: Literal["fast", "complete"] = Field(default="fast", description="fast uses dashboard timeouts; complete uses longer provider collection")
     context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
     language: Literal["zh-CN", "en-US"] = Field(default="zh-CN", description="Preferred natural-language output language")
@@ -200,6 +212,7 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
             symbols=req.symbols,
             market=req.market,
             provider_ids=req.provider_ids,
+            rss_feeds=[feed.model_dump() for feed in req.rss_feeds],
             context=context,
             language=req.language,
         )

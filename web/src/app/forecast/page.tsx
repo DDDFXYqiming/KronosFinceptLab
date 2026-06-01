@@ -10,7 +10,7 @@ import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
-import { DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS } from "@/lib/defaults";
+import { DEFAULT_MODEL_ID } from "@/lib/defaults";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import type { Language } from "@/lib/i18n";
@@ -98,7 +98,7 @@ function ForecastContent() {
     "kronos-forecast-model-id",
     preferences.defaultModelId || DEFAULT_MODEL_ID
   );
-  const [availableModelIds, setAvailableModelIds] = useState<string[]>([...SUPPORTED_MODEL_IDS]);
+  const [availableModelIds, setAvailableModelIds] = useState<string[]>([preferences.defaultModelId || DEFAULT_MODEL_ID]);
   const [data, setData] = useSessionState<ForecastRow[]>("kronos-forecast-data", []);
   const [prediction, setPrediction] = useSessionState<ForecastRow[] | null>("kronos-forecast-prediction", null);
   const [loading, setLoading] = useState(false);
@@ -112,8 +112,8 @@ function ForecastContent() {
   const hasChartData = data.length > 0;
   const demoMode = searchParams.get("demo") === "1";
   const modelOptions = useMemo(() => {
-    return Array.from(new Set([...availableModelIds, preferences.defaultModelId, modelId].filter(Boolean)));
-  }, [availableModelIds, modelId, preferences.defaultModelId]);
+    return Array.from(new Set((availableModelIds.length ? availableModelIds : [DEFAULT_MODEL_ID]).filter(Boolean)));
+  }, [availableModelIds]);
   const modelSelectOptions: Array<AppSelectOption<string>> = useMemo(
     () => modelOptions.map((id) => ({ value: id, label: id.replace("NeoQuasar/", "") })),
     [modelOptions]
@@ -125,10 +125,17 @@ function ForecastContent() {
       queryFn: ({ signal }) => api.health({ signal }),
       staleTime: 60000,
     }).then((health) => {
-      if (health.supported_model_ids?.length) setAvailableModelIds(health.supported_model_ids);
-      if (!modelId && health.default_model_id) setModelId(health.default_model_id);
+      const supported = health.supported_model_ids?.length
+        ? health.supported_model_ids
+        : [health.model_id || health.default_model_id || DEFAULT_MODEL_ID];
+      setAvailableModelIds(supported);
+      const nextModelId = supported.includes(modelId) ? modelId : supported[0];
+      if (nextModelId && nextModelId !== modelId) {
+        setModelId(nextModelId);
+        setPreferences({ defaultModelId: nextModelId });
+      }
     }).catch(() => undefined);
-  }, [modelId, queryClient, setModelId]);
+  }, [modelId, queryClient, setModelId, setPreferences]);
 
   const clearForecastState = useCallback(() => {
     setData([]);
@@ -439,16 +446,22 @@ function ForecastContent() {
           </div>
           <div>
             <label className="field-label">{tx(language, "模型", "Model")}</label>
-            <AppSelect
-              value={modelId}
-              onChange={(nextModelId) => {
-                setModelId(nextModelId);
-                setPreferences({ defaultModelId: nextModelId });
-              }}
-              options={modelSelectOptions}
-              ariaLabel={tx(language, "模型", "Model")}
-              className="mt-1"
-            />
+            {modelSelectOptions.length > 1 ? (
+              <AppSelect
+                value={modelOptions.includes(modelId) ? modelId : modelOptions[0]}
+                onChange={(nextModelId) => {
+                  setModelId(nextModelId);
+                  setPreferences({ defaultModelId: nextModelId });
+                }}
+                options={modelSelectOptions}
+                ariaLabel={tx(language, "模型", "Model")}
+                className="mt-1"
+              />
+            ) : (
+              <div className="mt-1 flex min-h-11 items-center rounded-[10px] border border-slate-700 bg-slate-800 px-3 text-sm text-white">
+                {modelSelectOptions[0]?.label || DEFAULT_MODEL_ID.replace("NeoQuasar/", "")}
+              </div>
+            )}
           </div>
           <div className="flex items-end">
             <Button

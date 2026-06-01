@@ -84,6 +84,22 @@ def test_generate_report_fallback_summary_shows_provider_failures(monkeypatch):
     assert tool_call.metadata["failures"][0]["status_code"] == 429
 
 
+def test_generate_report_fallback_summary_explains_invalid_key(monkeypatch):
+    provider = _make_provider()
+
+    def fake_call(question, context):
+        _record_report_llm_failure(provider, "http_error", status_code=401)
+        return None
+
+    monkeypatch.setattr("kronos_fincept.agent._call_llm_report", fake_call)
+
+    report, tool_call = _generate_report("test question", {})
+
+    assert tool_call.status == "fallback"
+    assert "API Key 无效或未授权" in tool_call.summary
+    assert tool_call.metadata["failures"][0]["status_code"] == 401
+
+
 def test_generate_report_llm_metadata_isolated_between_threads(monkeypatch):
     first = _make_provider(model="first-model")
     second = _make_provider(model="second-model")

@@ -5,6 +5,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
+import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
 import { api, formatApiError } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { getMarketOptions, type Market } from "@/lib/markets";
@@ -21,6 +22,12 @@ const ALERT_TYPE_KEYS: Record<string, string> = {
 };
 
 const ALERT_TYPES = Object.keys(ALERT_TYPE_KEYS);
+
+function thresholdBounds(alertType: string) {
+  if (alertType === "price_change") return { min: -50, max: 50, step: 0.5, integer: false };
+  if (alertType === "rsi_overbought" || alertType === "rsi_oversold") return { min: 0, max: 100, step: 1, integer: true };
+  return { min: 0.01, max: 1000000, step: 0.01, integer: false };
+}
 
 function maskContactValue(value?: string | null): string | null {
   if (!value) return null;
@@ -39,7 +46,7 @@ export default function AlertsPage() {
   const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
   const [market, setMarket] = useState<Market>("cn");
   const [alertType, setAlertType] = useState("price_above");
-  const [threshold, setThreshold] = useState("50");
+  const [threshold, setThreshold] = useState(50);
   const [channel, setChannel] = useState("feishu");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [emailTo, setEmailTo] = useState("");
@@ -73,7 +80,8 @@ export default function AlertsPage() {
   }, []);
 
   const params = () => {
-    const value = Number(threshold);
+    const bounds = thresholdBounds(alertType);
+    const value = clampNumber(threshold, bounds.min, bounds.max);
     if (alertType === "price_change") return { change_pct: value };
     return { threshold: value };
   };
@@ -163,11 +171,35 @@ export default function AlertsPage() {
           </div>
           <div>
             <label className="field-label">{t(language, "common.type")}</label>
-            <AppSelect value={alertType} onChange={setAlertType} options={alertTypeOptions} ariaLabel={t(language, "common.type")} className="mt-1" />
+            <AppSelect
+              value={alertType}
+              onChange={(nextType) => {
+                setAlertType(nextType);
+                const bounds = thresholdBounds(nextType);
+                setThreshold((value) => clampNumber(value, bounds.min, bounds.max));
+              }}
+              options={alertTypeOptions}
+              ariaLabel={t(language, "common.type")}
+              className="mt-1"
+            />
           </div>
           <div>
             <label className="field-label">{t(language, "common.threshold")}</label>
-            <input className="app-input mt-1" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+            {(() => {
+              const bounds = thresholdBounds(alertType);
+              return (
+                <AppNumberInput
+                  value={threshold}
+                  onChange={setThreshold}
+                  min={bounds.min}
+                  max={bounds.max}
+                  step={bounds.step}
+                  integer={bounds.integer}
+                  ariaLabel={t(language, "common.threshold")}
+                  className="mt-1"
+                />
+              );
+            })()}
           </div>
           <div>
             <label className="field-label">{t(language, "alerts.channel")}</label>
