@@ -1,7 +1,7 @@
-"""Real DeepSeek integration checks for API, CLI, MCP, and concurrency.
+"""Real LLM integration checks for API, CLI, MCP, and concurrency.
 
 These tests intentionally do not mock LLM calls. They are skipped by default
-because they require a live DeepSeek-compatible API key and network access.
+because they require a live LLM-compatible API key and network access.
 Kronos model inference is avoided by using macro-analysis flows.
 """
 
@@ -23,12 +23,12 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[1]
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("KRONOS_RUN_REAL_DEEPSEEK") != "1",
-    reason="set KRONOS_RUN_REAL_DEEPSEEK=1 to run live DeepSeek integration tests",
+    os.environ.get("KRONOS_RUN_REAL_LLM") != "1",
+    reason="set KRONOS_RUN_REAL_LLM=1 to run live LLM integration tests",
 )
 
 
-def _assert_deepseek_only_payload(payload: dict[str, Any]) -> None:
+def _assert_LLM_only_payload(payload: dict[str, Any]) -> None:
     assert payload["ok"] is True
     tool_calls = payload.get("tool_calls") or []
     llm_calls = [
@@ -37,8 +37,7 @@ def _assert_deepseek_only_payload(payload: dict[str, Any]) -> None:
     ]
     assert llm_calls, payload
     assert any(call.get("status") == "completed" for call in llm_calls), llm_calls
-    assert all((call.get("metadata") or {}).get("provider") != "openrouter" for call in llm_calls)
-    assert any((call.get("metadata") or {}).get("provider") == "deepseek" for call in llm_calls), llm_calls
+    assert any((call.get("metadata") or {}).get("provider") == "llm" for call in llm_calls), llm_calls
 
 
 def _env_for_subprocess() -> dict[str, str]:
@@ -46,10 +45,9 @@ def _env_for_subprocess() -> dict[str, str]:
     env.update(
         {
             "PYTHONPATH": str(ROOT / "src"),
-            "OPENROUTER_API_KEY": "",
-            "OPENROUTER_BASE_URL": "",
-            "OPENROUTER_MODEL": "",
-            "DEEPSEEK_MODEL": "deepseek-v4-flash",
+            "LLM_API_KEY": os.environ.get("LLM_API_KEY", ""),
+            "LLM_BASE_URL": os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions"),
+            "LLM_MODEL": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
             "KRONOS_LOW_MEMORY_DEFAULTS": "1",
             "OPENBLAS_NUM_THREADS": "1",
             "OMP_NUM_THREADS": "1",
@@ -61,13 +59,13 @@ def _env_for_subprocess() -> dict[str, str]:
     return env
 
 
-def test_real_deepseek_api_macro_path_uses_deepseek_only():
+def test_real_LLM_api_macro_path_uses_LLM_only():
     from kronos_fincept.api.app import create_app
     from kronos_fincept.agent import _llm_provider_chain
 
     providers = _llm_provider_chain()
-    assert [provider.name for provider in providers] == ["deepseek"]
-    assert providers[0].model == "deepseek-v4-flash"
+    assert [provider.name for provider in providers] == ["llm"]
+    assert providers[0].model == os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
     client = TestClient(create_app())
     response = client.post(
@@ -80,10 +78,10 @@ def test_real_deepseek_api_macro_path_uses_deepseek_only():
     )
 
     assert response.status_code == 200
-    _assert_deepseek_only_payload(response.json())
+    _assert_LLM_only_payload(response.json())
 
 
-def test_real_deepseek_cli_macro_path_uses_deepseek_only():
+def test_real_LLM_cli_macro_path_uses_LLM_only():
     proc = subprocess.run(
         [
             sys.executable,
@@ -105,10 +103,10 @@ def test_real_deepseek_cli_macro_path_uses_deepseek_only():
     )
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    _assert_deepseek_only_payload(json.loads(proc.stdout))
+    _assert_LLM_only_payload(json.loads(proc.stdout))
 
 
-def test_real_deepseek_mcp_macro_path_uses_deepseek_only():
+def test_real_LLM_mcp_macro_path_uses_LLM_only():
     import kronos_mcp.kronos_mcp_server as server
 
     result = asyncio.run(
@@ -121,10 +119,10 @@ def test_real_deepseek_mcp_macro_path_uses_deepseek_only():
         )
     )
     payload = json.loads(result[0].text)
-    _assert_deepseek_only_payload(payload)
+    _assert_LLM_only_payload(payload)
 
 
-def test_real_deepseek_concurrent_macro_requests_do_not_mix_llm_state():
+def test_real_LLM_concurrent_macro_requests_do_not_mix_llm_state():
     from kronos_fincept.agent import analyze_macro_question
 
     questions = [
@@ -141,4 +139,5 @@ def test_real_deepseek_concurrent_macro_requests_do_not_mix_llm_state():
 
     assert len(payloads) == 2
     for payload in payloads:
-        _assert_deepseek_only_payload(payload)
+        _assert_LLM_only_payload(payload)
+

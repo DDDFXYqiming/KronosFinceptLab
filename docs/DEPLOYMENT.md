@@ -108,8 +108,9 @@ Default container-oriented environment:
 | `KRONOS_INTERNAL_API_KEY` / `KRONOS_INTERNAL_API_KEYS` | Internal admin keys |
 | `KRONOS_AUTH_DISABLED` | Disable API auth for local development only |
 | `KRONOS_ENABLE_API_DOCS` | Enable `/docs`, `/redoc`, and `/openapi.json` |
-| `DEEPSEEK_API_KEY` | Primary LLM provider key |
-| `OPENROUTER_API_KEY` | Optional fallback LLM provider key |
+| `LLM_API_KEY` | Unified OpenAI-compatible LLM provider key |
+| `LLM_BASE_URL` | OpenAI-compatible chat completions endpoint or base URL |
+| `LLM_MODEL` | LLM model id for routing, macro analysis, and report synthesis |
 | `TUSHARE_TOKEN` | Optional Tushare Pro token for Stock Connect and A-share enrichment |
 | `FRED_API_KEY` | Optional FRED API key for U.S. macro data |
 | `KRONOS_SOURCE_PROJECT_ROOT` | Optional source-project root for verified market and macro cache reuse |

@@ -48,7 +48,7 @@ def _patch_fast_agent_tools(monkeypatch):
 
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent._local_route_decision(
             question,
             explicit_symbol=explicit_symbol,
@@ -75,7 +75,7 @@ def _patch_fast_agent_tools(monkeypatch):
     )
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
     monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
-    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: _report_payload(context))
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: _report_payload(context))
 
 
 WEB_CONTEXT = {"entry": "web-analysis", "turn_index": 1, "max_turns": 5}
@@ -147,7 +147,7 @@ def test_v1054_web_analysis_explicit_macro_question_still_runs_macro(monkeypatch
     assert any(call.name == "macro_signal" for call in result.tool_calls)
 
 
-def test_v1054_web_analysis_deepseek_report_uses_bounded_timeout(monkeypatch):
+def test_v1054_web_analysis_LLM_report_uses_bounded_timeout(monkeypatch):
     from kronos_fincept import agent
     import requests
 
@@ -181,16 +181,16 @@ def test_v1054_web_analysis_deepseek_report_uses_bounded_timeout(monkeypatch):
         captured["timeout"] = timeout
         return FakeResponse()
 
-    deepseek = SimpleNamespace(
+    provider = SimpleNamespace(
         is_configured=True,
         api_key="test-key",
         base_url="https://example.com/v1",
-        model="deepseek-chat",
+        model="test-model",
     )
-    monkeypatch.setattr(agent, "settings", SimpleNamespace(llm=SimpleNamespace(deepseek=deepseek)))
+    monkeypatch.setattr(agent, "settings", SimpleNamespace(llm=SimpleNamespace(provider=provider)))
     monkeypatch.setattr(requests, "post", fake_post)
 
-    report = agent._call_deepseek_report(
+    report = agent._call_llm_report(
         "帮我看看招商银行现在能不能买",
         {"assets": [{"symbol": "600036", "market": "cn"}], "page_context": WEB_CONTEXT},
     )

@@ -37,6 +37,6 @@ def test_analysis_light_cards_do_not_use_low_contrast_gray_body_text():
     assert "bg-surface-overlay border border-gray-700 rounded-lg text-white" not in page
 
 
-def test_v905_version_labels_are_updated():
-    assert "Version: v10." in read("README.md")
+def test_v905_version_label_is_removed():
+    assert "Version:" not in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")

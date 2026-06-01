@@ -256,14 +256,14 @@ def test_agent_kronos_failure_keeps_clear_error_without_mock(monkeypatch):
     )
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent._local_route_decision(
             question,
             explicit_symbol=explicit_symbol,
             explicit_market=explicit_market,
         ),
     )
-    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: None)
     monkeypatch.setattr(
         agent,
         "_build_prediction",
@@ -308,6 +308,6 @@ def test_legacy_ai_analyze_uses_shared_agent_chain():
     assert "analyze_investment_question" in legacy_route
 
 
-def test_v904_version_labels_are_updated():
-    assert re.search(r"Version: v10\.", read("README.md"))
+def test_v904_version_label_is_removed():
+    assert "Version:" not in read("README.md")
     assert re.search(r"v10\.\d+\.\d+.*common\.researchOnly", read("web/src/components/layout/Sidebar.tsx"))

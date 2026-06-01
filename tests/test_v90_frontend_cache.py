@@ -122,9 +122,9 @@ def test_v90_next_data_route_is_not_ignored_as_local_data():
     assert (ROOT / "web/src/app/data/page.tsx").exists()
 
 
-def test_v90_version_markers_are_updated():
+def test_v90_version_marker_is_removed():
     readme = read("README.md")
     sidebar = read("web/src/components/layout/Sidebar.tsx")
 
-    assert "Version: v10." in readme
+    assert "Version:" not in readme
     assert "v10." in sidebar

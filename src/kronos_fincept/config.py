@@ -75,50 +75,15 @@ class KronosConfig:
 
 
 @dataclass(frozen=True)
-class OpenAIConfig:
-    """OpenAI / compatible API config."""
-    api_key: str = field(default_factory=lambda: _get("OPENAI_API_KEY"))
-    base_url: str = field(default_factory=lambda: _get("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions"))
-    model: str = field(default_factory=lambda: _get("OPENAI_MODEL", "gpt-4o"))
+class LLMProviderConfig:
+    """OpenAI-compatible LLM API config."""
+    api_key: str = field(default_factory=lambda: _get("LLM_API_KEY"))
+    base_url: str = field(default_factory=lambda: _get("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions"))
+    model: str = field(default_factory=lambda: _get("LLM_MODEL", "gpt-4o-mini"))
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.api_key and not self.api_key.startswith("sk-xxxx"))
-
-
-@dataclass(frozen=True)
-class AnthropicConfig:
-    """Anthropic Claude config."""
-    api_key: str = field(default_factory=lambda: _get("ANTHROPIC_API_KEY"))
-    model: str = field(default_factory=lambda: _get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"))
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self.api_key and not self.api_key.startswith("sk-ant-xxxx"))
-
-
-@dataclass(frozen=True)
-class DeepSeekConfig:
-    """DeepSeek config."""
-    api_key: str = field(default_factory=lambda: _get("DEEPSEEK_API_KEY"))
-    base_url: str = field(default_factory=lambda: _get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/chat/completions"))
-    model: str = field(default_factory=lambda: _get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self.api_key and not self.api_key.startswith("sk-xxxx"))
-
-
-@dataclass(frozen=True)
-class OpenRouterConfig:
-    """OpenRouter compatible API config used as a low-cost first LLM hop."""
-    api_key: str = field(default_factory=lambda: _get("OPENROUTER_API_KEY"))
-    base_url: str = field(default_factory=lambda: _get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions"))
-    model: str = field(default_factory=lambda: _get("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash:free"))
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self.api_key and not self.api_key.startswith(("sk-xxxx", "sk-or-xxxx", "xxxx")))
+        return bool(self.api_key and not self.api_key.startswith(("sk-xxxx", "xxxx")))
 
 
 @dataclass(frozen=True)
@@ -173,22 +138,13 @@ class LoggingConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    """Aggregated LLM provider configs."""
-    openai: OpenAIConfig = field(default_factory=OpenAIConfig)
-    anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
-    deepseek: DeepSeekConfig = field(default_factory=DeepSeekConfig)
-    openrouter: OpenRouterConfig = field(default_factory=OpenRouterConfig)
+    """Unified OpenAI-compatible LLM provider config."""
+    provider: LLMProviderConfig = field(default_factory=LLMProviderConfig)
 
     def get_active_provider(self) -> str | None:
         """Return the first configured provider name, or None."""
-        if self.openai.is_configured:
-            return "openai"
-        if self.anthropic.is_configured:
-            return "anthropic"
-        if self.openrouter.is_configured:
-            return "openrouter"
-        if self.deepseek.is_configured:
-            return "deepseek"
+        if self.provider.is_configured:
+            return "llm"
         return None
 
 

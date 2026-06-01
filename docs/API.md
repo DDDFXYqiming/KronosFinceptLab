@@ -169,7 +169,7 @@ Content-Type: application/json
 }
 ```
 
-The shared LLM synthesis chain prioritizes DeepSeek and falls back to OpenRouter when configured. Macro providers include no-key public sources plus optional FRED (`FRED_API_KEY`) and Tushare (`TUSHARE_TOKEN`) enrichment. Generic web search requires `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY`; AnySearch requires `ANYSEARCH_ENABLED=true`.
+The shared LLM synthesis path uses one OpenAI-compatible provider configured with `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`. Macro providers include no-key public sources plus optional FRED (`FRED_API_KEY`) and Tushare (`TUSHARE_TOKEN`) enrichment. Generic web search requires `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY`; AnySearch requires `ANYSEARCH_ENABLED=true`.
 
 ## Async Jobs
 

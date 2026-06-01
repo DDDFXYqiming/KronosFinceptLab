@@ -28,7 +28,7 @@ def _patch_agent_tools(monkeypatch):
 
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent._local_route_decision(
             question,
             explicit_symbol=explicit_symbol,
@@ -55,7 +55,7 @@ def _patch_agent_tools(monkeypatch):
     )
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_report",
+        "_call_llm_report",
         lambda question, context: {
             "conclusion": f"已分析 {context['assets'][0]['symbol']}",
             "short_term_prediction": "短期预测偏中性。",

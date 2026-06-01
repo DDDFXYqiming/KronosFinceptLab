@@ -79,7 +79,7 @@ def test_v93_tables_charts_and_inputs_have_mobile_bounds():
     assert "table-scroll" in data
 
 
-def test_v93_version_label_is_updated():
-    assert "Version: v10." in read("README.md")
+def test_v93_version_label_is_removed():
+    assert "Version:" not in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")
     assert "v10." in read("web/src/components/layout/Header.tsx")

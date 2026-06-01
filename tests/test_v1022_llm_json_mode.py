@@ -1,33 +1,33 @@
-def test_v1022_deepseek_v4_flash_uses_non_thinking_json_mode():
+def test_v1022_llm_json_options_use_openai_compatible_json_mode():
     from kronos_fincept import agent
 
-    options = agent._deepseek_structured_json_options(
+    options = agent._llm_structured_json_options(
         temperature=0.2,
         max_tokens=1800,
-        model="deepseek-v4-flash",
+        model="test-model",
     )
 
     assert options["response_format"] == {"type": "json_object"}
-    assert options["thinking"] == {"type": "disabled"}
+    assert "thinking" not in options
     assert options["temperature"] == 0.2
     assert options["max_tokens"] == 1800
 
 
-def test_v1022_deepseek_all_models_use_non_thinking_json_mode():
+def test_v1022_llm_all_models_use_json_mode():
     from kronos_fincept import agent
 
-    options = agent._deepseek_structured_json_options(
+    options = agent._llm_structured_json_options(
         temperature=0,
         max_tokens=900,
-        model="deepseek-chat",
+        model="another-model",
     )
 
     assert options["response_format"] == {"type": "json_object"}
-    assert options["thinking"] == {"type": "disabled"}
+    assert "thinking" not in options
 
 
-def test_v1022_deepseek_empty_content_does_not_raise():
-    from kronos_fincept.agent import _deepseek_finish_reason, _deepseek_message_content, _extract_json_object
+def test_v1022_LLM_empty_content_does_not_raise():
+    from kronos_fincept.agent import _llm_finish_reason, _llm_message_content, _extract_json_object
 
     payload = {
         "choices": [
@@ -41,20 +41,20 @@ def test_v1022_deepseek_empty_content_does_not_raise():
         ]
     }
 
-    assert _deepseek_message_content(payload) is None
-    assert _deepseek_finish_reason(payload) == "length"
+    assert _llm_message_content(payload) is None
+    assert _llm_finish_reason(payload) == "length"
     assert _extract_json_object(None) is None
 
 
-def test_v1022_deepseek_message_content_extracts_json_string():
-    from kronos_fincept.agent import _deepseek_message_content
+def test_v1022_llm_message_content_extracts_json_string():
+    from kronos_fincept.agent import _llm_message_content
 
     payload = {"choices": [{"message": {"content": '{"conclusion": "ok"}'}}]}
 
-    assert _deepseek_message_content(payload) == '{"conclusion": "ok"}'
+    assert _llm_message_content(payload) == '{"conclusion": "ok"}'
 
 
-def test_v1022_deepseek_report_prompt_escapes_json_example(monkeypatch):
+def test_v1022_LLM_report_prompt_escapes_json_example(monkeypatch):
     from types import SimpleNamespace
 
     import requests
@@ -65,10 +65,10 @@ def test_v1022_deepseek_report_prompt_escapes_json_example(monkeypatch):
 
     fake_settings = SimpleNamespace(
         llm=SimpleNamespace(
-            deepseek=SimpleNamespace(
+            provider=SimpleNamespace(
                 api_key="sk-test",
-                base_url="https://api.deepseek.com",
-                model="deepseek-v4-flash",
+                base_url="https://llm.example",
+                model="test-model",
                 is_configured=True,
             )
         )
@@ -103,7 +103,7 @@ def test_v1022_deepseek_report_prompt_escapes_json_example(monkeypatch):
     monkeypatch.setattr(agent, "settings", fake_settings)
     monkeypatch.setattr(requests, "post", fake_post)
 
-    report = agent._call_deepseek_report("帮我看看东方财富现在能不能买", {"asset_contexts": []})
+    report = agent._call_llm_report("帮我看看东方财富现在能不能买", {"asset_contexts": []})
 
     request_json = captured["json"]
     assert isinstance(request_json, dict)
@@ -111,3 +111,4 @@ def test_v1022_deepseek_report_prompt_escapes_json_example(monkeypatch):
     assert '"symbol": "600036"' in system_prompt
     assert report is not None
     assert report["conclusion"] == "ok"
+

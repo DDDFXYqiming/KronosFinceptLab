@@ -67,14 +67,14 @@ def test_v1052_multi_asset_agent_defers_to_shared_batch_prediction(monkeypatch):
 
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
             allowed=True,
             symbols=[
                 agent.ResolvedSymbol("600036", "cn", "招商银行"),
                 agent.ResolvedSymbol("600519", "cn", "贵州茅台"),
             ],
-            source="deepseek_router",
+            source="llm_router",
         ),
     )
 
@@ -109,7 +109,7 @@ def test_v1052_multi_asset_agent_defers_to_shared_batch_prediction(monkeypatch):
 
     monkeypatch.setattr(agent, "_build_asset_context", fake_asset_context)
     monkeypatch.setattr(agent, "_build_batch_predictions", fake_batch_predictions)
-    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: None)
 
     result = agent.analyze_investment_question("比较招商银行和贵州茅台的中短期风险")
 

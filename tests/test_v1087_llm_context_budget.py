@@ -115,13 +115,13 @@ def test_v1087_report_prompt_sends_compact_context_to_llm(monkeypatch):
     from kronos_fincept import agent
 
     captured: dict[str, object] = {}
-    deepseek = SimpleNamespace(
+    provider = SimpleNamespace(
         is_configured=True,
-        api_key="sk-deepseek-test",
-        base_url="https://api.deepseek.com/v1",
-        model="deepseek-chat",
+        api_key="sk-test",
+        base_url="https://llm.example/v1",
+        model="test-model",
     )
-    monkeypatch.setattr(agent, "settings", SimpleNamespace(llm=SimpleNamespace(deepseek=deepseek)))
+    monkeypatch.setattr(agent, "settings", SimpleNamespace(llm=SimpleNamespace(provider=provider)))
 
     def fake_post(url, *, headers, json, timeout):
         captured["payload"] = json
@@ -142,7 +142,7 @@ def test_v1087_report_prompt_sends_compact_context_to_llm(monkeypatch):
 
     monkeypatch.setattr(requests, "post", fake_post)
 
-    report = agent._call_deepseek_report(
+    report = agent._call_llm_report(
         "帮我看看招商银行现在能不能买",
         {
             "assets": [
@@ -166,7 +166,7 @@ def test_v1087_report_prompt_sends_compact_context_to_llm(monkeypatch):
     assert len(user_content) < 3000
 
 
-def test_v1087_web_report_uses_short_openrouter_probe_before_deepseek(monkeypatch):
+def test_v1087_web_report_uses_single_llm_budget(monkeypatch):
     from types import SimpleNamespace
 
     from kronos_fincept import agent
@@ -176,17 +176,11 @@ def test_v1087_web_report_uses_short_openrouter_probe_before_deepseek(monkeypatc
         "settings",
         SimpleNamespace(
             llm=SimpleNamespace(
-                openrouter=SimpleNamespace(
-                    is_configured=True,
-                    api_key="sk-or-test",
-                    base_url="https://openrouter.ai/api/v1",
-                    model="openrouter/free",
-                ),
-                deepseek=SimpleNamespace(
+                provider=SimpleNamespace(
                     is_configured=True,
                     api_key="***",
-                    base_url="https://api.deepseek.com/v1",
-                    model="deepseek-chat",
+                    base_url="https://llm.example/v1",
+                    model="test-model",
                 ),
             )
         ),
@@ -194,5 +188,4 @@ def test_v1087_web_report_uses_short_openrouter_probe_before_deepseek(monkeypatc
 
     timeouts = agent._report_provider_timeouts({"entry": "web-analysis"})
 
-    assert timeouts["openrouter"] <= 10
-    assert timeouts["deepseek"] >= 25
+    assert timeouts == {"llm": agent.WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS}

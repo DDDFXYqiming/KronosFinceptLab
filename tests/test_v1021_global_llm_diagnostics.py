@@ -103,10 +103,10 @@ def test_v1021_global_data_route_uses_current_global_market_source(monkeypatch):
     assert payload["rows"][0]["close"] == 10.5
 
 
-def test_v1021_deepseek_report_prompt_serializes_non_plain_context():
-    from kronos_fincept.agent import _serialize_deepseek_user_prompt
+def test_v1021_LLM_report_prompt_serializes_non_plain_context():
+    from kronos_fincept.agent import _serialize_llm_user_prompt
 
-    payload = _serialize_deepseek_user_prompt(
+    payload = _serialize_llm_user_prompt(
         {
             "question": "测试",
             "trusted_project_context": {
@@ -121,3 +121,4 @@ def test_v1021_deepseek_report_prompt_serializes_non_plain_context():
     assert "2026-05-03T17:03:16" in payload
     assert '"nan_value": null' in payload
     assert '"numpy_like": 1' in payload
+

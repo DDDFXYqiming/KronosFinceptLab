@@ -120,7 +120,7 @@ Implemented REST surfaces include:
 - LLM provider selection and fallback.
 - Deterministic or template fallback when external LLMs are unavailable.
 
-The current shared provider order is DeepSeek first, then OpenRouter when configured. AnySearch is optional and only participates when `ANYSEARCH_ENABLED=true`. Generic web search is enabled through `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY`.
+The shared LLM provider is a single OpenAI-compatible endpoint configured through `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`. AnySearch is optional and only participates when `ANYSEARCH_ENABLED=true`. Generic web search is enabled through `WEB_SEARCH_PROVIDER` and `WEB_SEARCH_API_KEY`.
 
 For A-share questions, the agent also pulls local market-review context from the source-project cache when available. This gives the AI report access to locally accumulated market replay artifacts such as funds flow, dragon-tiger lists, limit-up/down records, and sector flow without requiring browser automation or heavyweight collectors at runtime.
 

@@ -71,7 +71,7 @@ def test_redact_filters_common_sensitive_values():
             "Authorization": "Bearer sk-abc123456789",
             "email": "user@example.com",
             "phone": "13812345678",
-            "nested": {"DEEPSEEK_API_KEY": "sk-real-secret"},
+            "nested": {"LLM_API_KEY": "sk-real-secret"},
         }
     )
     serialized = json.dumps(redacted)

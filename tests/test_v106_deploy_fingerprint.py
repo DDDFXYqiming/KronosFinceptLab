@@ -33,7 +33,7 @@ def test_v106_build_info_reads_only_safe_whitelisted_env(monkeypatch):
     monkeypatch.setenv("KRONOS_BUILD_COMMIT", "c14ad60e1c0b414782442291fb3c2042ade716c8")
     monkeypatch.setenv("KRONOS_BUILD_REF", "main")
     monkeypatch.setenv("KRONOS_BUILD_SOURCE", "zeabur")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-secret-that-must-not-leak")
+    monkeypatch.setenv("LLM_API_KEY", "sk-secret-that-must-not-leak")
 
     from kronos_fincept.build_info import get_build_info
 
@@ -46,7 +46,7 @@ def test_v106_build_info_reads_only_safe_whitelisted_env(monkeypatch):
         "build_source": "zeabur",
     }
     assert "secret" not in json.dumps(info)
-    assert "DEEPSEEK" not in json.dumps(info)
+    assert "LLM" not in json.dumps(info)
 
 
 def test_v106_build_info_uses_safe_defaults_when_env_missing(monkeypatch):

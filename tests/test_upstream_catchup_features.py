@@ -69,7 +69,7 @@ def test_health_exposes_supported_model_ids() -> None:
     assert "NeoQuasar/Kronos-base" in payload["supported_model_ids"]
 
 
-def test_deepseek_think_blocks_are_removed_before_json_parse() -> None:
+def test_LLM_think_blocks_are_removed_before_json_parse() -> None:
     content = '<think>private reasoning</think>{"recommendation":"BUY"}'
 
     assert _strip_think_blocks(content) == '{"recommendation":"BUY"}'

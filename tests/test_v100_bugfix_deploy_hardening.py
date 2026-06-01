@@ -8,17 +8,17 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_v100_deepseek_chat_url_accepts_base_or_full_endpoint():
-    from kronos_fincept.agent import _build_deepseek_chat_url
+def test_v100_LLM_chat_url_accepts_base_or_full_endpoint():
+    from kronos_fincept.agent import _build_chat_completions_url
 
-    assert _build_deepseek_chat_url("https://api.deepseek.com") == (
-        "https://api.deepseek.com/chat/completions"
+    assert _build_chat_completions_url("https://llm.example") == (
+        "https://llm.example/chat/completions"
     )
-    assert _build_deepseek_chat_url("https://api.deepseek.com/") == (
-        "https://api.deepseek.com/chat/completions"
+    assert _build_chat_completions_url("https://llm.example/") == (
+        "https://llm.example/chat/completions"
     )
-    assert _build_deepseek_chat_url("https://api.deepseek.com/chat/completions") == (
-        "https://api.deepseek.com/chat/completions"
+    assert _build_chat_completions_url("https://llm.example/chat/completions") == (
+        "https://llm.example/chat/completions"
     )
 
 
@@ -47,7 +47,7 @@ def test_v100_analysis_page_keeps_five_temporary_turns_and_agent_timeout():
     assert "Agent 分析包含行情、Kronos、网页检索和 LLM 汇总" in api
 
 
-def test_v100_readme_keeps_current_version_label():
+def test_v100_readme_omits_removed_version_label():
     readme = read("README.md")
 
-    assert "Version: v10." in readme
+    assert "Version:" not in readme
