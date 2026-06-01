@@ -103,7 +103,7 @@ kronos analyze indicator --symbol 600036 --indicator rsi
 kronos analyze strategy --symbol 600036 --strategy ma_crossover
 ```
 
-The shared LLM path currently prioritizes DeepSeek and falls back to OpenRouter when both providers are configured. Web-search enrichment is optional and controlled by `WEB_SEARCH_PROVIDER`, `WEB_SEARCH_API_KEY`, and `ANYSEARCH_ENABLED`.
+The shared LLM path uses one OpenAI-compatible provider configured with `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`. Web-search enrichment is optional and controlled by `WEB_SEARCH_PROVIDER`, `WEB_SEARCH_API_KEY`, and `ANYSEARCH_ENABLED`.
 
 ### Alerts
 

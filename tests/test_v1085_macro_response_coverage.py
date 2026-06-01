@@ -78,7 +78,7 @@ def _patch_macro(monkeypatch):
                 "contradictions": "暂无明显矛盾。",
             },
             agent.AgentToolCall(
-                name="deepseek_report",
+                name="LLM_report",
                 status="completed",
                 summary="mock report",
                 elapsed_ms=1,

@@ -47,7 +47,7 @@ An integrated quantitative finance analytics platform combining **market data, A
 - **Local-first** — Core capabilities can run locally with no cloud lock-in; external data/LLM/search providers are optional and degrade gracefully.
 - **Unified multi-entry** — CLI (`kronos`), REST API (`kronos serve`), Web UI, and MCP server share the same analysis and forecasting engines.
 - **Data source circuit breaking** — EastMoney, Tushare, TDX local, AkShare, BaoStock, Yahoo/Stooq, Binance/OKX, source-project caches, Treasury, BIS, SEC/EDGAR, CFTC, and web-search enrichment are used with fallback, caching, timeout handling, and stale-cache fallback.
-- **AI-native** — Built-in Kronos K-line model inference plus LLM synthesis. The current shared LLM chain prioritizes DeepSeek and falls back to OpenRouter when configured.
+- **AI-native** — Built-in Kronos K-line model inference plus unified OpenAI-compatible LLM synthesis for routing, macro analysis, and report generation.
 - **Observable and deployable** — JSON Lines structured logging with `request_id`, build fingerprints, API key roles, rate limits, request budgets, and Docker-friendly startup.
 
 ---
@@ -193,8 +193,9 @@ Key environment variables (see `.env.example` for full reference):
 | `KRONOS_AUTH_DISABLED` | Disable API auth for local development only |
 | `KRONOS_ENABLE_API_DOCS` | Enable `/docs`, `/redoc`, and `/openapi.json` |
 | `KRONOS_RATE_LIMIT_*` | Per-category rate limiting |
-| `DEEPSEEK_API_KEY` | Primary LLM provider key for the shared analysis chain |
-| `OPENROUTER_API_KEY` | Optional fallback LLM provider key |
+| `LLM_API_KEY` | Unified OpenAI-compatible LLM provider key |
+| `LLM_BASE_URL` | OpenAI-compatible chat completions endpoint or base URL |
+| `LLM_MODEL` | LLM model id used by routing, macro analysis, and report synthesis |
 | `TUSHARE_TOKEN` | Optional Tushare Pro token for A-share and Stock Connect fallback data |
 | `FRED_API_KEY` | Optional FRED API key for U.S. macro indicators |
 | `KRONOS_SOURCE_PROJECT_ROOT` | Optional path to the verified source project for market/macro cache reuse |

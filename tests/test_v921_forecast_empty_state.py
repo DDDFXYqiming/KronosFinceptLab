@@ -41,6 +41,6 @@ def test_v921_forecast_clears_prediction_and_chart_state_on_empty_data():
     assert "[hasChartData]" in page
 
 
-def test_v921_version_labels_are_updated():
-    assert "Version: v10." in read("README.md")
+def test_v921_version_label_is_removed():
+    assert "Version:" not in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")

@@ -97,7 +97,7 @@ def test_agent_uses_cninfo_official_disclosure_when_web_search_is_disabled(monke
 
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent._local_route_decision(
             question,
             explicit_symbol=explicit_symbol,
@@ -137,7 +137,7 @@ def test_agent_uses_cninfo_official_disclosure_when_web_search_is_disabled(monke
             "disclaimer": "仅供研究。",
         }
 
-    monkeypatch.setattr(agent, "_call_deepseek_report", fake_report)
+    monkeypatch.setattr(agent, "_call_llm_report", fake_report)
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
     monkeypatch.setattr(agent, "_create_cninfo_client", lambda: FakeCninfoClient())
 

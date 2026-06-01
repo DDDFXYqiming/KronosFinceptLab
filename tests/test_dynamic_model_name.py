@@ -5,29 +5,25 @@ import time
 from kronos_fincept.agent import (
     AgentRouteDecision,
     AgentToolCall,
+    LLMChatProvider,
     ResolvedSymbol,
     _generate_report,
     _record_report_llm_failure,
     _set_last_report_llm_metadata,
-    LLMChatProvider,
 )
 
 
-def _make_provider(
-    name: str = "deepseek",
-    display_name: str = "DeepSeek",
-    model: str = "deepseek-chat",
-) -> LLMChatProvider:
+def _make_provider(model: str = "test-model") -> LLMChatProvider:
     return LLMChatProvider(
-        name=name,
-        display_name=display_name,
+        name="llm",
+        display_name="LLM",
         api_key="sk-test",
-        base_url="https://api.deepseek.com/v1",
+        base_url="https://llm.example/v1",
         model=model,
     )
 
 
-def _fake_call_deepseek_report_with_provider(provider):
+def _fake_call_llm_report_with_provider(provider):
     fake_report = {
         "conclusion": "test",
         "recommendation": "持有",
@@ -44,88 +40,63 @@ def _fake_call_deepseek_report_with_provider(provider):
 
 
 def test_generate_report_success_uses_provider_display_in_tool_call_name(monkeypatch):
-    provider = _make_provider(
-        name="openrouter",
-        display_name="OpenRouter Free",
-        model="nvidia/nemotron-3-super-120b-a12b:free",
-    )
+    provider = _make_provider(model="custom-model")
     monkeypatch.setattr(
-        "kronos_fincept.agent._call_deepseek_report",
-        _fake_call_deepseek_report_with_provider(provider),
+        "kronos_fincept.agent._call_llm_report",
+        _fake_call_llm_report_with_provider(provider),
     )
 
     report, tool_call = _generate_report("test question", {})
-    assert tool_call.name == "OpenRouter Free 汇总"
+    assert tool_call.name == "LLM 汇总"
     assert tool_call.status == "completed"
-    assert "OpenRouter Free" in tool_call.summary
-    assert tool_call.metadata.get("model") == "nvidia/nemotron-3-super-120b-a12b:free"
-
-
-def test_generate_report_success_deepseek_provider(monkeypatch):
-    provider = _make_provider(
-        name="deepseek",
-        display_name="DeepSeek",
-        model="deepseek-chat",
-    )
-    monkeypatch.setattr(
-        "kronos_fincept.agent._call_deepseek_report",
-        _fake_call_deepseek_report_with_provider(provider),
-    )
-
-    report, tool_call = _generate_report("test question", {})
-    assert tool_call.name == "DeepSeek 汇总"
-    assert tool_call.status == "completed"
-    assert "DeepSeek" in tool_call.summary
+    assert "LLM" in tool_call.summary
+    assert tool_call.metadata.get("model") == "custom-model"
 
 
 def test_generate_report_fallback_uses_llm_summary_name(monkeypatch):
     monkeypatch.setattr(
-        "kronos_fincept.agent._call_deepseek_report",
+        "kronos_fincept.agent._call_llm_report",
         lambda question, context: None,
     )
 
     report, tool_call = _generate_report("test question", {})
     assert tool_call.name == "LLM 汇总"
     assert tool_call.status == "fallback"
-    assert "DeepSeek" not in tool_call.summary
-    assert "OpenRouter" not in tool_call.summary
     assert "LLM" in tool_call.summary
 
 
 def test_generate_report_fallback_summary_shows_provider_failures(monkeypatch):
-    openrouter = _make_provider(name="openrouter", display_name="OpenRouter Free", model="deepseek/deepseek-v4-flash:free")
-    deepseek = _make_provider(name="deepseek", display_name="DeepSeek", model="deepseek-chat")
+    provider = _make_provider()
 
     def fake_call(question, context):
-        _record_report_llm_failure(openrouter, "http_error", status_code=429)
-        _record_report_llm_failure(deepseek, "unparseable_content")
+        _record_report_llm_failure(provider, "http_error", status_code=429)
+        _record_report_llm_failure(provider, "unparseable_content")
         return None
 
-    monkeypatch.setattr("kronos_fincept.agent._call_deepseek_report", fake_call)
+    monkeypatch.setattr("kronos_fincept.agent._call_llm_report", fake_call)
 
     report, tool_call = _generate_report("test question", {})
 
     assert tool_call.status == "fallback"
-    assert "OpenRouter Free 限流" in tool_call.summary
-    assert "已尝试 DeepSeek" in tool_call.summary
-    assert "DeepSeek 返回格式不可解析" in tool_call.summary
+    assert "LLM 限流" in tool_call.summary
+    assert "LLM 返回格式不可解析" in tool_call.summary
     assert "本地结构化报告模板" in tool_call.summary
     assert tool_call.metadata["failures"][0]["status_code"] == 429
 
 
 def test_generate_report_llm_metadata_isolated_between_threads(monkeypatch):
-    openrouter = _make_provider(name="openrouter", display_name="OpenRouter Free", model="openrouter-model")
-    deepseek = _make_provider(name="deepseek", display_name="DeepSeek", model="deepseek-v4-flash")
+    first = _make_provider(model="first-model")
+    second = _make_provider(model="second-model")
     barrier = threading.Barrier(2)
 
     def fake_call(question, context):
-        if question == "open":
-            _set_last_report_llm_metadata(openrouter)
+        if question == "first":
+            _set_last_report_llm_metadata(first)
             barrier.wait(timeout=2)
             time.sleep(0.1)
         else:
             barrier.wait(timeout=2)
-            _set_last_report_llm_metadata(deepseek)
+            _set_last_report_llm_metadata(second)
         return {
             "conclusion": question,
             "recommendation": "观察",
@@ -134,18 +105,18 @@ def test_generate_report_llm_metadata_isolated_between_threads(monkeypatch):
             "disclaimer": "test",
         }
 
-    monkeypatch.setattr("kronos_fincept.agent._call_deepseek_report", fake_call)
+    monkeypatch.setattr("kronos_fincept.agent._call_llm_report", fake_call)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        open_future = executor.submit(_generate_report, "open", {})
-        deep_future = executor.submit(_generate_report, "deep", {})
-        _, open_tool = open_future.result(timeout=3)
-        _, deep_tool = deep_future.result(timeout=3)
+        first_future = executor.submit(_generate_report, "first", {})
+        second_future = executor.submit(_generate_report, "second", {})
+        _, first_tool = first_future.result(timeout=3)
+        _, second_tool = second_future.result(timeout=3)
 
-    assert open_tool.name == "OpenRouter Free 汇总"
-    assert open_tool.metadata["model"] == "openrouter-model"
-    assert deep_tool.name == "DeepSeek 汇总"
-    assert deep_tool.metadata["model"] == "deepseek-v4-flash"
+    assert first_tool.name == "LLM 汇总"
+    assert first_tool.metadata["model"] == "first-model"
+    assert second_tool.name == "LLM 汇总"
+    assert second_tool.metadata["model"] == "second-model"
 
 
 def test_step_name_inherits_tool_call_name(monkeypatch):
@@ -182,19 +153,19 @@ def test_step_name_inherits_tool_call_name(monkeypatch):
                 "disclaimer": "test",
             },
             AgentToolCall(
-                name="OpenRouter Free 汇总",
+                name="LLM 汇总",
                 status="completed",
-                summary="OpenRouter Free 已基于项目工具结果生成结构化报告。",
+                summary="LLM 已基于项目工具结果生成结构化报告。",
                 elapsed_ms=100,
-                metadata={"model": "nvidia/nemotron-3-super-120b-a12b:free"},
+                metadata={"model": "custom-model"},
             ),
         )
 
-    monkeypatch.setattr(agent, "_call_deepseek_router", fake_router)
+    monkeypatch.setattr(agent, "_call_llm_router", fake_router)
     monkeypatch.setattr(agent, "_build_asset_context", fake_asset_context)
     monkeypatch.setattr(agent, "_generate_report", fake_generate_report)
 
     result = agent.analyze_investment_question("帮我看看招商银行现在能不能买", dry_run=True)
     synthesis_steps = [s for s in result.steps if s.name.endswith("汇总")]
     assert len(synthesis_steps) >= 1
-    assert synthesis_steps[0].name == "OpenRouter Free 汇总"
+    assert synthesis_steps[0].name == "LLM 汇总"

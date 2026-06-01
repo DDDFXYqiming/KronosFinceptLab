@@ -242,7 +242,7 @@ async def macro_provider_status(mode: Literal["fast", "complete"] = Query("fast"
 
 @router.post("/ai", response_model=AIAnalyzeResponse)
 async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
-    """Run full AI analysis through the shared OpenRouter→DeepSeek agent chain."""
+    """Run full AI analysis through the shared OpenAI-compatible LLM agent chain."""
     try:
         from kronos_fincept.agent import analyze_investment_question
 

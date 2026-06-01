@@ -32,10 +32,7 @@ _RESERVED_OUTPUT_FIELDS = {
 _SENSITIVE_PATTERNS = [
     re.compile(r"(?i)(authorization\s*[:=]\s*)(bearer\s+)?[^\s,;]+"),
     re.compile(r"(?i)((?:api[_-]?key|secret[_-]?key|access[_-]?token|token|cookie|password)\s*[:=]\s*)[^\s,;]+"),
-    re.compile(r"(?i)(DEEPSEEK_API_KEY\s*=\s*)[^\s,;]+"),
-    re.compile(r"(?i)(OPENROUTER_API_KEY\s*=\s*)[^\s,;]+"),
-    re.compile(r"(?i)(OPENAI_API_KEY\s*=\s*)[^\s,;]+"),
-    re.compile(r"(?i)(ANTHROPIC_API_KEY\s*=\s*)[^\s,;]+"),
+    re.compile(r"(?i)(LLM_API_KEY\s*=\s*)[^\s,;]+"),
     re.compile(r"(?i)(sk-[A-Za-z0-9_\-]{8,})"),
     re.compile(r"https://open\.feishu\.cn/open-apis/bot/v2/hook/[A-Za-z0-9_\-]+"),
     re.compile(r"(?i)(webhook[_-]?url\s*[:=]\s*)https?://[^\s,;]+"),

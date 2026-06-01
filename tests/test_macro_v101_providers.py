@@ -270,8 +270,8 @@ def test_v101_generic_macro_theme_symbol_is_not_used_as_market_ticker(monkeypatc
     assert "%5Espx" in captured["url"] or "%5ESPX" in captured["url"] or "^SPX" in captured["url"]
 
 
-def test_v101_readme_and_version_labels_are_current():
-    assert "Version: v10." in read("README.md")
+def test_v101_readme_and_version_label_is_removed():
+    assert "Version:" not in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")
     assert "v10." in read("web/src/components/layout/Header.tsx")
 

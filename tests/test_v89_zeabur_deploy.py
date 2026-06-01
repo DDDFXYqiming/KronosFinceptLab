@@ -82,7 +82,7 @@ def test_zeabur_deployment_contract_survives_trimmed_readme():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     check_script = (ROOT / "scripts/check_zeabur_build.ps1").read_text(encoding="utf-8")
 
-    assert "Version: v" in readme
+    assert "Version:" not in readme
     assert "NEXT_IGNORE_INCORRECT_LOCKFILE" in dockerfile
     assert (ROOT / "scripts/check_zeabur_build.ps1").exists()
     assert ".next/standalone" in check_script

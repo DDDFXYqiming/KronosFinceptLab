@@ -53,7 +53,7 @@ def test_v94_batch_removes_recharts_runtime_dependency():
     assert "toReturnBarData" in chart
 
 
-def test_v94_version_labels_are_current():
-    assert "Version: v10." in read("README.md")
+def test_v94_version_label_is_removed():
+    assert "Version:" not in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")
     assert "v10." in read("web/src/components/layout/Header.tsx")

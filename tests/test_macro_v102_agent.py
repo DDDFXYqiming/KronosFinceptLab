@@ -59,10 +59,10 @@ def _patch_macro_tools(monkeypatch):
 
     manager = FakeMacroManager()
     monkeypatch.setattr(agent, "_create_macro_data_manager", lambda: manager)
-    monkeypatch.setattr(agent, "_call_deepseek_macro_router", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent, "_call_llm_macro_router", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_report",
+        "_call_llm_report",
         lambda question, context: {
             "conclusion": "宏观信号显示需要保持谨慎观察。",
             "short_term_prediction": "宏观链路不直接调用 Kronos K 线预测。",
@@ -102,17 +102,16 @@ def _rows(n: int = 40) -> list[dict]:
     ]
 
 
-def test_structured_llm_defaults_to_deepseek_before_openrouter():
+def test_structured_llm_keeps_configured_provider_order():
     from kronos_fincept import agent
 
     providers = [
-        agent.LLMChatProvider("openrouter", "OpenRouter Free", "sk-or-test", "https://openrouter.example/v1", "free"),
-        agent.LLMChatProvider("deepseek", "DeepSeek", "sk-test", "https://deepseek.example/v1", "deepseek-chat"),
+        agent.LLMChatProvider("llm", "LLM", "sk-test", "https://llm.example/v1", "test-model"),
     ]
 
     ordered = agent._ordered_llm_providers(providers)
 
-    assert [provider.name for provider in ordered] == ["deepseek", "openrouter"]
+    assert [provider.name for provider in ordered] == ["llm"]
 
 
 def test_v102_selects_macro_providers_for_geopolitical_question():
@@ -198,11 +197,11 @@ def test_v102_existing_stock_agent_does_not_auto_call_macro(monkeypatch):
     )
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
             allowed=True,
             symbols=[agent.ResolvedSymbol("600036", "cn", "招商银行")],
-            source="deepseek_router",
+            source="llm_router",
         ),
     )
     monkeypatch.setattr(agent, "_fetch_price_data", lambda symbol, market: _rows())
@@ -214,7 +213,7 @@ def test_v102_existing_stock_agent_does_not_auto_call_macro(monkeypatch):
         "_build_prediction",
         lambda symbol, rows, dry_run: {"model": "Kronos", "prediction_days": 5, "forecast": [{"close": 35.0}]},
     )
-    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: None)
 
     class DisabledSearchClient:
         provider = ""

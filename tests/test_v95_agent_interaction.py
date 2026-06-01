@@ -30,7 +30,7 @@ def _patch_agent_tools(monkeypatch):
         provider = ""
         is_configured = False
 
-    monkeypatch.setattr(agent, "_call_deepseek_router", lambda question, explicit_symbol=None, explicit_market=None: None)
+    monkeypatch.setattr(agent, "_call_llm_router", lambda question, explicit_symbol=None, explicit_market=None: None)
     monkeypatch.setattr(agent, "_fetch_price_data", lambda symbol, market: _rows())
     monkeypatch.setattr(agent, "_fetch_financial_summary", lambda symbol, market: {"revenue": 1})
     monkeypatch.setattr(agent, "_build_technical_indicators", lambda rows: {"rsi": {"current": 52}})
@@ -51,7 +51,7 @@ def _patch_agent_tools(monkeypatch):
     )
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_report",
+        "_call_llm_report",
         lambda question, context: {
             "conclusion": "可以进入正常金融研究链路。",
             "short_term_prediction": "短期预测偏中性。",
@@ -113,7 +113,7 @@ def test_v95_web_analysis_page_has_agent_workspace_controls():
     assert "queryClient.removeQueries" in page
 
 
-def test_v95_version_labels_are_current():
-    assert "Version: v10." in read("README.md")
+def test_v95_version_label_is_removed():
+    assert "Version:" not in read("README.md")
     assert "v10." in read("web/src/components/layout/Sidebar.tsx")
     assert "v10." in read("web/src/components/layout/Header.tsx")

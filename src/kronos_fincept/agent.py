@@ -40,14 +40,14 @@ _LAST_REPORT_LLM_FAILURES: ContextVar[list[dict[str, Any]]] = ContextVar("last_r
 _LLM_FAILURES: dict[str, tuple[int, float]] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
-ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 5, "deepseek": 8}
-WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 30}
+ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"llm": 20}
+WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 30}
 WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 30
-WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"openrouter": 8, "deepseek": 35}
+WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 35}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 35
 WEB_MACRO_TIMEOUT_SECONDS = 16.0
 WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 12.0
-DEFAULT_LLM_PROVIDER_ORDER = ("deepseek", "openrouter")
+DEFAULT_LLM_PROVIDER_ORDER = ("llm",)
 LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
 LLM_CONTEXT_MAX_TEXT_CHARS = 600
 LLM_CONTEXT_RECENT_MARKET_ROWS = 5
@@ -64,7 +64,7 @@ RESEARCH_DISCLAIMER = (
 )
 
 MACRO_ANALYSIS_DESCRIPTION = (
-    "宏观分析只使用 KronosFinceptLab 已接入的宏观 provider、公开网页检索和 OpenRouter/DeepSeek 汇总，"
+    "宏观分析只使用 KronosFinceptLab 已接入的宏观 provider、公开网页检索和 LLM 汇总，"
     "用于跨市场信号研究，不承诺实时新闻全覆盖。"
 )
 
@@ -122,7 +122,7 @@ ALLOWED_SCOPE_PATTERNS = [
     r"股票|股价|证券|A股|美股|港股|行情|走势|趋势|上涨|下跌|涨幅|跌幅|买|卖|持有|风险|预测|回测|量化|投资|资产|组合",
     r"估值|目标价|财报|业绩|短期|中期|长期|看好|看空",
     r"能买吗|能不能买|可以买|适合买|该不该买|值不值|见底|到顶|抄底|追高",
-    r"Kronos|Camelos|DeepSeek|模型|财务|技术面|基本面|指标|VaR|Sharpe|波动|回撤",
+    r"Kronos|Camelos|LLM|模型|财务|技术面|基本面|指标|VaR|Sharpe|波动|回撤",
     r"API|CLI|Web|部署|Zeabur|日志|告警|数据源|BaoStock|AkShare|Yahoo",
 ]
 
@@ -271,12 +271,8 @@ def _build_chat_completions_url(base_url: str) -> str:
     return f"{normalized}/chat/completions"
 
 
-def _build_deepseek_chat_url(base_url: str) -> str:
-    return _build_chat_completions_url(base_url)
-
-
-def _deepseek_chat_url() -> str:
-    return _build_deepseek_chat_url(_deepseek_base_url())
+def _llm_chat_url() -> str:
+    return _build_chat_completions_url(_llm_base_url())
 
 
 @dataclass(frozen=True)
@@ -292,16 +288,16 @@ def _settings_llm() -> Any:
     return getattr(settings, "llm", None)
 
 
-def _deepseek_config() -> Any:
-    return getattr(_settings_llm(), "deepseek", None)
+def _llm_config() -> Any:
+    return getattr(_settings_llm(), "provider", None)
 
 
-def _deepseek_model(default: str = "deepseek-v4-flash") -> str:
-    return str(getattr(_deepseek_config(), "model", default) or default)
+def _llm_model(default: str = "gpt-4o-mini") -> str:
+    return str(getattr(_llm_config(), "model", default) or default)
 
 
-def _deepseek_base_url(default: str = "https://api.deepseek.com/chat/completions") -> str:
-    return str(getattr(_deepseek_config(), "base_url", default) or default)
+def _llm_base_url(default: str = "https://api.openai.com/v1/chat/completions") -> str:
+    return str(getattr(_llm_config(), "base_url", default) or default)
 
 
 def _provider_is_configured(config: Any) -> bool:
@@ -316,38 +312,22 @@ def _provider_is_configured(config: Any) -> bool:
         except Exception:
             return False
     api_key = str(getattr(config, "api_key", "") or "")
-    return bool(api_key and not api_key.startswith(("sk-xxxx", "sk-or-xxxx", "xxxx")))
+    return bool(api_key and not api_key.startswith(("sk-xxxx", "xxxx")))
 
 
 def _llm_provider_chain() -> list[LLMChatProvider]:
-    llm = _settings_llm()
-    providers: list[LLMChatProvider] = []
-    openrouter = getattr(llm, "openrouter", None)
-    if _provider_is_configured(openrouter):
-        providers.append(
-            LLMChatProvider(
-                name="openrouter",
-                display_name="OpenRouter Free",
-                api_key=str(getattr(openrouter, "api_key", "") or ""),
-                base_url=str(getattr(openrouter, "base_url", "https://openrouter.ai/api/v1/chat/completions") or ""),
-                model=str(
-                    getattr(openrouter, "model", "deepseek/deepseek-v4-flash:free")
-                    or "deepseek/deepseek-v4-flash:free"
-                ),
-            )
+    provider = _llm_config()
+    if not _provider_is_configured(provider):
+        return []
+    return [
+        LLMChatProvider(
+            name="llm",
+            display_name="LLM",
+            api_key=str(getattr(provider, "api_key", "") or ""),
+            base_url=str(getattr(provider, "base_url", "https://api.openai.com/v1/chat/completions") or ""),
+            model=str(getattr(provider, "model", "gpt-4o-mini") or "gpt-4o-mini"),
         )
-    deepseek = getattr(llm, "deepseek", None)
-    if _provider_is_configured(deepseek):
-        providers.append(
-            LLMChatProvider(
-                name="deepseek",
-                display_name="DeepSeek",
-                api_key=str(getattr(deepseek, "api_key", "") or ""),
-                base_url=str(getattr(deepseek, "base_url", "https://api.deepseek.com/chat/completions") or ""),
-                model=str(getattr(deepseek, "model", "deepseek-chat") or "deepseek-chat"),
-            )
-        )
-    return providers
+    ]
 
 
 def _ordered_llm_providers(
@@ -368,21 +348,17 @@ def _ordered_llm_providers(
 
 
 def _llm_headers(provider: LLMChatProvider) -> dict[str, str]:
-    headers = {
+    return {
         "Authorization": f"Bearer {provider.api_key}",
         "Content-Type": "application/json",
     }
-    if provider.name == "openrouter":
-        headers["HTTP-Referer"] = "https://github.com/DDDFXYqiming/KronosFinceptLab"
-        headers["X-Title"] = "KronosFinceptLab"
-    return headers
 
 
 def _llm_source(provider: LLMChatProvider, purpose: str) -> str:
     if purpose == "macro_router":
-        return "openrouter_macro_router" if provider.name == "openrouter" else "deepseek_macro_router"
+        return "llm_macro_router"
     if purpose == "router":
-        return "openrouter_router" if provider.name == "openrouter" else "deepseek_router"
+        return "llm_router"
     return provider.name
 
 
@@ -451,9 +427,6 @@ def _report_llm_fallback_summary(failures: list[dict[str, Any]]) -> str:
             parts.append("requests 依赖不可用")
         else:
             parts.append(f"{provider} 调用异常")
-    attempted_deepseek = any(str(item.get("provider")) == "deepseek" for item in failures)
-    if any(item.get("status_code") == 429 for item in failures) and attempted_deepseek:
-        parts.append("已尝试 DeepSeek")
     detail = "；".join(dict.fromkeys(parts))
     return f"{detail}，已使用本地结构化报告模板。"
 
@@ -552,14 +525,14 @@ def _call_structured_llm_json(
                     response_body=str(getattr(response, "text", ""))[:500],
                 )
                 continue
-            content = _strip_think_blocks(_deepseek_message_content(response_payload))
+            content = _strip_think_blocks(_llm_message_content(response_payload))
             parsed = _extract_json_object(content)
             if not isinstance(parsed, dict) or not parsed:
                 if purpose == "report":
                     _record_report_llm_failure(
                         provider,
                         "unparseable_content",
-                        finish_reason=_deepseek_finish_reason(response_payload),
+                        finish_reason=_llm_finish_reason(response_payload),
                     )
                 log_event(
                     logger,
@@ -570,7 +543,7 @@ def _call_structured_llm_json(
                     model=provider.model,
                     timeout_seconds=provider_timeout,
                     content_preview=str(content)[:500],
-                    finish_reason=_deepseek_finish_reason(response_payload),
+                    finish_reason=_llm_finish_reason(response_payload),
                 )
                 continue
             _record_llm_provider_success(provider)
@@ -625,41 +598,15 @@ def _llm_request_payload(
     temperature: float,
     max_tokens: int,
 ) -> dict[str, Any]:
-    if provider.name == "openrouter":
-        return {
-            "model": provider.model,
-            "messages": _openrouter_compatible_messages(messages),
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "thinking": {"type": "disabled"},
-        }
-
     return {
         "model": provider.model,
         "messages": messages,
-        **_deepseek_structured_json_options(
+        **_llm_structured_json_options(
             temperature=temperature,
             max_tokens=max_tokens,
             model=provider.model,
         ),
     }
-
-
-def _openrouter_compatible_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Avoid system/developer roles; some OpenRouter Free backends reject them."""
-
-    sections: list[str] = [
-        "You are running inside KronosFinceptLab. Follow all instructions below.",
-        "Return only one valid JSON object. Do not wrap it in Markdown or commentary.",
-    ]
-    for message in messages:
-        role = str(message.get("role") or "user").strip() or "user"
-        content = str(message.get("content") or "").strip()
-        if not content:
-            continue
-        label = "Instruction" if role in {"system", "developer"} else "Input"
-        sections.append(f"{label} ({role}):\n{content}")
-    return [{"role": "user", "content": "\n\n".join(sections)}]
 
 
 def _llm_provider_timeout(
@@ -1348,13 +1295,13 @@ def classify_agent_request(
     explicit_symbol: str | None = None,
     explicit_market: str | None = None,
 ) -> AgentRouteDecision:
-    """Classify scope and resolve symbols with the OpenRouter/DeepSeek LLM chain first."""
+    """Classify scope and resolve symbols with the configured LLM first."""
 
     hard_reason = _hard_security_rejection(text)
     if hard_reason:
         return AgentRouteDecision(allowed=False, reason=hard_reason, source="hard_security")
 
-    llm_decision = _call_deepseek_router(text, explicit_symbol=explicit_symbol, explicit_market=explicit_market)
+    llm_decision = _call_llm_router(text, explicit_symbol=explicit_symbol, explicit_market=explicit_market)
     if llm_decision is not None:
         return _with_explicit_symbol(llm_decision, explicit_symbol=explicit_symbol, explicit_market=explicit_market)
 
@@ -1379,13 +1326,13 @@ def classify_macro_request(
     market: str | None = None,
     provider_ids: list[str] | None = None,
 ) -> MacroRouteDecision:
-    """Classify a macro/cross-market question with the OpenRouter/DeepSeek LLM chain first."""
+    """Classify a macro/cross-market question with the configured LLM first."""
 
     hard_reason = _hard_security_rejection(text)
     if hard_reason:
         return MacroRouteDecision(allowed=False, reason=hard_reason, source="hard_security")
 
-    llm_decision = _call_deepseek_macro_router(
+    llm_decision = _call_llm_macro_router(
         text,
         explicit_symbols=symbols,
         explicit_market=market,
@@ -1414,7 +1361,7 @@ def _local_macro_route_decision(
     market: str | None = None,
     provider_ids: list[str] | None = None,
 ) -> MacroRouteDecision:
-    """Deterministic macro router used only when DeepSeek is unavailable."""
+    """Deterministic macro router used only when LLM is unavailable."""
 
     explicit_symbols = _normalize_macro_symbols(symbols or [])
     if explicit_symbols or provider_ids or _is_macro_question(text, symbols=explicit_symbols):
@@ -1442,7 +1389,7 @@ def _local_route_decision(
     explicit_symbol: str | None = None,
     explicit_market: str | None = None,
 ) -> AgentRouteDecision:
-    """Deterministic degraded-mode router used only when DeepSeek is unavailable."""
+    """Deterministic degraded-mode router used only when LLM is unavailable."""
 
     hard_reason = _hard_security_rejection(text)
     if hard_reason:
@@ -1472,7 +1419,7 @@ def _local_route_decision(
     )
 
 
-def _call_deepseek_router(
+def _call_llm_router(
     text: str,
     *,
     explicit_symbol: str | None = None,
@@ -1541,7 +1488,7 @@ market 只能是 cn, hk, us, commodity。港股小米通常是 1810.hk；诺基�
         return None
 
 
-def _call_deepseek_macro_router(
+def _call_llm_macro_router(
     text: str,
     *,
     explicit_symbols: list[str] | None = None,
@@ -3435,18 +3382,18 @@ def _risk_level_from_metrics(risk_metrics: dict[str, Any]) -> str:
 def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
     _clear_last_report_llm_metadata()
-    report = _call_deepseek_report(question, context)
+    report = _call_llm_report(question, context)
     if report is not None:
         llm_metadata = _last_report_llm_metadata()
-        provider_display = str(llm_metadata.get("provider_display") or "DeepSeek")
-        model = str(llm_metadata.get("model") or _deepseek_model())
+        provider_display = str(llm_metadata.get("provider_display") or "LLM")
+        model = str(llm_metadata.get("model") or _llm_model())
         return report, AgentToolCall(
             name=f"{provider_display} 汇总",
             status="completed",
             summary=f"{provider_display} 已基于项目工具结果生成结构化报告。",
             elapsed_ms=_elapsed_ms(started),
             metadata=_tool_metadata(
-                provider=llm_metadata.get("provider") or "deepseek",
+                provider=llm_metadata.get("provider") or "llm",
                 model=model,
                 endpoint=llm_metadata.get("endpoint"),
             ),
@@ -3458,7 +3405,7 @@ def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, 
         status="fallback",
         summary=_report_llm_fallback_summary(failures),
         elapsed_ms=_elapsed_ms(started),
-        metadata=_tool_metadata(model=_deepseek_model(), fallback=True, failures=failures),
+        metadata=_tool_metadata(model=_llm_model(), fallback=True, failures=failures),
     )
 
 
@@ -3502,17 +3449,17 @@ def _json_safe(value: Any, *, _depth: int = 0) -> Any:
     return str(value)
 
 
-def _serialize_deepseek_user_prompt(user_prompt: dict[str, Any]) -> str | None:
+def _serialize_llm_user_prompt(user_prompt: dict[str, Any]) -> str | None:
     try:
         return json.dumps(_json_safe(user_prompt), ensure_ascii=False, allow_nan=False)
     except Exception as exc:
         log_event(
             logger,
             logging.WARNING,
-            "agent.deepseek.report.payload_error",
-            f"DeepSeek report payload serialization failed: {_short_error(exc)}",
+            "agent.llm.report.payload_error",
+            f"LLM report payload serialization failed: {_short_error(exc)}",
             error_type=type(exc).__name__,
-            model=_deepseek_model(),
+            model=_llm_model(),
         )
         return None
 
@@ -3680,7 +3627,7 @@ def _round_float(value: Any) -> Any:
     return value
 
 
-def _deepseek_structured_json_options(
+def _llm_structured_json_options(
     *, temperature: float, max_tokens: int, model: str | None = None
 ) -> dict[str, Any]:
     options: dict[str, Any] = {
@@ -3688,11 +3635,10 @@ def _deepseek_structured_json_options(
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
-    options["thinking"] = {"type": "disabled"}
     return options
 
 
-def _deepseek_message_content(payload: dict[str, Any]) -> str | None:
+def _llm_message_content(payload: dict[str, Any]) -> str | None:
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
         return None
@@ -3711,7 +3657,7 @@ def _deepseek_message_content(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _deepseek_finish_reason(payload: dict[str, Any]) -> str | None:
+def _llm_finish_reason(payload: dict[str, Any]) -> str | None:
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices:
         return None
@@ -3722,40 +3668,24 @@ def _deepseek_finish_reason(payload: dict[str, Any]) -> str | None:
     return str(reason) if reason is not None else None
 
 
-def _deepseek_report_timeout_seconds(context: dict[str, Any]) -> int:
+def _llm_report_timeout_seconds(context: dict[str, Any]) -> int:
     if _is_web_macro_context(context):
         return WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS
     return WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS if _is_web_llm_context(context) else 45
 
 
 def _report_provider_timeouts(context: dict[str, Any]) -> dict[str, int]:
-    if not _is_web_llm_context(context):
-        return {"openrouter": 25, "deepseek": _deepseek_report_timeout_seconds(context)}
-
-    provider_names = {provider.name for provider in _llm_provider_chain()}
-    if _is_web_macro_context(context):
-        if "openrouter" in provider_names and "deepseek" in provider_names:
-            return dict(WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS)
-        return {
-            "openrouter": WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS,
-            "deepseek": WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS,
-        }
-    if "openrouter" in provider_names and "deepseek" in provider_names:
-        return dict(WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS)
-    return {
-        "openrouter": WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS,
-        "deepseek": WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS,
-    }
+    return {"llm": _llm_report_timeout_seconds(context)}
 
 
-def _call_deepseek_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
+def _call_llm_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
     if not _llm_provider_chain():
         log_event(
             logger,
             logging.INFO,
             "agent.llm.report.disabled",
-            "LLM report synthesis skipped because neither OPENROUTER_API_KEY nor DEEPSEEK_API_KEY is configured.",
-            model=_deepseek_model(),
+            "LLM report synthesis skipped because LLM_API_KEY is not configured.",
+            model=_llm_model(),
         )
         return None
     try:
@@ -3806,7 +3736,7 @@ asset_reports: [
             "trusted_project_context": prompt_context,
             "output_language": "zh-CN",
         }
-        user_content = _serialize_deepseek_user_prompt(user_prompt)
+        user_content = _serialize_llm_user_prompt(user_prompt)
         if user_content is None:
             return None
         log_event(
@@ -3827,7 +3757,7 @@ asset_reports: [
             ],
             temperature=0.2,
             max_tokens=3200,
-            timeout=_deepseek_report_timeout_seconds(context),
+            timeout=_llm_report_timeout_seconds(context),
             purpose="report",
             provider_timeouts=_report_provider_timeouts(context),
         )
@@ -3842,8 +3772,8 @@ asset_reports: [
             logging.WARNING,
             "agent.llm.report.exception",
             f"LLM report synthesis failed: {_short_error(exc)}",
-            model=_deepseek_model(),
-            endpoint=_deepseek_chat_url(),
+            model=_llm_model(),
+            endpoint=_llm_chat_url(),
             error_type=type(exc).__name__,
         )
         return None

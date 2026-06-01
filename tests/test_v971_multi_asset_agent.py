@@ -23,7 +23,7 @@ def _rows(n: int = 40) -> list[dict]:
     ]
 
 
-def _patch_multi_asset_tools(monkeypatch, *, deepseek_report=True):
+def _patch_multi_asset_tools(monkeypatch, *, LLM_report=True):
     from kronos_fincept import agent
 
     class DisabledSearchClient:
@@ -32,14 +32,14 @@ def _patch_multi_asset_tools(monkeypatch, *, deepseek_report=True):
 
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
             allowed=True,
             symbols=[
                 agent.ResolvedSymbol("600036", "cn", "招商银行"),
                 agent.ResolvedSymbol("600519", "cn", "贵州茅台"),
             ],
-            source="deepseek_router",
+            source="llm_router",
         ),
     )
     monkeypatch.setattr(agent, "_fetch_price_data", lambda symbol, market: _rows())
@@ -82,10 +82,10 @@ def _patch_multi_asset_tools(monkeypatch, *, deepseek_report=True):
     monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
     monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
-    if deepseek_report:
+    if LLM_report:
         monkeypatch.setattr(
             agent,
-            "_call_deepseek_report",
+            "_call_llm_report",
             lambda question, context: {
                 "conclusion": "招商银行与贵州茅台需要分开看风险。",
                 "short_term_prediction": "两个标的均已调用 Kronos。",
@@ -132,7 +132,7 @@ def _patch_multi_asset_tools(monkeypatch, *, deepseek_report=True):
             },
         )
     else:
-        monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
+        monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: None)
 
 
 def test_v971_agent_returns_per_asset_results_for_multi_symbol_question(monkeypatch):
@@ -153,7 +153,7 @@ def test_v971_agent_returns_per_asset_results_for_multi_symbol_question(monkeypa
 def test_v971_fallback_report_still_returns_real_tool_derived_asset_cards(monkeypatch):
     from kronos_fincept.agent import analyze_investment_question
 
-    _patch_multi_asset_tools(monkeypatch, deepseek_report=False)
+    _patch_multi_asset_tools(monkeypatch, LLM_report=False)
     result = analyze_investment_question("比较招商银行和贵州茅台的中短期风险")
 
     assert result.ok is True

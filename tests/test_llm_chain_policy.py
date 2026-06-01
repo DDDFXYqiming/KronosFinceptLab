@@ -5,16 +5,16 @@ from pathlib import Path
 
 from kronos_fincept import agent
 from kronos_fincept.agent import AgentRouteDecision, AgentToolCall, ResolvedSymbol
-from kronos_fincept.config import OpenRouterConfig
+from kronos_fincept.config import LLMProviderConfig
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_openrouter_default_model_uses_deepseek_v4_flash_free(monkeypatch):
-    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+def test_llm_default_model_uses_LLM_compatible_default(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
 
-    assert OpenRouterConfig().model == "deepseek/deepseek-v4-flash:free"
+    assert LLMProviderConfig().model == "gpt-4o-mini"
 
 
 def test_legacy_ai_advisor_module_is_not_exported():
@@ -62,7 +62,7 @@ def test_multi_asset_agent_context_build_is_parallel_and_capped_at_five(monkeypa
     monkeypatch.setattr("concurrent.futures.ThreadPoolExecutor", FakeExecutor)
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda *args, **kwargs: AgentRouteDecision(allowed=True, symbols=symbols, source="test"),
     )
     monkeypatch.setattr(

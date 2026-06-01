@@ -23,7 +23,7 @@ def _patch_agent_tools(monkeypatch, search_client):
 
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent._local_route_decision(
             question,
             explicit_symbol=explicit_symbol,
@@ -118,7 +118,7 @@ def test_agent_marks_web_search_disabled_without_ambiguous_legacy_message(monkey
 
     search_client = SimpleNamespace(provider="", is_configured=False)
     _patch_agent_tools(monkeypatch, search_client)
-    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: _report_payload(context))
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: _report_payload(context))
 
     result = agent.analyze_investment_question("帮我看看招商银行现在能不能买")
     research_call = next(call for call in result.tool_calls if call.name == "online_research")
@@ -131,7 +131,7 @@ def test_agent_marks_web_search_disabled_without_ambiguous_legacy_message(monkey
     assert "未配置通用网页检索工具" not in research_call.summary
 
 
-def test_agent_passes_real_web_search_results_to_deepseek_context(monkeypatch):
+def test_agent_passes_real_web_search_results_to_LLM_context(monkeypatch):
     from kronos_fincept import agent
     from kronos_fincept.web_search import WebSearchResponse, WebSearchResult
 
@@ -164,7 +164,7 @@ def test_agent_passes_real_web_search_results_to_deepseek_context(monkeypatch):
         assert research["results"][0]["url"] == "https://example.com/news"
         return _report_payload(context)
 
-    monkeypatch.setattr(agent, "_call_deepseek_report", fake_report)
+    monkeypatch.setattr(agent, "_call_llm_report", fake_report)
     result = agent.analyze_investment_question("帮我看看招商银行现在能不能买")
     research_call = next(call for call in result.tool_calls if call.name == "online_research")
 
@@ -193,7 +193,7 @@ def test_agent_web_search_failure_degrades_without_failing_analysis(monkeypatch)
             )
 
     _patch_agent_tools(monkeypatch, FailingSearchClient())
-    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: _report_payload(context))
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: _report_payload(context))
 
     result = agent.analyze_investment_question("帮我看看招商银行现在能不能买")
     research_call = next(call for call in result.tool_calls if call.name == "online_research")
@@ -205,7 +205,7 @@ def test_agent_web_search_failure_degrades_without_failing_analysis(monkeypatch)
     assert "timeout" in research_call.summary
 
 
-def test_deepseek_report_prompt_treats_web_content_as_untrusted():
+def test_LLM_report_prompt_treats_web_content_as_untrusted():
     from pathlib import Path
 
     source = Path("src/kronos_fincept/agent.py").read_text(encoding="utf-8")

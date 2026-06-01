@@ -57,7 +57,7 @@ def _patch_base_stock_tools(monkeypatch):
     monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_report",
+        "_call_llm_report",
         lambda question, context: {
             "conclusion": "已完成工具链分析。",
             "short_term_prediction": "短期预测偏中性。",
@@ -79,12 +79,12 @@ def test_v104_stock_analysis_injects_macro_context_when_router_requires(monkeypa
     _patch_base_stock_tools(monkeypatch)
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
             allowed=True,
             symbols=[agent.ResolvedSymbol("600036", "cn", "招商银行")],
             needs_macro=True,
-            source="deepseek_router",
+            source="llm_router",
         ),
     )
 
@@ -144,12 +144,12 @@ def test_v104_stock_analysis_skips_macro_context_when_router_does_not_require(mo
     _patch_base_stock_tools(monkeypatch)
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
             allowed=True,
             symbols=[agent.ResolvedSymbol("600036", "cn", "招商银行")],
             needs_macro=False,
-            source="deepseek_router",
+            source="llm_router",
         ),
     )
     monkeypatch.setattr(

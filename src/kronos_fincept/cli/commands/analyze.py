@@ -670,7 +670,7 @@ def macro(ctx, question, symbols, market, providers, output_format):
 @click.option('--output', 'output_format', type=click.Choice(['json', 'text']), default='text')
 @click.pass_context
 def ai_analyze(ctx, symbol, market, output_format):
-    """AI-powered stock analysis through the shared OpenRouter→DeepSeek agent chain."""
+    """AI-powered stock analysis through the shared OpenAI-compatible LLM agent chain."""
     try:
         from kronos_fincept.agent import analyze_investment_question
 

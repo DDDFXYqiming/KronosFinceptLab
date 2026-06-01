@@ -36,7 +36,7 @@ def _patch_structured_llm(monkeypatch: pytest.MonkeyPatch, payloads: list[dict[s
         payload = payloads[index]
         if payload is None:
             return None
-        return payload, SimpleNamespace(name="deepseek")
+        return payload, SimpleNamespace(name="LLM")
 
     monkeypatch.setattr(agent, "_call_structured_llm_json", fake_call)
     return calls

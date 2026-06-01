@@ -58,7 +58,7 @@ def _patch_base_stock_tools(monkeypatch):
     monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
 
 
-def test_v105_deepseek_prompt_includes_digital_oracle_rules(monkeypatch):
+def test_v105_LLM_prompt_includes_digital_oracle_rules(monkeypatch):
     import requests
 
     from kronos_fincept import agent
@@ -66,10 +66,10 @@ def test_v105_deepseek_prompt_includes_digital_oracle_rules(monkeypatch):
     captured: dict[str, object] = {}
     fake_settings = SimpleNamespace(
         llm=SimpleNamespace(
-            deepseek=SimpleNamespace(
+            provider=SimpleNamespace(
                 api_key="sk-test",
-                base_url="https://api.deepseek.com",
-                model="deepseek-v4-flash",
+                base_url="https://llm.example",
+                model="test-model",
                 is_configured=True,
             )
         )
@@ -104,7 +104,7 @@ def test_v105_deepseek_prompt_includes_digital_oracle_rules(monkeypatch):
     monkeypatch.setattr(agent, "settings", fake_settings)
     monkeypatch.setattr(requests, "post", fake_post)
 
-    report = agent._call_deepseek_report("黄金该不该买", {"assets": [], "macro": {"signals": []}})
+    report = agent._call_llm_report("黄金该不该买", {"assets": [], "macro": {"signals": []}})
     request_json = captured["json"]
     assert isinstance(request_json, dict)
     system_prompt = request_json["messages"][0]["content"]
@@ -167,8 +167,8 @@ def test_v105_macro_report_contains_probability_consistency_and_monitoring(monke
             return MacroGatherResult(signals=signals, provider_results=provider_results, errors={})
 
     monkeypatch.setattr(agent, "_create_macro_data_manager", lambda: FakeMacroManager())
-    monkeypatch.setattr(agent, "_call_deepseek_macro_router", lambda *args, **kwargs: None)
-    monkeypatch.setattr(agent, "_call_deepseek_report", lambda question, context: None)
+    monkeypatch.setattr(agent, "_call_llm_macro_router", lambda *args, **kwargs: None)
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: None)
 
     result = agent.analyze_macro_question("WW3 概率和黄金该不该买")
 
@@ -192,17 +192,17 @@ def test_v105_stock_report_shape_stays_stable_when_macro_not_required(monkeypatc
     _patch_base_stock_tools(monkeypatch)
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_router",
+        "_call_llm_router",
         lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
             allowed=True,
             symbols=[agent.ResolvedSymbol("600036", "cn", "招商银行")],
             needs_macro=False,
-            source="deepseek_router",
+            source="llm_router",
         ),
     )
     monkeypatch.setattr(
         agent,
-        "_call_deepseek_report",
+        "_call_llm_report",
         lambda question, context: {
             "conclusion": "结论",
             "short_term_prediction": "短期预测",
