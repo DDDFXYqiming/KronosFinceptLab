@@ -7,6 +7,7 @@ import { Card, CardTitle, CardGrid } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
+import { MarkdownText } from "@/components/ui/MarkdownText";
 import { api, formatApiError } from "@/lib/api";
 import { demoAgentResult } from "@/lib/demoData";
 import { normalizeMarket, type Market } from "@/lib/markets";
@@ -430,7 +431,7 @@ function ReportSection({ title, value }: { title: string; value?: unknown }) {
   return (
     <div className="border-b border-border last:border-b-0 py-4 first:pt-0 last:pb-0">
       <h3 className="text-sm font-semibold text-foreground mb-2">{title}</h3>
-      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{text}</p>
+      <MarkdownText text={text} />
     </div>
   );
 }
@@ -1158,7 +1159,7 @@ function AnalysisContent() {
               <RecommendationBadge rec={result.recommendation} />
             </div>
 
-            <p className="text-muted-foreground leading-relaxed">{report?.conclusion}</p>
+            <MarkdownText text={formatReportText(report?.conclusion)} />
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
