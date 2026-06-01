@@ -11,6 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 
 from kronos_fincept.api.models import ForecastMetadataOut
+from kronos_fincept.api.routes.news import DEFAULT_RSS_FEEDS
 from kronos_fincept.logging_config import log_event
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,26 @@ class AgentAnalyzeResponse(BaseModel):
 # ── Endpoints ──
 
 
+def _protected_macro_rss_feeds(feeds: list[MacroRssFeedIn]) -> list[dict[str, Any]]:
+    """Always preserve built-in macro news sources even if a client omits them."""
+    merged: list[dict[str, Any]] = [dict(feed) for feed in DEFAULT_RSS_FEEDS]
+    seen_urls = {str(feed["url"]).strip() for feed in merged}
+    seen_ids = {str(feed["id"]).strip() for feed in merged if feed.get("id")}
+    for feed in feeds:
+        item = feed.model_dump()
+        url = str(item.get("url") or "").strip()
+        feed_id = str(item.get("id") or "").strip()
+        if not url or url in seen_urls or (feed_id and feed_id in seen_ids):
+            continue
+        merged.append(item)
+        seen_urls.add(url)
+        if feed_id:
+            seen_ids.add(feed_id)
+        if len(merged) >= 12:
+            break
+    return merged
+
+
 @router.post("/agent", response_model=AgentAnalyzeResponse)
 async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
     """Run the shared stateless natural-language AI analysis agent."""
@@ -212,7 +233,7 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
             symbols=req.symbols,
             market=req.market,
             provider_ids=req.provider_ids,
-            rss_feeds=[feed.model_dump() for feed in req.rss_feeds],
+            rss_feeds=_protected_macro_rss_feeds(req.rss_feeds),
             context=context,
             language=req.language,
         )

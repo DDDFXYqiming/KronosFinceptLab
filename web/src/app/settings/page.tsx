@@ -21,6 +21,7 @@ import {
   getStoredRssFeeds,
   isDefaultRssFeed,
   normalizeRssFeed,
+  withProtectedDefaultRssFeeds,
   resetStoredRssFeeds,
   saveStoredRssFeeds,
 } from "@/lib/rssFeeds";
@@ -193,7 +194,7 @@ export default function SettingsPage() {
   };
 
   const persistRssFeeds = (nextFeeds: RssFeed[]) => {
-    const normalized = nextFeeds.map(normalizeRssFeed).filter((feed) => feed.url);
+    const normalized = withProtectedDefaultRssFeeds(nextFeeds);
     setRssFeeds(normalized);
     saveStoredRssFeeds(normalized);
   };
@@ -208,6 +209,13 @@ export default function SettingsPage() {
   };
 
   const removeRssFeed = (feedId: string) => {
+    const target = rssFeeds.find((feed, index) => {
+      const normalized = normalizeRssFeed(feed, index);
+      return (normalized.id || normalized.url) === feedId;
+    });
+    if (target && isDefaultRssFeed(normalizeRssFeed(target, 0))) {
+      return;
+    }
     persistRssFeeds(rssFeeds.filter((feed, index) => {
       const normalized = normalizeRssFeed(feed, index);
       return (normalized.id || normalized.url) !== feedId;
@@ -340,6 +348,7 @@ export default function SettingsPage() {
           {rssFeeds.map((feed, index) => {
             const normalized = normalizeRssFeed(feed, index);
             const key = normalized.id || normalized.url;
+            const protectedDefault = isDefaultRssFeed(normalized);
             return (
               <div key={key} className="flex flex-col gap-2 rounded-lg border border-border p-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
@@ -353,7 +362,14 @@ export default function SettingsPage() {
                   </div>
                   <p className="truncate font-mono text-xs text-muted-foreground">{normalized.url}</p>
                 </div>
-                <Button variant="ghost" onClick={() => removeRssFeed(key)}>{t(language, "settings.rssRemove")}</Button>
+                <Button
+                  variant="ghost"
+                  disabled={protectedDefault}
+                  title={protectedDefault ? t(language, "settings.rssDefaultProtected") : undefined}
+                  onClick={() => removeRssFeed(key)}
+                >
+                  {t(language, "settings.rssRemove")}
+                </Button>
               </div>
             );
           })}

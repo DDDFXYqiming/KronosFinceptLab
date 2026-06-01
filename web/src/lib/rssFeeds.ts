@@ -32,6 +32,10 @@ export function normalizeRssFeeds(feeds: RssFeed[]): RssFeed[] {
     });
 }
 
+export function withProtectedDefaultRssFeeds(feeds: RssFeed[]): RssFeed[] {
+  return normalizeRssFeeds([...DEFAULT_RSS_FEEDS, ...feeds]);
+}
+
 export function isDefaultRssFeed(feed: RssFeed): boolean {
   return Boolean((feed.id && DEFAULT_RSS_FEED_IDS.has(feed.id)) || DEFAULT_RSS_FEED_URLS.has(feed.url));
 }
@@ -42,7 +46,7 @@ export function getStoredRssFeeds(): RssFeed[] {
     const raw = window.localStorage.getItem(RSS_FEEDS_STORAGE_KEY);
     if (!raw) return DEFAULT_RSS_FEEDS;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? normalizeRssFeeds(parsed) : DEFAULT_RSS_FEEDS;
+    return Array.isArray(parsed) ? withProtectedDefaultRssFeeds(parsed) : DEFAULT_RSS_FEEDS;
   } catch {
     return DEFAULT_RSS_FEEDS;
   }
@@ -50,7 +54,7 @@ export function getStoredRssFeeds(): RssFeed[] {
 
 export function saveStoredRssFeeds(feeds: RssFeed[]): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(RSS_FEEDS_STORAGE_KEY, JSON.stringify(normalizeRssFeeds(feeds)));
+  window.localStorage.setItem(RSS_FEEDS_STORAGE_KEY, JSON.stringify(withProtectedDefaultRssFeeds(feeds)));
 }
 
 export function resetStoredRssFeeds(): RssFeed[] {

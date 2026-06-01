@@ -26,9 +26,10 @@ def _site_api_configured() -> bool:
 
 
 def _supported_model_ids(active_model_id: str) -> list[str]:
-    if env_bool("KRONOS_ALLOW_MODEL_SWITCH", False):
-        return list(SUPPORTED_MODEL_IDS)
-    return [active_model_id]
+    ids = list(SUPPORTED_MODEL_IDS)
+    if active_model_id not in ids:
+        ids.append(active_model_id)
+    return ids
 
 
 @router.get("/health", response_model=HealthResponseOut)
