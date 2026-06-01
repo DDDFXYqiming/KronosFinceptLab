@@ -105,7 +105,7 @@ export function Header() {
           <button
             onClick={() => setMobileMenuOpen(true)}
             className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:hidden"
-            aria-label="打开导航菜单"
+            aria-label={t(preferences.language, "common.openMenu")}
             aria-expanded={mobileMenuOpen}
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -121,7 +121,7 @@ export function Header() {
           <button
             onClick={toggleSidebar}
             className="hidden min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:flex"
-            aria-label="切换侧边栏"
+            aria-label={t(preferences.language, "common.toggleSidebar")}
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
@@ -156,7 +156,7 @@ export function Header() {
           <button
             className="absolute inset-0 bg-foreground/30"
             onClick={() => setMobileMenuOpen(false)}
-            aria-label="关闭导航遮罩"
+            aria-label={t(preferences.language, "common.closeOverlay")}
           />
           <aside className="mobile-safe-bottom absolute left-0 top-0 flex h-full w-[min(82vw,18rem)] flex-col border-r border-border bg-card shadow-2xl">
             <div className="mobile-safe-top border-b border-border px-4">
@@ -164,7 +164,7 @@ export function Header() {
                 <button
                   onClick={() => setMobileMenuOpen(false)}
                   className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
-                  aria-label="关闭导航菜单"
+                  aria-label={t(preferences.language, "common.closeMenu")}
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />

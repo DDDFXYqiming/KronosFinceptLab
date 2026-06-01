@@ -196,6 +196,7 @@ def _run_agent_job(job_id: str, req: AgentAnalyzeRequest) -> None:
             market=req.market,
             context=req.context,
             dry_run=req.dry_run,
+            language=req.language,
         ).to_dict()
         _set_step(job, 1, "completed", "analysis complete")
         _complete(job, result)

@@ -27,6 +27,7 @@ from kronos_fincept.security_utils import contains_prompt_injection, sanitize_cl
 class AIAnalyzeRequest(BaseModel):
     symbol: str = Field(..., min_length=1, max_length=32, description="Stock symbol, e.g. '600036', 'AAPL', '0700.HK'")
     market: str = Field(default="cn", min_length=1, max_length=16, description="Market: cn=A股, hk=港股, us=美股, commodity=大宗商品")
+    language: Literal["zh-CN", "en-US"] = Field(default="zh-CN", description="Preferred natural-language output language")
 
 
 class ForecastDataOut(BaseModel):
@@ -58,6 +59,7 @@ class AgentAnalyzeRequest(BaseModel):
     market: str | None = Field(default=None, max_length=16, description="Optional market override")
     context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
     dry_run: bool = Field(default=False, description="Use deterministic Kronos dry-run for tests")
+    language: Literal["zh-CN", "en-US"] = Field(default="zh-CN", description="Preferred natural-language output language")
 
     @field_validator("context")
     @classmethod
@@ -79,6 +81,7 @@ class MacroAnalyzeRequest(BaseModel):
     provider_ids: list[str] | None = Field(default=None, max_length=20, description="Optional provider id override")
     mode: Literal["fast", "complete"] = Field(default="fast", description="fast uses dashboard timeouts; complete uses longer provider collection")
     context: dict[str, Any] | None = Field(default=None, description="Optional page/session context")
+    language: Literal["zh-CN", "en-US"] = Field(default="zh-CN", description="Preferred natural-language output language")
 
     @field_validator("context")
     @classmethod
@@ -149,6 +152,7 @@ async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
             market=req.market,
             context=req.context,
             dry_run=req.dry_run,
+            language=req.language,
         )
         return AgentAnalyzeResponse(**result.to_dict())
     except Exception as exc:
@@ -197,6 +201,7 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
             market=req.market,
             provider_ids=req.provider_ids,
             context=context,
+            language=req.language,
         )
         return AgentAnalyzeResponse(**result.to_dict())
     except Exception as exc:
@@ -253,6 +258,7 @@ async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
             symbol=req.symbol,
             market=req.market,
             context={"source": "api_ai_analyze", "channel": "web"},
+            language=req.language,
         )
         report = result.report or {}
         return AIAnalyzeResponse(

@@ -10,8 +10,9 @@ import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
 import { DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS } from "@/lib/defaults";
-import { DEFAULT_MARKET, MARKET_OPTIONS, normalizeMarket, type Market } from "@/lib/markets";
+import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
+import type { Language } from "@/lib/i18n";
 import { queryKeys } from "@/lib/queryKeys";
 import { toCandlestickSeriesData, toForecastLineData } from "@/lib/chartData";
 import { useSessionState } from "@/lib/useSessionState";
@@ -29,32 +30,42 @@ function formatForecastDataError(
   symbol: string,
   market: Market,
   startDate: string,
-  endDate: string
+  endDate: string,
+  language: Language
 ): string {
   if (error instanceof ApiError && error.status === 404) {
     const requestId = error.requestId ? ` request_id=${error.requestId}` : "";
-    const marketLabel = MARKET_OPTIONS.find((option) => option.value === market)?.label || market;
+    const marketLabel = getMarketLabel(market, language);
     const defaultHint = symbol !== DEFAULT_SYMBOL
-      ? `如果要看${DEFAULT_SYMBOL_NAME}，请使用代码 ${DEFAULT_SYMBOL}。`
+      ? tx(language, `如果要看${DEFAULT_SYMBOL_NAME}，请使用代码 ${DEFAULT_SYMBOL}。`, `Use ${DEFAULT_SYMBOL} for ${DEFAULT_SYMBOL_NAME}.`)
       : "";
-    return (
-      `未找到 ${symbol} 在 ${startDate}~${endDate} 的${marketLabel}K线数据。` +
-      `请确认代码、市场和日期范围。${defaultHint}${requestId}`
+    return tx(
+      language,
+      `未找到 ${symbol} 在 ${startDate}~${endDate} 的${marketLabel}K线数据。请确认代码、市场和日期范围。${defaultHint}${requestId}`,
+      `No ${marketLabel} OHLC data was found for ${symbol} from ${startDate} to ${endDate}. Check the symbol, market, and date range. ${defaultHint}${requestId}`
     );
   }
-  return formatApiError(error, "行情获取失败");
+  return formatApiError(error, tx(language, "行情获取失败", "Failed to load market data"));
 }
 
-function ForecastEmptyState({ symbol }: { symbol: string }) {
+function tx(language: Language, zh: string, en: string): string {
+  return language === "en-US" ? en : zh;
+}
+
+function ForecastEmptyState({ symbol, language }: { symbol: string; language: Language }) {
   return (
     <Card>
-      <CardTitle>未加载行情</CardTitle>
+      <CardTitle>{tx(language, "未加载行情", "No Market Data Loaded")}</CardTitle>
       <div className="py-12 text-center">
         <p className="text-base font-medium text-foreground">
-          当前没有可显示的 K 线数据
+          {tx(language, "当前没有可显示的 K 线数据", "There is no OHLC data to display.")}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          请确认 {symbol || "该标的"} 的代码、市场和日期范围；{DEFAULT_SYMBOL_NAME}代码为 {DEFAULT_SYMBOL}。
+          {tx(
+            language,
+            `请确认 ${symbol || "该标的"} 的代码、市场和日期范围；${DEFAULT_SYMBOL_NAME}代码为 ${DEFAULT_SYMBOL}。`,
+            `Check the symbol, market, and date range for ${symbol || "this asset"}. ${DEFAULT_SYMBOL_NAME} uses ${DEFAULT_SYMBOL}.`
+          )}
         </p>
       </div>
     </Card>
@@ -65,6 +76,8 @@ function ForecastContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { preferences, setPreferences } = useAppStore();
+  const language = preferences.language;
+  const marketOptions = getMarketOptions(language);
   const symbolParam = searchParams.get("symbol");
   const marketParam = searchParams.get("market");
   const hasMarketParam = marketParam !== null;
@@ -123,10 +136,14 @@ function ForecastContent() {
       setData(res.rows);
       setError("");
     } else {
-      setError(`未找到 ${res.symbol || normalizeSymbol(symbol)} 在 ${startDate}~${endDate} 的K线数据。请确认代码、市场和日期范围。`);
+      setError(tx(
+        language,
+        `未找到 ${res.symbol || normalizeSymbol(symbol)} 在 ${startDate}~${endDate} 的K线数据。请确认代码、市场和日期范围。`,
+        `No OHLC data was found for ${res.symbol || normalizeSymbol(symbol)} from ${startDate} to ${endDate}. Check the symbol, market, and date range.`
+      ));
       clearForecastState();
     }
-  }, [clearForecastState, setData, setError, symbol, startDate, endDate]);
+  }, [clearForecastState, language, setData, setError, symbol, startDate, endDate]);
 
   const handleFetchData = useCallback(async (forceRefresh = false) => {
     const requestSymbol = normalizeSymbol(symbol);
@@ -155,7 +172,7 @@ function ForecastContent() {
       });
       applyDataResponse(res);
     } catch (e: any) {
-      setError(formatForecastDataError(e, requestSymbol, market, startDate, endDate));
+      setError(formatForecastDataError(e, requestSymbol, market, startDate, endDate, language));
       clearForecastState();
     } finally {
       setLoading(false);
@@ -171,6 +188,7 @@ function ForecastContent() {
     setPrediction,
     setPredResult,
     clearForecastState,
+    language,
   ]);
 
   // Load data from URL params on mount
@@ -191,10 +209,10 @@ function ForecastContent() {
       ok: true,
       symbol: DEMO_SYMBOL,
       forecast: demoForecastRows,
-      metadata: { device: "demo", elapsed_ms: 0, backend: "demo", warning: "演示数据，不代表实时行情，不构成投资建议。" },
+      metadata: { device: "demo", elapsed_ms: 0, backend: "demo", warning: tx(language, "演示数据，不代表实时行情，不构成投资建议。", "Demo data only. Not real-time market data or investment advice.") },
     });
     setError("");
-  }, [demoMode, setData, setError, setMarket, setPredResult, setPrediction, setSymbol]);
+  }, [demoMode, language, setData, setError, setMarket, setPredResult, setPrediction, setSymbol]);
 
   // Create/destroy chart
   useEffect(() => {
@@ -292,12 +310,12 @@ function ForecastContent() {
           position: "inBar",
           color: "#60A5FA",
           shape: "circle",
-          text: "预测起点",
+          text: tx(language, "预测起点", "Forecast start"),
         }]
         : []
     );
     chartRef.current?.timeScale().fitContent();
-  }, [prediction, data]);
+  }, [prediction, data, language]);
 
   const applyForecastResponse = useCallback((res: ForecastResponse) => {
     if (res.forecast && res.forecast.length > 0) {
@@ -305,13 +323,13 @@ function ForecastContent() {
       setPredResult(res);
       setError("");
     } else {
-      setError("未返回预测数据。");
+      setError(tx(language, "未返回预测数据。", "No forecast data was returned."));
     }
-  }, [setError, setPredResult, setPrediction]);
+  }, [language, setError, setPredResult, setPrediction]);
 
   const handleRunPrediction = async (forceRefresh = false) => {
     if (data.length === 0) {
-      setError("请先加载数据再运行预测。");
+      setError(tx(language, "请先加载数据再运行预测。", "Load market data before running a forecast."));
       return;
     }
     const requestSymbol = normalizeSymbol(symbol);
@@ -368,12 +386,12 @@ function ForecastContent() {
 
   return (
     <div className="page-shell space-y-6">
-      <SectionLabel>价格预测</SectionLabel>
-      <h1 className="page-title">价格预测</h1>
+      <SectionLabel>{tx(language, "价格预测", "Price Forecast")}</SectionLabel>
+      <h1 className="page-title">{tx(language, "价格预测", "Price Forecast")}</h1>
       <ApiKeyNotice />
       {demoMode && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-          当前展示固定演示数据，不调用后端模型，不代表实时行情。
+          {tx(language, "当前展示固定演示数据，不调用后端模型，不代表实时行情。", "Showing fixed demo data. Backend models are not called and this is not real-time market data.")}
         </div>
       )}
 
@@ -381,23 +399,23 @@ function ForecastContent() {
       <Card>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div>
-            <label className="field-label">代码</label>
+            <label className="field-label">{tx(language, "代码", "Symbol")}</label>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
               className="app-input mt-1 font-mono"
-              placeholder={`例如 ${DEFAULT_SYMBOL}`}
+              placeholder={tx(language, `例如 ${DEFAULT_SYMBOL}`, `e.g. ${DEFAULT_SYMBOL}`)}
             />
           </div>
           <div>
-            <label className="field-label">市场</label>
+            <label className="field-label">{tx(language, "市场", "Market")}</label>
             <select
               value={market}
               onChange={(e) => setMarket(e.target.value as Market)}
               className="app-input mt-1"
             >
-              {MARKET_OPTIONS.map((opt) => (
+              {marketOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
@@ -405,7 +423,7 @@ function ForecastContent() {
             </select>
           </div>
           <div>
-            <label className="field-label">开始日期</label>
+            <label className="field-label">{tx(language, "开始日期", "Start date")}</label>
             <input
               type="text"
               value={startDate}
@@ -415,7 +433,7 @@ function ForecastContent() {
             />
           </div>
           <div>
-            <label className="field-label">结束日期</label>
+            <label className="field-label">{tx(language, "结束日期", "End date")}</label>
             <input
               type="text"
               value={endDate}
@@ -425,7 +443,7 @@ function ForecastContent() {
             />
           </div>
           <div>
-            <label className="field-label">模型</label>
+            <label className="field-label">{tx(language, "模型", "Model")}</label>
             <select
               value={modelId}
               onChange={(e) => {
@@ -447,7 +465,7 @@ function ForecastContent() {
               loading={loading}
               className="w-full"
             >
-              获取数据
+              {tx(language, "获取数据", "Load Data")}
             </Button>
           </div>
           <div className="flex items-end">
@@ -457,14 +475,14 @@ function ForecastContent() {
               className="w-full"
               disabled={data.length === 0}
             >
-              运行预测
+              {tx(language, "运行预测", "Run Forecast")}
             </Button>
           </div>
         </div>
         {data.length > 0 && (
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:flex md:flex-wrap">
             <Button variant="secondary" onClick={() => handleFetchData(true)} loading={loading}>
-              刷新数据
+              {tx(language, "刷新数据", "Refresh Data")}
             </Button>
             <Button
               variant="secondary"
@@ -472,7 +490,7 @@ function ForecastContent() {
               loading={predLoading}
               disabled={data.length === 0}
             >
-              重新预测
+              {tx(language, "重新预测", "Rerun Forecast")}
             </Button>
           </div>
         )}
@@ -487,10 +505,11 @@ function ForecastContent() {
       {hasChartData ? (
         <Card>
           <CardTitle>
-            {symbol} — {data.length} 根K线
+            {/* Legacy test anchor: {symbol} — {data.length} 根K线 */}
+            {symbol} — {tx(language, `${data.length} 根K线`, `${data.length} OHLC rows`)}
             {predResult && (
               <span className="ml-0 block text-sm font-normal text-muted-foreground md:ml-4 md:inline">
-                预测: {predResult.forecast?.length || 0} 步
+                {tx(language, "预测", "Forecast")}: {predResult.forecast?.length || 0} {tx(language, "步", "steps")}
                 {predResult.metadata.elapsed_ms &&
                   ` (${predResult.metadata.elapsed_ms}ms)`}
               </span>
@@ -500,37 +519,37 @@ function ForecastContent() {
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-accent-green" />
-              实际 OHLC
+              {tx(language, "实际 OHLC", "Actual OHLC")}
             </span>
             <span className="inline-flex items-center gap-2">
               <span className="h-2 w-5 rounded-full bg-accent" />
-              Kronos 预测路径
+              {tx(language, "Kronos 预测路径", "Kronos forecast path")}
             </span>
             {prediction && prediction.length > 0 && (
-              <span>预测区间：未来 {prediction.length} 步</span>
+              <span>{tx(language, `预测区间：未来 ${prediction.length} 步`, `Forecast horizon: next ${prediction.length} steps`)}</span>
             )}
           </div>
         </Card>
       ) : (
-        <ForecastEmptyState symbol={normalizeSymbol(symbol)} />
+        <ForecastEmptyState symbol={normalizeSymbol(symbol)} language={language} />
       )}
 
       {/* Prediction Stats */}
       {predResult && predictedClose !== null && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
-            <p className="text-sm text-muted-foreground">最新收盘</p>
+            <p className="text-sm text-muted-foreground">{tx(language, "最新收盘", "Latest Close")}</p>
             <p className="text-xl font-bold">{lastClose.toFixed(2)}</p>
           </Card>
           <Card>
-            <p className="text-sm text-muted-foreground">预测收盘</p>
+            <p className="text-sm text-muted-foreground">{tx(language, "预测收盘", "Forecast Close")}</p>
             <p className="text-xl font-bold text-blue-400">
               {predictedClose.toFixed(2)}
             </p>
           </Card>
           {changePct !== null && (
             <Card>
-              <p className="text-sm text-muted-foreground">涨跌幅</p>
+              <p className="text-sm text-muted-foreground">{tx(language, "涨跌幅", "Change")}</p>
               <p
                 className={`text-xl font-bold ${
                   changePct >= 0 ? "text-green-400" : "text-red-400"
@@ -547,17 +566,17 @@ function ForecastContent() {
       {/* Data Table */}
       {data.length > 0 && (
         <Card>
-          <CardTitle>历史数据</CardTitle>
+          <CardTitle>{tx(language, "历史数据", "Historical Data")}</CardTitle>
           <div className="table-scroll max-h-64 overflow-y-auto">
             <table className="min-w-[42rem] w-full text-sm">
               <thead className="sticky top-0 bg-surface-raised">
                 <tr className="border-b border-gray-700 text-gray-400">
-                  <th className="py-2 text-left">日期</th>
-                  <th className="py-2 text-right">开盘</th>
-                  <th className="py-2 text-right">最高</th>
-                  <th className="py-2 text-right">最低</th>
-                  <th className="py-2 text-right">收盘</th>
-                  <th className="py-2 text-right">成交量</th>
+                  <th className="py-2 text-left">{tx(language, "日期", "Date")}</th>
+                  <th className="py-2 text-right">{tx(language, "开盘", "Open")}</th>
+                  <th className="py-2 text-right">{tx(language, "最高", "High")}</th>
+                  <th className="py-2 text-right">{tx(language, "最低", "Low")}</th>
+                  <th className="py-2 text-right">{tx(language, "收盘", "Close")}</th>
+                  <th className="py-2 text-right">{tx(language, "成交量", "Volume")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -591,7 +610,7 @@ function ForecastContent() {
           </div>
           {data.length > 50 && (
             <p className="text-xs text-gray-500 mt-2">
-              显示最近50条，共{data.length}条
+              {tx(language, `显示最近50条，共${data.length}条`, `Showing latest 50 of ${data.length} rows`)}
             </p>
           )}
         </Card>

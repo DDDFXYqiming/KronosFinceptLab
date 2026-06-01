@@ -363,6 +363,7 @@ export interface GlobalDataResponse {
 export interface AIAnalyzeRequest {
   symbol: string;
   market: string;
+  language?: "zh-CN" | "en-US";
 }
 
 export interface AIAnalyzeResponse {
@@ -499,6 +500,7 @@ export interface AgentAnalyzeRequest {
   market?: string;
   context?: Record<string, any>;
   dry_run?: boolean;
+  language?: "zh-CN" | "en-US";
 }
 
 export interface MacroAnalyzeRequest {
@@ -508,6 +510,7 @@ export interface MacroAnalyzeRequest {
   provider_ids?: string[];
   mode?: "fast" | "complete";
   context?: Record<string, any>;
+  language?: "zh-CN" | "en-US";
 }
 
 export interface ModelCacheResponse {

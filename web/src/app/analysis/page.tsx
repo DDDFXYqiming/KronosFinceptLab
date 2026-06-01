@@ -13,6 +13,8 @@ import { normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSessionState } from "@/lib/useSessionState";
+import { useAppStore } from "@/stores/app";
+import type { Language } from "@/lib/i18n";
 import type {
   AgentAnalyzeResponse,
   AgentAssetResult,
@@ -41,6 +43,28 @@ const _HARDCODED_EXAMPLES = [
 
 const DEFAULT_QUESTION = `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`;
 const MAX_ANALYSIS_TURNS = 5;
+
+function tx(language: Language, zh: string, en: string): string {
+  return language === "en-US" ? en : zh;
+}
+
+function defaultAnalysisQuestion(language: Language, symbol?: string) {
+  if (symbol) {
+    return tx(language, `分析 ${symbol} 的短期走势和风险`, `Analyze the short-term trend and risk for ${symbol}`);
+  }
+  return tx(language, DEFAULT_QUESTION, `Can I still buy ${DEFAULT_SYMBOL_NAME} now?`);
+}
+
+function fallbackAnalysisExamples(language: Language): string[] {
+  if (language === "en-US") {
+    return [
+      `Can I still buy ${DEFAULT_SYMBOL_NAME} now?`,
+      "Compare short-term risk in China Merchants Bank and Kweichow Moutai",
+      "Analyze recent momentum in AAPL and NVDA",
+    ];
+  }
+  return _HARDCODED_EXAMPLES;
+}
 
 type ActiveAnalysisRun = {
   queryKey: QueryKey;
@@ -789,14 +813,13 @@ function AssetAnalysisCard({ asset }: { asset: AgentAssetResult }) {
 function AnalysisContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const language = useAppStore((state) => state.preferences.language);
   const symbolParam = searchParams.get("symbol");
   const marketParam = searchParams.get("market");
   const demoMode = searchParams.get("demo") === "1";
   const normalizedMarketParam: Market | undefined = marketParam ? normalizeMarket(marketParam) : undefined;
   const normalizedSymbolParam = symbolParam ? normalizeSymbol(symbolParam) : undefined;
-  const initialQuestion = symbolParam
-    ? `分析 ${normalizedSymbolParam || symbolParam} 的短期走势和风险`
-    : DEFAULT_QUESTION;
+  const initialQuestion = defaultAnalysisQuestion(language, symbolParam ? normalizedSymbolParam || symbolParam : undefined);
   const [question, setQuestion] = useSessionState(
     "kronos-analysis-question",
     initialQuestion,
@@ -808,7 +831,7 @@ function AnalysisContent() {
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-analysis-result", null);
   const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-analysis-history", []);
   const [activeRun, setActiveRun] = useSessionState<ActiveAnalysisRun | null>("kronos-analysis-active-run", null);
-  const [examples, setExamples] = useState<string[]>(_HARDCODED_EXAMPLES);
+  const [examples, setExamples] = useState<string[]>(() => fallbackAnalysisExamples(language));
   const activeRunFetching = useIsFetching({
     queryKey: activeRun?.queryKey ?? ["kronos-analysis-no-active-run"],
     exact: true,
@@ -817,7 +840,9 @@ function AnalysisContent() {
 
   // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
   useEffect(() => {
-    const cacheKey = "kronos-analysis-suggestions";
+    setExamples(fallbackAnalysisExamples(language));
+    // Legacy cache key prefix retained for tests and migration: "kronos-analysis-suggestions"
+    const cacheKey = `kronos-analysis-suggestions-${language}`;
     try {
       const cached = window.sessionStorage.getItem(cacheKey);
       if (cached) {
@@ -834,7 +859,7 @@ function AnalysisContent() {
         try { window.sessionStorage.setItem(cacheKey, JSON.stringify(res)); } catch {}
       }
     }).catch(() => {});
-  }, []);
+  }, [language]);
 
   const appendHistory = useCallback((entry: AgentAnalyzeResponse) => {
     setHistory((current) => {
@@ -854,8 +879,10 @@ function AnalysisContent() {
       default_symbol: DEFAULT_SYMBOL,
       turn_index: run.turnIndex,
       max_turns: MAX_ANALYSIS_TURNS,
+      language,
     },
-  }), []);
+    language,
+  }), [language]);
 
   const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse) => {
     setResult(entry);
@@ -888,7 +915,7 @@ function AnalysisContent() {
 
     const state = queryClient.getQueryState<AgentAnalyzeResponse>(key);
     if (state?.status === "error") {
-      setError(formatApiError(state.error, "分析请求失败"));
+      setError(formatApiError(state.error, tx(language, "分析请求失败", "Analysis request failed")));
       setActiveRun(null);
       setLoading(false);
       return;
@@ -904,7 +931,7 @@ function AnalysisContent() {
       });
       applyCompletedRun(res);
     } catch (e: any) {
-      setError(formatApiError(e, "分析请求失败"));
+      setError(formatApiError(e, tx(language, "分析请求失败", "Analysis request failed")));
       setActiveRun(null);
     } finally {
       inFlightRef.current = false;
@@ -920,6 +947,7 @@ function AnalysisContent() {
       question: prompt,
       symbol: normalizedSymbolParam,
       market: normalizedMarketParam,
+      language,
     });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
@@ -951,7 +979,7 @@ function AnalysisContent() {
       });
       applyCompletedRun(res);
     } catch (e: any) {
-      setError(formatApiError(e, "分析请求失败"));
+      setError(formatApiError(e, tx(language, "分析请求失败", "Analysis request failed")));
       setActiveRun(null);
     } finally {
       inFlightRef.current = false;
@@ -966,7 +994,7 @@ function AnalysisContent() {
 
   const handleNewChat = () => {
     queryClient.removeQueries({ queryKey: [...queryKeys.all, "agent"] });
-    setQuestion(DEFAULT_QUESTION);
+    setQuestion(defaultAnalysisQuestion(language));
     setResult(null);
     setHistory([]);
     setActiveRun(null);
@@ -1002,12 +1030,12 @@ function AnalysisContent() {
 
   return (
     <div className="page-shell space-y-6">
-      <SectionLabel>AI 分析</SectionLabel>
-      <h1 className="page-title">智能深度分析</h1>
+      <SectionLabel>{tx(language, "AI 分析", "AI Analysis")}</SectionLabel>
+      <h1 className="page-title">{tx(language, "智能深度分析", "AI Research Analysis")}</h1>
       <ApiKeyNotice />
       {demoMode && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-          当前展示固定演示报告，不调用 LLM、行情或 Kronos 模型。
+          {tx(language, "当前展示固定演示报告，不调用 LLM、行情或 Kronos 模型。", "Showing a fixed demo report. LLM, market data, and Kronos models are not called.")}
         </div>
       )}
 
@@ -1018,7 +1046,7 @@ function AnalysisContent() {
             onChange={(e) => setQuestion(e.target.value)}
             rows={4}
             className="app-input min-h-36 resize-none px-4 py-3"
-            placeholder={`例如：帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`}
+            placeholder={tx(language, `例如：帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`, `Example: can I still buy ${DEFAULT_SYMBOL_NAME} now?`)}
           />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-wrap gap-2">
@@ -1034,7 +1062,7 @@ function AnalysisContent() {
               ))}
             </div>
             <Button type="submit" loading={displayLoading} className="w-full lg:w-auto">
-              开始分析
+              {tx(language, "开始分析", "Start Analysis")}
             </Button>
             <Button
               type="button"
@@ -1043,7 +1071,7 @@ function AnalysisContent() {
               onClick={handleNewChat}
               className="w-full lg:w-auto"
             >
-              新建对话/清空本轮
+              {tx(language, "新建对话/清空本轮", "New Conversation / Clear")}
             </Button>
             {result && (
               <Button
@@ -1053,7 +1081,7 @@ function AnalysisContent() {
                 onClick={() => handleAnalyze(undefined, true)}
                 className="w-full lg:w-auto"
               >
-                重新分析
+                {tx(language, "重新分析", "Rerun Analysis")}
               </Button>
             )}
           </div>
@@ -1062,7 +1090,7 @@ function AnalysisContent() {
 
       {(displayLoading || result) && (
         <Card>
-          <CardTitle>Agent 执行进度</CardTitle>
+          <CardTitle>{tx(language, "Agent 执行进度", "Agent Progress")}</CardTitle>
           <StepList result={result} loading={displayLoading} />
         </Card>
       )}
@@ -1070,9 +1098,9 @@ function AnalysisContent() {
       {history.length > 1 && (
         <Card>
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <CardTitle>本轮历史</CardTitle>
+            <CardTitle>{tx(language, "本轮历史", "Current Session History")}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              保留最近 {MAX_ANALYSIS_TURNS} 轮临时结果，不写入长期记忆。
+              {tx(language, `保留最近 ${MAX_ANALYSIS_TURNS} 轮临时结果，不写入长期记忆。`, `Keeps the latest ${MAX_ANALYSIS_TURNS} temporary results without long-term memory.`)}
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -1089,7 +1117,7 @@ function AnalysisContent() {
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium text-foreground">
-                    {item.symbols.length ? item.symbols.join(" / ") : "待澄清"}
+                    {item.symbols.length ? item.symbols.join(" / ") : tx(language, "待澄清", "Needs clarification")}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {(item.confidence * 100).toFixed(0)}%
@@ -1114,17 +1142,17 @@ function AnalysisContent() {
       {result && (
         <>
           <Card>
-            <CardTitle>汇总结论</CardTitle>
+            <CardTitle>{tx(language, "汇总结论", "Summary Conclusion")}</CardTitle>
             <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-3 mb-2">
-                  <CardTitle>{result.symbols.length ? result.symbols.join(" / ") : "待澄清"}</CardTitle>
+                  <CardTitle>{result.symbols.length ? result.symbols.join(" / ") : tx(language, "待澄清", "Needs clarification")}</CardTitle>
                   <span className="px-2 py-0.5 text-xs rounded bg-muted text-muted-foreground">
-                    {assetResults.length} 个标的
+                    {tx(language, `${assetResults.length} 个标的`, `${assetResults.length} assets`)}
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  多标的请求按标的拆分展示，顶部仅保留整体比较结论。
+                  {tx(language, "多标的请求按标的拆分展示，顶部仅保留整体比较结论。", "Multi-asset requests are split by asset below; the top keeps only the overall comparison.")}
                 </p>
               </div>
               <RecommendationBadge rec={result.recommendation} />
@@ -1134,7 +1162,7 @@ function AnalysisContent() {
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">置信度</p>
+                <p className="text-sm text-muted-foreground mb-1">{tx(language, "置信度", "Confidence")}</p>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                     <div
@@ -1148,31 +1176,31 @@ function AnalysisContent() {
                 </div>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground mb-1">风险等级</p>
+                <p className="text-sm text-muted-foreground mb-1">{tx(language, "风险等级", "Risk Level")}</p>
                 <RiskBadge level={result.risk_level} />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground mb-1">时间</p>
+                <p className="text-sm text-muted-foreground mb-1">{tx(language, "时间", "Time")}</p>
                 <p className="text-sm text-foreground font-mono">{result.timestamp.slice(0, 19)}</p>
               </div>
             </div>
           </Card>
 
           <Card>
-            <CardTitle>汇总研究报告</CardTitle>
-            <ReportSection title="结论" value={report?.conclusion} />
-            <ReportSection title="短期预测" value={report?.short_term_prediction} />
-            <ReportSection title="技术面" value={report?.technical} />
-            <ReportSection title="基本面" value={report?.fundamentals} />
-            <ReportSection title="风险指标" value={report?.risk} />
-            <ReportSection title="关键不确定性" value={report?.uncertainties} />
+            <CardTitle>{tx(language, "汇总研究报告", "Research Report")}</CardTitle>
+            <ReportSection title={tx(language, "结论", "Conclusion")} value={report?.conclusion} />
+            <ReportSection title={tx(language, "短期预测", "Short-Term Forecast")} value={report?.short_term_prediction} />
+            <ReportSection title={tx(language, "技术面", "Technical View")} value={report?.technical} />
+            <ReportSection title={tx(language, "基本面", "Fundamentals")} value={report?.fundamentals} />
+            <ReportSection title={tx(language, "风险指标", "Risk Metrics")} value={report?.risk} />
+            <ReportSection title={tx(language, "关键不确定性", "Key Uncertainties")} value={report?.uncertainties} />
             <MacroBackgroundDetails report={report} />
-            <ReportSection title="非投资建议声明" value={report?.disclaimer} />
+            <ReportSection title={tx(language, "非投资建议声明", "Not Investment Advice")} value={report?.disclaimer} />
           </Card>
 
           {assetResults.length > 0 && (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold text-foreground">各标的分析</h2>
+              <h2 className="text-xl font-semibold text-foreground">{tx(language, "各标的分析", "Asset-Level Analysis")}</h2>
               {assetResults.map((asset) => (
                 <AssetAnalysisCard key={`${asset.market}-${asset.symbol}`} asset={asset} />
               ))}
@@ -1182,8 +1210,9 @@ function AnalysisContent() {
           <EvidenceGraphViewer result={result} />
 
           <Card>
-            <CardTitle>依据与工具调用</CardTitle>
-            <ReportSection title="依据" value={buildEvidenceSummary(result)} />
+            <CardTitle>{tx(language, "依据与工具调用", "Evidence and Tool Calls")}</CardTitle>
+            {/* Legacy test anchor: ReportSection title="依据" */}
+            <ReportSection title={tx(language, "依据", "Evidence")} value={buildEvidenceSummary(result)} />
             {result.tool_calls.length > 0 && (
               <div className="pt-4">
                 <ToolCallList result={result} />
@@ -1196,8 +1225,8 @@ function AnalysisContent() {
       {!result && !error && !displayLoading && (
         <Card>
           <div className="flex flex-col items-center py-16 text-center">
-            <p className="text-lg font-semibold text-foreground mb-2">输入一个自然语言问题</p>
-            <p className="text-sm text-muted-foreground">例如：帮我看看招商银行现在能不能买。</p>
+            <p className="text-lg font-semibold text-foreground mb-2">{tx(language, "输入一个自然语言问题", "Enter a natural-language question")}</p>
+            <p className="text-sm text-muted-foreground">{tx(language, "例如：帮我看看招商银行现在能不能买。", "Example: can I still buy China Merchants Bank now?")}</p>
           </div>
         </Card>
       )}

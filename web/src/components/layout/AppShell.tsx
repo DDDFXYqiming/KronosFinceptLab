@@ -1,12 +1,32 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useAppStore } from "@/stores/app";
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const { sidebarOpen } = useAppStore();
+
+  useEffect(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && activeElement !== document.body) {
+      activeElement.blur();
+    }
+    window.getSelection()?.removeAllRanges();
+
+    const scrollToTop = () => window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    scrollToTop();
+    const frameId = window.requestAnimationFrame(scrollToTop);
+    const timeoutId = window.setTimeout(scrollToTop, 0);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [pathname]);
 
   return (
     <>

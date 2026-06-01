@@ -71,20 +71,22 @@ export const queryKeys = {
   indicator: (params: { symbol: string; market: Market | string }) =>
     [...queryKeys.all, "indicator", normalizeSymbol(params.symbol), params.market] as const,
   alerts: () => [...queryKeys.all, "alerts"] as const,
-  agent: (params: { question: string; symbol?: string | null; market?: Market | string | null }) =>
+  agent: (params: { question: string; symbol?: string | null; market?: Market | string | null; language?: string | null }) =>
     [
       ...queryKeys.all,
       "agent",
       params.question.trim(),
       params.symbol ? normalizeSymbol(params.symbol) : "",
       params.market || "",
+      params.language || "",
     ] as const,
-  macro: (params: { question: string; market?: Market | string | null; providers?: string[] }) =>
+  macro: (params: { question: string; market?: Market | string | null; providers?: string[]; language?: string | null }) =>
     [
       ...queryKeys.all,
       "macro",
       params.question.trim(),
       params.market || "",
       (params.providers || []).join(","),
+      params.language || "",
     ] as const,
 };

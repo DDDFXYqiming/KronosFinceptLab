@@ -1,3 +1,5 @@
+import { DEFAULT_LANGUAGE, t, type Language } from "@/lib/i18n";
+
 export type Market = "cn" | "us" | "hk" | "commodity";
 
 export interface MarketOption {
@@ -25,8 +27,15 @@ export function normalizeMarket(value: string | null | undefined, fallback: Mark
   return isMarket(value) ? value : fallback;
 }
 
-export function getMarketLabel(market: Market | string): string {
-  return MARKET_OPTIONS.find((option) => option.value === market)?.label || String(market);
+export function getMarketLabel(market: Market | string, language: Language = DEFAULT_LANGUAGE): string {
+  return t(language, `market.${market}`) || MARKET_OPTIONS.find((option) => option.value === market)?.label || String(market);
+}
+
+export function getMarketOptions(language: Language = DEFAULT_LANGUAGE): MarketOption[] {
+  return MARKET_OPTIONS.map((option) => ({
+    ...option,
+    label: getMarketLabel(option.value, language),
+  }));
 }
 
 export function toBackendMarket(market: Market): string {
