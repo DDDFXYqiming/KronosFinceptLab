@@ -175,6 +175,9 @@ def test_v971_web_analysis_page_renders_summary_and_per_asset_cards():
     assert "getAssetResults(result)" in page
     assert "formatReportText" in page
     assert "parseReportLiteral" in page
+    assert "预测涨跌幅" in page
+    assert "formatSignedPercent" in page
+    assert "min-w-[32rem]" in page
 
 
 def test_v971_report_normalization_formats_per_asset_mapping_as_prose():

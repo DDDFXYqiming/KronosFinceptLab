@@ -57,6 +57,27 @@ function formatElapsedMs(value: number): string {
   return `${(value / 1000).toFixed(1)}s`;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function calcReturnPct(end: number, base?: number | null): number | null {
+  if (!isFiniteNumber(base) || base <= 0 || !isFiniteNumber(end)) return null;
+  return end / base - 1;
+}
+
+function formatSignedPercent(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return "-";
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
+}
+
+function returnTextClass(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return "text-muted-foreground";
+  if (value > 0) return "text-green-700";
+  if (value < 0) return "text-red-700";
+  return "text-muted-foreground";
+}
+
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
     completed: "完成",
@@ -547,28 +568,39 @@ function ForecastTable({ asset }: { asset: AgentAssetResult }) {
     ) : null;
   }
 
+  const firstOpen = forecast[0]?.open;
+  const basePrice = isFiniteNumber(asset.current_price) && asset.current_price > 0 ? asset.current_price : firstOpen;
+
   return (
     <div className="table-scroll max-h-48 overflow-y-auto rounded-lg border border-border bg-background">
-      <table className="min-w-[26rem] w-full text-xs sm:min-w-[30rem] sm:text-sm">
+      <table className="min-w-[32rem] w-full text-xs sm:min-w-[34rem] sm:text-sm">
         <thead className="sticky top-0 bg-muted">
           <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 text-left">日期</th>
-            <th className="py-2 text-right">开盘</th>
-            <th className="py-2 text-right">最高</th>
-            <th className="py-2 text-right">最低</th>
-            <th className="py-2 text-right">收盘</th>
+            <th className="px-2 py-2 text-left">日期</th>
+            <th className="px-2 py-2 text-right">开盘</th>
+            <th className="px-2 py-2 text-right">最高</th>
+            <th className="px-2 py-2 text-right">最低</th>
+            <th className="px-2 py-2 text-right">收盘</th>
+            <th className="px-2 py-2 text-right">涨跌幅</th>
           </tr>
         </thead>
         <tbody>
-          {forecast.map((row) => (
-            <tr key={`${asset.symbol}-${row.timestamp}-${row.close}`} className="border-b border-border text-foreground hover:bg-muted">
-              <td className="py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td>
-              <td className="py-1.5 text-right">{row.open.toFixed(2)}</td>
-              <td className="py-1.5 text-right">{row.high.toFixed(2)}</td>
-              <td className="py-1.5 text-right">{row.low.toFixed(2)}</td>
-              <td className="py-1.5 text-right font-semibold">{row.close.toFixed(2)}</td>
-            </tr>
-          ))}
+          {forecast.map((row, index) => {
+            const previousClose = index > 0 ? forecast[index - 1]?.close : basePrice;
+            const rowReturn = calcReturnPct(row.close, previousClose);
+            return (
+              <tr key={`${asset.symbol}-${row.timestamp}-${row.close}`} className="border-b border-border text-foreground hover:bg-muted">
+                <td className="px-2 py-1.5 font-mono text-xs">{String(row.timestamp).slice(0, 10)}</td>
+                <td className="px-2 py-1.5 text-right">{row.open.toFixed(2)}</td>
+                <td className="px-2 py-1.5 text-right">{row.high.toFixed(2)}</td>
+                <td className="px-2 py-1.5 text-right">{row.low.toFixed(2)}</td>
+                <td className="px-2 py-1.5 text-right font-semibold">{row.close.toFixed(2)}</td>
+                <td className={`px-2 py-1.5 text-right font-semibold ${returnTextClass(rowReturn)}`}>
+                  {formatSignedPercent(rowReturn)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -630,6 +662,8 @@ function KronosForecastPanel({ asset }: { asset: AgentAssetResult }) {
 
   const firstOpen = forecast[0]?.open ?? 0;
   const lastClose = forecast[forecast.length - 1]?.close ?? 0;
+  const basePrice = isFiniteNumber(asset.current_price) && asset.current_price > 0 ? asset.current_price : firstOpen;
+  const projectedReturn = calcReturnPct(lastClose, basePrice);
   const model = asset.kronos_prediction?.model || "Kronos";
 
   return (
@@ -642,10 +676,25 @@ function KronosForecastPanel({ asset }: { asset: AgentAssetResult }) {
           {model}
         </span>
       </div>
-      <div className="mb-2 grid grid-cols-1 gap-2 text-xs text-muted-foreground md:grid-cols-3">
-        <p>预测开盘起点：<span className="font-semibold text-foreground">{firstOpen.toFixed(2)}</span></p>
-        <p>预测收盘终点：<span className="font-semibold text-foreground">{lastClose.toFixed(2)}</span></p>
-        <p>来源：<span className="font-semibold text-foreground">Kronos 模型输出</span></p>
+      <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+        <div className="rounded-md bg-background px-3 py-2">
+          <p>基准价</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{basePrice.toFixed(2)}</p>
+        </div>
+        <div className="rounded-md bg-background px-3 py-2">
+          <p>预测终点</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{lastClose.toFixed(2)}</p>
+        </div>
+        <div className="rounded-md bg-background px-3 py-2">
+          <p>预测涨跌幅</p>
+          <p className={`mt-1 text-sm font-semibold ${returnTextClass(projectedReturn)}`}>
+            {formatSignedPercent(projectedReturn)}
+          </p>
+        </div>
+        <div className="rounded-md bg-background px-3 py-2">
+          <p>来源</p>
+          <p className="mt-1 truncate text-sm font-semibold text-foreground">Kronos 模型输出</p>
+        </div>
       </div>
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.1fr)]">
         <KronosMiniKline forecast={forecast} />
