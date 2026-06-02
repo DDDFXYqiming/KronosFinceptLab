@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from kronos_fincept.api.models import ForecastMetadataOut
 from kronos_fincept.api.routes.news import DEFAULT_RSS_FEEDS
-from kronos_fincept.logging_config import log_event
+from kronos_fincept.logging_config import log_event, log_perf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
@@ -173,6 +173,7 @@ def _protected_macro_rss_feeds(feeds: list[MacroRssFeedIn]) -> list[dict[str, An
 
 
 @router.post("/agent", response_model=AgentAnalyzeResponse)
+@log_perf(event="api.agent.analyze", level=20)
 async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
     """Run the shared stateless natural-language AI analysis agent."""
     try:
@@ -221,6 +222,7 @@ async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
 
 
 @router.post("/macro", response_model=AgentAnalyzeResponse)
+@log_perf(event="api.macro.analyze", level=20)
 async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
     """Run macro-only signal analysis backed by Digital Oracle style providers."""
     try:
@@ -280,6 +282,7 @@ async def macro_provider_status(mode: Literal["fast", "complete"] = Query("fast"
 
 
 @router.post("/ai", response_model=AIAnalyzeResponse)
+@log_perf(event="api.ai.analyze", level=20)
 async def ai_analyze(req: AIAnalyzeRequest) -> AIAnalyzeResponse:
     """Run full AI analysis through the shared OpenAI-compatible LLM agent chain."""
     try:
