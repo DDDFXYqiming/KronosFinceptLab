@@ -542,6 +542,102 @@ def test_text_format_error_includes_memory(tmp_path):
     assert "test.error_text" in output
 
 
+# ---------------------------------------------------------------------------
+# NEW: LLM Fallback Chain tests
+# ---------------------------------------------------------------------------
+
+def test_llm_fallback_chain_from_env_single_provider(monkeypatch):
+    """Fallback chain with only primary provider (fallback disabled)."""
+    monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4o")
+    monkeypatch.setenv("LLM_ENABLE_FALLBACK_CHAIN", "0")
+
+    from kronos_fincept.config import LLMFallbackChainConfig
+
+    cfg = LLMFallbackChainConfig.from_env()
+    assert not cfg.enabled
+    assert len(cfg.providers) == 1
+    assert cfg.providers[0].name == "primary"
+    assert cfg.providers[0].model == "gpt-4o"
+
+
+def test_llm_fallback_chain_from_env_multiple_providers(monkeypatch):
+    """Fallback chain with primary + 2 fallbacks."""
+    monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4o")
+    monkeypatch.setenv("LLM_FALLBACK_1_API_KEY", "sk-fb1")
+    monkeypatch.setenv("LLM_FALLBACK_1_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
+    monkeypatch.setenv("LLM_FALLBACK_1_MODEL", "deepseek/deepseek-chat")
+    monkeypatch.setenv("LLM_FALLBACK_2_API_KEY", "sk-fb2")
+    monkeypatch.setenv("LLM_FALLBACK_2_BASE_URL", "https://api.moonshot.cn/v1/chat/completions")
+    monkeypatch.setenv("LLM_FALLBACK_2_MODEL", "moonshot-v1-8k")
+    monkeypatch.setenv("LLM_ENABLE_FALLBACK_CHAIN", "1")
+    monkeypatch.setenv("LLM_FALLBACK_ORDER", "primary,fallback_1,fallback_2")
+    monkeypatch.setenv("LLM_MAX_PROVIDER_ATTEMPTS", "3")
+
+    from kronos_fincept.config import LLMFallbackChainConfig
+
+    cfg = LLMFallbackChainConfig.from_env()
+    assert cfg.enabled
+    assert len(cfg.providers) == 3
+    assert cfg.max_attempts == 3
+
+    ordered = cfg.get_ordered_providers()
+    assert len(ordered) == 3
+    assert ordered[0].name == "primary"
+    assert ordered[1].name == "fallback_1"
+    assert ordered[2].name == "fallback_2"
+    assert ordered[1].model == "deepseek/deepseek-chat"
+
+
+def test_llm_fallback_chain_skips_unconfigured(monkeypatch):
+    """Unconfigured fallback providers are skipped."""
+    monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+    monkeypatch.setenv("LLM_FALLBACK_1_API_KEY", "")
+    monkeypatch.setenv("LLM_FALLBACK_2_API_KEY", "sk-fb2")
+    monkeypatch.setenv("LLM_ENABLE_FALLBACK_CHAIN", "1")
+
+    from kronos_fincept.config import LLMFallbackChainConfig
+
+    cfg = LLMFallbackChainConfig.from_env()
+    ordered = cfg.get_ordered_providers()
+    names = [p.name for p in ordered]
+    assert "primary" in names
+    assert "fallback_1" not in names
+    assert "fallback_2" in names
+
+
+def test_llm_config_get_fallback_providers_legacy(monkeypatch):
+    """When fallback chain is disabled, get_fallback_providers returns primary only."""
+    monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+    monkeypatch.setenv("LLM_ENABLE_FALLBACK_CHAIN", "0")
+
+    from kronos_fincept.config import LLMConfig
+
+    cfg = LLMConfig()
+    providers = cfg.get_fallback_providers()
+    assert len(providers) == 1
+    assert providers[0].name == "primary"
+
+
+def test_llm_config_get_fallback_providers_chain_enabled(monkeypatch):
+    """When fallback chain is enabled, get_fallback_providers returns ordered list."""
+    monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+    monkeypatch.setenv("LLM_FALLBACK_1_API_KEY", "sk-fb1")
+    monkeypatch.setenv("LLM_ENABLE_FALLBACK_CHAIN", "1")
+    monkeypatch.setenv("LLM_FALLBACK_ORDER", "fallback_1,primary")
+
+    from kronos_fincept.config import LLMConfig
+
+    cfg = LLMConfig()
+    providers = cfg.get_fallback_providers()
+    assert len(providers) == 2
+    assert providers[0].name == "fallback_1"
+    assert providers[1].name == "primary"
+
+
 def os_env():
     env = {k: v for k, v in __import__("os").environ.items() if k != "PYTHONPATH"}
     return env

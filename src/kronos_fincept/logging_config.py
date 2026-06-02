@@ -1,14 +1,18 @@
-"""Unified logging setup for KronosFinceptLab.
+"""Unified logging for KronosFinceptLab.
 
-Enhanced with:
-- Structured JSON / text dual-format logging
-- Automatic secret redaction
-- Request ID / Test Run ID context propagation
-- Performance tracing decorator (@log_perf)
-- Async batch log queue for high-throughput scenarios
+Design: high-entropy, minimal verbosity. Every log line carries maximum
+information density. Structured JSON for machines, compact text for humans.
+
+Features:
+- Dual format: JSON (prod) / compact text (dev)
+- Secret redaction (auto)
+- Context propagation: request_id, test_run_id, user_id, session_id
+- @log_perf decorator: function-level tracing with zero boilerplate
+- Metrics aggregation: counters, timers, p95
+- Async batch queue for high-throughput file writes
 - Runtime log level switching
-- Metrics aggregation (counters, timers, gauges)
-- System resource context injection
+- Log query API (JSON files only)
+- System resource snapshot on ERROR+
 """
 
 from __future__ import annotations
@@ -22,21 +26,18 @@ import re
 import sys
 import threading
 import time
-import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from queue import Queue, Empty
+from queue import Empty, Queue
 from typing import Any, Callable, TextIO
 
 from kronos_fincept.config import settings
 
 
-# ---------------------------------------------------------------------------
-# Context variables for distributed tracing
-# ---------------------------------------------------------------------------
+# ── Context vars ────────────────────────────────────────────────────────────
 _request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_id", default=None)
 _test_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("test_run_id", default=None)
 _user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("user_id", default=None)
@@ -46,27 +47,21 @@ _CONFIGURED = False
 _LOG_LEVEL_OVERRIDES: dict[str, int] = {}
 _LOG_LEVEL_LOCK = threading.RLock()
 
-# ---------------------------------------------------------------------------
-# Field sets for log formatting
-# ---------------------------------------------------------------------------
-_STANDARD_FIELDS = {
+# ── Field allowlists ────────────────────────────────────────────────────────
+_STD_FIELDS = {
     "name", "msg", "args", "levelname", "levelno", "pathname", "filename", "module",
     "exc_info", "exc_text", "stack_info", "lineno", "funcName", "created", "msecs",
     "relativeCreated", "thread", "threadName", "processName", "process", "message",
     "asctime", "taskName",
 }
-_RESERVED_OUTPUT_FIELDS = {
+_RESERVED = {
     "timestamp", "level", "logger", "event", "request_id", "test_run_id",
-    "symbol", "market", "duration_ms", "error_type", "message", "exception",
-    "user_id", "session_id", "trace_id", "span_id", "parent_span_id",
-    "func", "func_module", "call_count", "avg_duration_ms", "p95_duration_ms",
-    "memory_mb", "cpu_percent",
+    "user_id", "session_id", "symbol", "market", "duration_ms", "error_type",
+    "message", "exception", "mem_mb", "cpu_pct",
 }
 
-# ---------------------------------------------------------------------------
-# Secret redaction patterns
-# ---------------------------------------------------------------------------
-_SENSITIVE_PATTERNS = [
+# ── Secret patterns ─────────────────────────────────────────────────────────
+_SECRET_RE = [
     re.compile(r"(?i)(authorization\s*[:=]\s*)(bearer\s+)?[^\s,;]+"),
     re.compile(r"(?i)((?:api[_-]?key|secret[_-]?key|access[_-]?token|token|cookie|password)\s*[:=]\s*)[^\s,;]+"),
     re.compile(r"(?i)(LLM_API_KEY\s*=\s*)[^\s,;]+"),
@@ -78,156 +73,137 @@ _SENSITIVE_PATTERNS = [
 ]
 
 
-# =============================================================================
-# Context variable helpers
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# Context helpers
+# ═════════════════════════════════════════════════════════════════════════════
 
-def set_request_id(request_id: str | None) -> contextvars.Token:
-    """Set the current request id for downstream log records."""
-    return _request_id.set(request_id)
+def set_request_id(v: str | None) -> contextvars.Token:
+    return _request_id.set(v)
 
 
-def reset_request_id(token: contextvars.Token) -> None:
-    """Reset the current request id context variable."""
-    _request_id.reset(token)
+def reset_request_id(t: contextvars.Token) -> None:
+    _request_id.reset(t)
 
 
 def get_request_id() -> str | None:
-    """Return the current request id, if any."""
     return _request_id.get()
 
 
-def set_test_run_id(test_run_id: str | None) -> contextvars.Token:
-    """Set the current full-test-run id for downstream log records."""
-    return _test_run_id.set(test_run_id)
+def set_test_run_id(v: str | None) -> contextvars.Token:
+    return _test_run_id.set(v)
 
 
-def reset_test_run_id(token: contextvars.Token) -> None:
-    """Reset the current full-test-run id context variable."""
-    _test_run_id.reset(token)
+def reset_test_run_id(t: contextvars.Token) -> None:
+    _test_run_id.reset(t)
 
 
 def get_test_run_id() -> str | None:
-    """Return the current full-test-run id, if any."""
     return _test_run_id.get()
 
 
-def set_user_id(user_id: str | None) -> contextvars.Token:
-    """Set the current user id for downstream log records."""
-    return _user_id.set(user_id)
+def set_user_id(v: str | None) -> contextvars.Token:
+    return _user_id.set(v)
 
 
-def reset_user_id(token: contextvars.Token) -> None:
-    """Reset the current user id context variable."""
-    _user_id.reset(token)
+def reset_user_id(t: contextvars.Token) -> None:
+    _user_id.reset(t)
 
 
 def get_user_id() -> str | None:
-    """Return the current user id, if any."""
     return _user_id.get()
 
 
-def set_session_id(session_id: str | None) -> contextvars.Token:
-    """Set the current session id for downstream log records."""
-    return _session_id.set(session_id)
+def set_session_id(v: str | None) -> contextvars.Token:
+    return _session_id.set(v)
 
 
-def reset_session_id(token: contextvars.Token) -> None:
-    """Reset the current session id context variable."""
-    _session_id.reset(token)
+def reset_session_id(t: contextvars.Token) -> None:
+    _session_id.reset(t)
 
 
 def get_session_id() -> str | None:
-    """Return the current session id, if any."""
     return _session_id.get()
 
 
-# =============================================================================
-# Secret redaction
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# Redaction
+# ═════════════════════════════════════════════════════════════════════════════
 
 def redact(value: Any) -> Any:
-    """Redact secrets while preserving the original shape where possible."""
+    """Redact secrets while preserving structure."""
     if isinstance(value, str):
-        redacted = value
-        for pattern in _SENSITIVE_PATTERNS:
-            redacted = pattern.sub(lambda match: _redact_match(match), redacted)
-        return redacted
+        out = value
+        for pat in _SECRET_RE:
+            out = pat.sub(_redact_match, out)
+        return out
     if isinstance(value, dict):
         return {
-            str(k): "***REDACTED***" if _is_sensitive_key(str(k)) else redact(v)
+            str(k): "***" if _is_sensitive_key(str(k)) else redact(v)
             for k, v in value.items()
         }
     if isinstance(value, (list, tuple)):
-        return [redact(item) for item in value]
+        return [redact(i) for i in value]
     return value
 
 
-def _redact_match(match: re.Match[str]) -> str:
-    if "(sk-" in match.re.pattern:
+def _redact_match(m: re.Match[str]) -> str:
+    if "(sk-" in m.re.pattern:
         return "***REDACTED***"
-    if match.lastindex:
-        prefix = match.group(1)
-        if match.re.pattern.startswith("(?i)(authorization"):
-            bearer = match.group(2) or ""
+    if m.lastindex:
+        prefix = m.group(1)
+        if m.re.pattern.startswith("(?i)(authorization"):
+            bearer = m.group(2) or ""
             return f"{prefix}{bearer}***REDACTED***"
         return f"{prefix}***REDACTED***"
     return "***REDACTED***"
 
 
-def _is_sensitive_key(key: str) -> bool:
-    lowered = key.lower()
-    return any(
-        token in lowered
-        for token in ("key", "token", "secret", "authorization", "cookie", "password", "webhook")
-    )
+def _is_sensitive_key(k: str) -> bool:
+    return any(t in k.lower() for t in ("key", "token", "secret", "authorization", "cookie", "password", "webhook"))
 
 
-# =============================================================================
-# System resource context
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# System context (lightweight)
+# ═════════════════════════════════════════════════════════════════════════════
 
-def _get_system_context() -> dict[str, Any]:
-    """Capture lightweight system resource snapshot."""
+def _sys_ctx() -> dict[str, Any]:
     ctx: dict[str, Any] = {}
     try:
         import psutil
-        proc = psutil.Process()
-        mem = proc.memory_info()
-        ctx["memory_mb"] = round(mem.rss / (1024 * 1024), 2)
-        ctx["memory_percent"] = round(proc.memory_percent(), 2)
-        ctx["cpu_percent"] = round(proc.cpu_percent(interval=None), 2)
-        ctx["thread_count"] = proc.num_threads()
-        ctx["open_files"] = len(proc.open_files())
+        p = psutil.Process()
+        m = p.memory_info()
+        ctx["mem_mb"] = round(m.rss / (1024 * 1024), 1)
+        ctx["mem_pct"] = round(p.memory_percent(), 1)
+        ctx["cpu_pct"] = round(p.cpu_percent(interval=None), 1)
+        ctx["threads"] = p.num_threads()
     except Exception:
         pass
     return ctx
 
 
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 # Metrics aggregation
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 
 @dataclass
-class _MetricSnapshot:
+class _MetricSnap:
     count: int = 0
     total_ms: float = 0.0
     min_ms: float = float("inf")
     max_ms: float = 0.0
     errors: int = 0
-    _values: list[float] = field(default_factory=list, repr=False)
+    _vals: list[float] = field(default_factory=list, repr=False)
 
-    def record(self, duration_ms: float, error: bool = False) -> None:
+    def record(self, ms: float, err: bool = False) -> None:
         self.count += 1
-        self.total_ms += duration_ms
-        self.min_ms = min(self.min_ms, duration_ms)
-        self.max_ms = max(self.max_ms, duration_ms)
-        if error:
+        self.total_ms += ms
+        self.min_ms = min(self.min_ms, ms)
+        self.max_ms = max(self.max_ms, ms)
+        if err:
             self.errors += 1
-        self._values.append(duration_ms)
-        # Keep last 1000 values for p95 calculation
-        if len(self._values) > 1000:
-            self._values = self._values[-1000:]
+        self._vals.append(ms)
+        if len(self._vals) > 1000:
+            self._vals = self._vals[-1000:]
 
     @property
     def avg_ms(self) -> float:
@@ -235,11 +211,10 @@ class _MetricSnapshot:
 
     @property
     def p95_ms(self) -> float:
-        if not self._values:
+        if not self._vals:
             return 0.0
-        sorted_vals = sorted(self._values)
-        idx = int(len(sorted_vals) * 0.95)
-        return round(sorted_vals[min(idx, len(sorted_vals) - 1)], 2)
+        s = sorted(self._vals)
+        return round(s[int(len(s) * 0.95)], 2)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -253,18 +228,16 @@ class _MetricSnapshot:
         }
 
 
-_METRICS: dict[str, _MetricSnapshot] = defaultdict(_MetricSnapshot)
+_METRICS: dict[str, _MetricSnap] = defaultdict(_MetricSnap)
 _METRICS_LOCK = threading.RLock()
 
 
 def record_metric(name: str, duration_ms: float, error: bool = False) -> None:
-    """Record a performance metric for aggregation."""
     with _METRICS_LOCK:
         _METRICS[name].record(duration_ms, error)
 
 
 def get_metrics(name: str | None = None) -> dict[str, Any]:
-    """Get aggregated metrics. If name is None, return all."""
     with _METRICS_LOCK:
         if name:
             snap = _METRICS.get(name)
@@ -273,7 +246,6 @@ def get_metrics(name: str | None = None) -> dict[str, Any]:
 
 
 def reset_metrics(name: str | None = None) -> None:
-    """Reset metrics. If name is None, reset all."""
     with _METRICS_LOCK:
         if name:
             _METRICS.pop(name, None)
@@ -281,68 +253,66 @@ def reset_metrics(name: str | None = None) -> None:
             _METRICS.clear()
 
 
-# =============================================================================
-# Async batch log queue
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# Async log queue
+# ═════════════════════════════════════════════════════════════════════════════
 
-class _AsyncLogQueue:
-    """Background thread that batches log writes for high-throughput scenarios."""
-
-    def __init__(self, max_size: int = 10000, flush_interval_ms: float = 100.0) -> None:
-        self._queue: Queue[logging.LogRecord] = Queue(maxsize=max_size)
-        self._flush_interval_ms = flush_interval_ms
+class _AsyncQueue:
+    def __init__(self, max_size: int = 10000, flush_ms: float = 100.0) -> None:
+        self._q: Queue[logging.LogRecord] = Queue(maxsize=max_size)
+        self._flush_ms = flush_ms
         self._handlers: list[logging.Handler] = []
         self._thread: threading.Thread | None = None
-        self._stop_event = threading.Event()
+        self._stop = threading.Event()
         self._dropped = 0
 
-    def add_handler(self, handler: logging.Handler) -> None:
-        self._handlers.append(handler)
+    def add_handler(self, h: logging.Handler) -> None:
+        self._handlers.append(h)
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
+        if self._thread and self._thread.is_alive():
             return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, name="async-log-queue", daemon=True)
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="async-log", daemon=True)
         self._thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
-        self._stop_event.set()
+        self._stop.set()
         if self._thread:
             self._thread.join(timeout=timeout)
             self._thread = None
         self._flush()
 
-    def emit(self, record: logging.LogRecord) -> None:
+    def emit(self, r: logging.LogRecord) -> None:
         try:
-            self._queue.put_nowait(record)
+            self._q.put_nowait(r)
         except Exception:
             self._dropped += 1
 
     def _run(self) -> None:
-        while not self._stop_event.is_set():
+        while not self._stop.is_set():
             self._flush_batch()
-            self._stop_event.wait(self._flush_interval_ms / 1000.0)
+            self._stop.wait(self._flush_ms / 1000.0)
         self._flush_batch()
 
     def _flush_batch(self, max_batch: int = 100) -> None:
         batch: list[logging.LogRecord] = []
         for _ in range(max_batch):
             try:
-                batch.append(self._queue.get_nowait())
+                batch.append(self._q.get_nowait())
             except Empty:
                 break
         if not batch:
             return
-        for handler in self._handlers:
-            for record in batch:
+        for h in self._handlers:
+            for r in batch:
                 try:
-                    handler.handle(record)
+                    h.handle(r)
                 except Exception:
                     pass
 
     def _flush(self) -> None:
-        while not self._queue.empty():
+        while not self._q.empty():
             self._flush_batch()
 
     @property
@@ -351,103 +321,105 @@ class _AsyncLogQueue:
 
     @property
     def pending(self) -> int:
-        return self._queue.qsize()
+        return self._q.qsize()
 
 
-_ASYNC_QUEUE: _AsyncLogQueue | None = None
+_ASYNC_Q: _AsyncQueue | None = None
 
 
-def get_async_queue() -> _AsyncLogQueue | None:
-    """Return the global async log queue if initialized."""
-    return _ASYNC_QUEUE
+def get_async_queue() -> _AsyncQueue | None:
+    return _ASYNC_Q
 
 
-# =============================================================================
-# Log formatters
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# Formatters
+# ═════════════════════════════════════════════════════════════════════════════
 
-class JsonLogFormatter(logging.Formatter):
-    """JSON Lines formatter with stable project fields."""
+class JsonFormatter(logging.Formatter):
+    """JSON Lines: dense, machine-readable."""
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "timestamp": _iso_timestamp(record.created),
+            "t": _iso(record.created),
+            "lv": record.levelname,
             "level": record.levelname,
+            "lg": record.name,
             "logger": record.name,
             "event": getattr(record, "event", None) or record.getMessage(),
+            "ev": getattr(record, "event", None) or record.getMessage(),
             "request_id": getattr(record, "request_id", None) or get_request_id(),
+            "rid": getattr(record, "request_id", None) or get_request_id(),
             "test_run_id": getattr(record, "test_run_id", None) or get_test_run_id(),
+            "trid": getattr(record, "test_run_id", None) or get_test_run_id(),
             "user_id": getattr(record, "user_id", None) or get_user_id(),
+            "uid": getattr(record, "user_id", None) or get_user_id(),
             "session_id": getattr(record, "session_id", None) or get_session_id(),
+            "sid": getattr(record, "session_id", None) or get_session_id(),
             "symbol": getattr(record, "symbol", None),
+            "sym": getattr(record, "symbol", None),
             "market": getattr(record, "market", None),
+            "mkt": getattr(record, "market", None),
             "duration_ms": getattr(record, "duration_ms", None),
+            "ms": getattr(record, "duration_ms", None),
             "error_type": getattr(record, "error_type", None),
+            "et": getattr(record, "error_type", None),
             "message": redact(record.getMessage()),
+            "msg": redact(record.getMessage()),
         }
-        # Inject system context for ERROR+ levels
+        # Compact: drop None values
+        payload = {k: v for k, v in payload.items() if v is not None}
         if record.levelno >= logging.ERROR:
-            payload.update(_get_system_context())
-        for key, value in record.__dict__.items():
-            if key in _STANDARD_FIELDS or key in _RESERVED_OUTPUT_FIELDS:
+            payload.update(_sys_ctx())
+        for k, v in record.__dict__.items():
+            if k in _STD_FIELDS or k in _RESERVED:
                 continue
-            payload[key] = redact(value)
+            payload[k] = redact(v)
         if record.exc_info:
             payload["exception"] = redact(self.formatException(record.exc_info))
-            if payload["error_type"] is None and record.exc_info[0] is not None:
+            payload["ex"] = payload["exception"]
+            if "error_type" not in payload and record.exc_info[0] is not None:
                 payload["error_type"] = record.exc_info[0].__name__
-        return json.dumps(payload, ensure_ascii=False, default=str)
+                payload["et"] = record.exc_info[0].__name__
+        return json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":"))
 
 
-class TextLogFormatter(logging.Formatter):
-    """Human-readable formatter that still carries key fields."""
+class TextFormatter(logging.Formatter):
+    """Compact text: human-readable, high density."""
 
     def format(self, record: logging.LogRecord) -> str:
-        timestamp = _iso_timestamp(record.created)
-        event = getattr(record, "event", None) or record.getMessage()
-        request_id = getattr(record, "request_id", None) or get_request_id() or "-"
-        test_run_id = getattr(record, "test_run_id", None) or get_test_run_id()
-        user_id = getattr(record, "user_id", None) or get_user_id()
-        session_id = getattr(record, "session_id", None) or get_session_id()
-        symbol = getattr(record, "symbol", None)
-        market = getattr(record, "market", None)
-        duration_ms = getattr(record, "duration_ms", None)
-        parts = [
-            timestamp,
-            record.levelname,
-            record.name,
-            f"event={redact(event)}",
-            f"request_id={request_id}",
-        ]
-        if user_id:
-            parts.append(f"user_id={user_id}")
-        if session_id:
-            parts.append(f"session_id={session_id}")
-        if symbol is not None:
-            parts.append(f"symbol={redact(symbol)}")
-        if market is not None:
-            parts.append(f"market={redact(market)}")
-        if duration_ms is not None:
-            parts.append(f"duration_ms={duration_ms}")
-        if test_run_id:
-            parts.append(f"test_run_id={redact(test_run_id)}")
-        # Inject memory info for ERROR+ levels
+        t = _iso(record.created)
+        ev = getattr(record, "event", None) or record.getMessage()
+        rid = getattr(record, "request_id", None) or get_request_id() or "-"
+        parts = [t, record.levelname, record.name.split(".")[-1], ev]
+        # Add condensed context
+        uid = getattr(record, "user_id", None) or get_user_id()
+        if uid:
+            parts.append(f"u={uid}")
+        sym = getattr(record, "symbol", None)
+        if sym:
+            parts.append(f"sym={sym}")
+        mkt = getattr(record, "market", None)
+        if mkt:
+            parts.append(f"mkt={mkt}")
+        ms = getattr(record, "duration_ms", None)
+        if ms is not None:
+            parts.append(f"{ms}ms")
         if record.levelno >= logging.ERROR:
-            sys_ctx = _get_system_context()
-            if "memory_mb" in sys_ctx:
-                parts.append(f"mem={sys_ctx['memory_mb']}MB")
-        message = redact(record.getMessage())
-        if message and message != event:
-            parts.append(f"message={message}")
-        output = " ".join(str(item) for item in parts)
+            ctx = _sys_ctx()
+            if "mem_mb" in ctx:
+                parts.append(f"mem={ctx['mem_mb']}M")
+        msg = redact(record.getMessage())
+        if msg and msg != ev:
+            parts.append(msg)
+        out = " ".join(str(p) for p in parts)
         if record.exc_info:
-            output += "\n" + redact(self.formatException(record.exc_info))
-        return output
+            out += "\n" + redact(self.formatException(record.exc_info))
+        return out
 
 
-# =============================================================================
-# Core configuration
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# Configuration
+# ═════════════════════════════════════════════════════════════════════════════
 
 def configure_logging(
     *,
@@ -459,107 +431,81 @@ def configure_logging(
     enable_async: bool = False,
     force: bool = False,
 ) -> None:
-    """Configure root logging once for API, CLI, jobs, and tests.
-
-    Args:
-        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_format: "json" or "text"
-        log_dir: Directory for log files
-        stream: Stream for console output (default: sys.stderr)
-        enable_file: Whether to write to rotating log files
-        enable_async: Whether to use async batch queue for file writes
-        force: Force reconfiguration even if already configured
-    """
-    global _CONFIGURED, _ASYNC_QUEUE
+    """Configure root logging once."""
+    global _CONFIGURED, _ASYNC_Q
     if _CONFIGURED and not force:
         return
 
-    level_name = (level or settings.logging.level or "INFO").upper()
-    numeric_level = getattr(logging, level_name, logging.INFO)
-    format_name = (log_format or settings.logging.format or "text").lower()
-    formatter: logging.Formatter
-    formatter = JsonLogFormatter() if format_name == "json" else TextLogFormatter()
+    lvl = (level or settings.logging.level or "INFO").upper()
+    numeric = getattr(logging, lvl, logging.INFO)
+    fmt = (log_format or settings.logging.format or "text").lower()
+    formatter: logging.Formatter = JsonFormatter() if fmt == "json" else TextFormatter()
 
     root = logging.getLogger()
     if force:
-        for handler in list(root.handlers):
-            root.removeHandler(handler)
-            handler.close()
-        if _ASYNC_QUEUE:
-            _ASYNC_QUEUE.stop()
-            _ASYNC_QUEUE = None
+        for h in list(root.handlers):
+            root.removeHandler(h)
+            h.close()
+        if _ASYNC_Q:
+            _ASYNC_Q.stop()
+            _ASYNC_Q = None
 
-    root.setLevel(numeric_level)
+    root.setLevel(numeric)
 
-    # Console handler
-    stream_handler = logging.StreamHandler(stream or sys.stderr)
-    stream_handler.setLevel(numeric_level)
-    stream_handler.setFormatter(formatter)
-    root.addHandler(stream_handler)
+    sh = logging.StreamHandler(stream or sys.stderr)
+    sh.setLevel(numeric)
+    sh.setFormatter(formatter)
+    root.addHandler(sh)
 
-    # File handler
-    file_logging_enabled = settings.logging.enable_file if enable_file is None else enable_file
-    if file_logging_enabled:
+    file_on = settings.logging.enable_file if enable_file is None else enable_file
+    if file_on:
         directory = Path(log_dir or settings.logging.directory)
         directory.mkdir(parents=True, exist_ok=True)
         cleanup_old_logs(directory, settings.logging.retention_days)
-        log_file = directory / f"kronos-{datetime.now().strftime('%Y%m%d')}.log"
-        file_handler = RotatingFileHandler(
-            log_file,
+        lf = directory / f"kronos-{datetime.now().strftime('%Y%m%d')}.log"
+        fh = RotatingFileHandler(
+            lf,
             maxBytes=max(1024, int(settings.logging.max_bytes)),
             backupCount=max(1, int(settings.logging.retention_days)),
             encoding="utf-8",
         )
-        file_handler.setLevel(numeric_level)
-        file_handler.setFormatter(formatter)
+        fh.setLevel(numeric)
+        fh.setFormatter(formatter)
 
         if enable_async:
-            _ASYNC_QUEUE = _AsyncLogQueue()
-            _ASYNC_QUEUE.add_handler(file_handler)
-            _ASYNC_QUEUE.start()
-            # Replace direct file handler with async wrapper
-            root.removeHandler(stream_handler)
-            root.addHandler(stream_handler)  # Keep console direct
-            # Add a proxy handler that routes to async queue
-            async_handler = _AsyncHandler(_ASYNC_QUEUE)
-            async_handler.setLevel(numeric_level)
-            async_handler.setFormatter(formatter)
-            root.addHandler(async_handler)
+            _ASYNC_Q = _AsyncQueue()
+            _ASYNC_Q.add_handler(fh)
+            _ASYNC_Q.start()
+            ah = _AsyncHandler(_ASYNC_Q)
+            ah.setLevel(numeric)
+            ah.setFormatter(formatter)
+            root.addHandler(ah)
         else:
-            root.addHandler(file_handler)
+            root.addHandler(fh)
 
-    # Quiet down noisy third-party loggers
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # Quiet noisy deps
+    for name in ("uvicorn.access", "httpx", "huggingface_hub", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     _CONFIGURED = True
 
 
 class _AsyncHandler(logging.Handler):
-    """Handler that routes records to the async queue."""
-
-    def __init__(self, queue: _AsyncLogQueue) -> None:
+    def __init__(self, q: _AsyncQueue) -> None:
         super().__init__()
-        self._queue = queue
+        self._q = q
 
-    def emit(self, record: logging.LogRecord) -> None:
-        self._queue.emit(record)
+    def emit(self, r: logging.LogRecord) -> None:
+        self._q.emit(r)
 
 
-# =============================================================================
-# Logger factory
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# Logger factory + structured events
+# ═════════════════════════════════════════════════════════════════════════════
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a project logger."""
     return logging.getLogger(name)
 
-
-# =============================================================================
-# Structured event logging
-# =============================================================================
 
 def log_event(
     logger: logging.Logger,
@@ -568,27 +514,24 @@ def log_event(
     message: str | None = None,
     **fields: Any,
 ) -> None:
-    """Emit one structured event without leaking secrets."""
+    """Emit one structured event. Secrets auto-redacted."""
     exc_info = fields.pop("exc_info", None)
     extra: dict[str, Any] = {"event": event}
-    if get_request_id() and "request_id" not in fields:
-        extra["request_id"] = get_request_id()
-    if get_test_run_id() and "test_run_id" not in fields:
-        extra["test_run_id"] = get_test_run_id()
-    if get_user_id() and "user_id" not in fields:
-        extra["user_id"] = get_user_id()
-    if get_session_id() and "session_id" not in fields:
-        extra["session_id"] = get_session_id()
-    for key, value in fields.items():
-        if key in _STANDARD_FIELDS:
-            key = f"field_{key}"
-        extra[key] = redact(value)
+    for getter, key in ((get_request_id, "request_id"), (get_test_run_id, "test_run_id"),
+                        (get_user_id, "user_id"), (get_session_id, "session_id")):
+        v = getter()
+        if v and key not in fields:
+            extra[key] = v
+    for k, v in fields.items():
+        if k in _STD_FIELDS:
+            k = f"f_{k}"
+        extra[k] = redact(v)
     logger.log(level, message or event, extra=extra, exc_info=exc_info)
 
 
-# =============================================================================
-# Performance tracing decorator
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
+# @log_perf decorator
+# ═════════════════════════════════════════════════════════════════════════════
 
 def log_perf(
     event: str | None = None,
@@ -598,112 +541,77 @@ def log_perf(
     track_metric: bool = True,
     logger_name: str | None = None,
 ) -> Callable:
-    """Decorator that logs function entry, exit, and execution time.
+    """Decorator: auto-trace function duration. Sync + async support.
 
-    Args:
-        event: Event name (default: function qualified name)
-        level: Log level for the perf record
-        log_args: Whether to log function arguments (redacted)
-        log_result: Whether to log return value (redacted)
-        track_metric: Whether to record in metrics aggregation
-        logger_name: Logger name (default: function module)
-
-    Example:
+    Usage:
         @log_perf(event="forecast.run", level=logging.INFO)
-        def run_forecast(symbol: str, days: int) -> dict:
-            ...
+        def run_forecast(symbol: str, days: int) -> dict: ...
     """
     def decorator(func: Callable) -> Callable:
-        nonlocal event, logger_name
-        _event = event or f"{func.__module__}.{func.__qualname__}"
-        _logger_name = logger_name or func.__module__
-        _logger = logging.getLogger(_logger_name)
+        _ev = event or f"{func.__module__}.{func.__qualname__}"
+        _lg = logging.getLogger(logger_name or func.__module__)
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             start = time.perf_counter()
-            error = False
             try:
                 if log_args:
-                    log_event(
-                        _logger, logging.DEBUG, f"{_event}.start",
-                        args=redact(args) if args else None,
-                        kwargs=redact(kwargs) if kwargs else None,
-                    )
+                    log_event(_lg, logging.DEBUG, f"{_ev}.start",
+                              args=redact(args) if args else None,
+                              kwargs=redact(kwargs) if kwargs else None)
                 result = func(*args, **kwargs)
-                duration_ms = round((time.perf_counter() - start) * 1000, 2)
-                extra_fields: dict[str, Any] = {"duration_ms": duration_ms}
+                ms = round((time.perf_counter() - start) * 1000, 2)
+                extra: dict[str, Any] = {"duration_ms": ms}
                 if log_result:
-                    extra_fields["result"] = redact(result)
-                log_event(_logger, level, _event, **extra_fields)
+                    extra["result"] = redact(result)
+                log_event(_lg, level, _ev, **extra)
                 if track_metric:
-                    record_metric(_event, duration_ms, error=False)
+                    record_metric(_ev, ms)
                 return result
             except Exception as exc:
-                duration_ms = round((time.perf_counter() - start) * 1000, 2)
-                error = True
-                log_event(
-                    _logger, logging.ERROR, f"{_event}.error",
-                    duration_ms=duration_ms,
-                    error_type=type(exc).__name__,
-                    exc_info=True,
-                )
+                ms = round((time.perf_counter() - start) * 1000, 2)
+                log_event(_lg, logging.ERROR, f"{_ev}.error",
+                          duration_ms=ms, error_type=type(exc).__name__, exc_info=True)
                 if track_metric:
-                    record_metric(_event, duration_ms, error=True)
+                    record_metric(_ev, ms, error=True)
                 raise
 
         @functools.wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+        async def awrapper(*args: Any, **kwargs: Any) -> Any:
+            import asyncio
             start = time.perf_counter()
-            error = False
             try:
                 if log_args:
-                    log_event(
-                        _logger, logging.DEBUG, f"{_event}.start",
-                        args=redact(args) if args else None,
-                        kwargs=redact(kwargs) if kwargs else None,
-                    )
+                    log_event(_lg, logging.DEBUG, f"{_ev}.start",
+                              args=redact(args) if args else None,
+                              kwargs=redact(kwargs) if kwargs else None)
                 result = await func(*args, **kwargs)
-                duration_ms = round((time.perf_counter() - start) * 1000, 2)
-                extra_fields: dict[str, Any] = {"duration_ms": duration_ms}
+                ms = round((time.perf_counter() - start) * 1000, 2)
+                extra: dict[str, Any] = {"duration_ms": ms}
                 if log_result:
-                    extra_fields["result"] = redact(result)
-                log_event(_logger, level, _event, **extra_fields)
+                    extra["result"] = redact(result)
+                log_event(_lg, level, _ev, **extra)
                 if track_metric:
-                    record_metric(_event, duration_ms, error=False)
+                    record_metric(_ev, ms)
                 return result
             except Exception as exc:
-                duration_ms = round((time.perf_counter() - start) * 1000, 2)
-                error = True
-                log_event(
-                    _logger, logging.ERROR, f"{_event}.error",
-                    duration_ms=duration_ms,
-                    error_type=type(exc).__name__,
-                    exc_info=True,
-                )
+                ms = round((time.perf_counter() - start) * 1000, 2)
+                log_event(_lg, logging.ERROR, f"{_ev}.error",
+                          duration_ms=ms, error_type=type(exc).__name__, exc_info=True)
                 if track_metric:
-                    record_metric(_event, duration_ms, error=True)
+                    record_metric(_ev, ms, error=True)
                 raise
 
-        return async_wrapper if asyncio.iscoroutinefunction(func) else wrapper
+        import asyncio
+        return awrapper if asyncio.iscoroutinefunction(func) else wrapper
     return decorator
 
 
-# Need to import asyncio here for the decorator check
-import asyncio  # noqa: E402
-
-
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 # Log level management
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 
 def set_log_level(level: str | int, logger_name: str | None = None) -> None:
-    """Set log level at runtime for a specific logger or root.
-
-    Args:
-        level: Level name (DEBUG, INFO, etc.) or numeric level
-        logger_name: Logger name, or None for root logger
-    """
     if isinstance(level, str):
         numeric = getattr(logging, level.upper(), None)
         if numeric is None:
@@ -711,31 +619,26 @@ def set_log_level(level: str | int, logger_name: str | None = None) -> None:
         level = numeric
     target = logging.getLogger(logger_name) if logger_name else logging.getLogger()
     target.setLevel(level)
-    for handler in target.handlers:
-        handler.setLevel(level)
+    for h in target.handlers:
+        h.setLevel(level)
     with _LOG_LEVEL_LOCK:
-        name = logger_name or "root"
-        _LOG_LEVEL_OVERRIDES[name] = level
+        _LOG_LEVEL_OVERRIDES[logger_name or "root"] = level
 
 
 def get_log_level(logger_name: str | None = None) -> int:
-    """Get current log level for a logger."""
-    target = logging.getLogger(logger_name) if logger_name else logging.getLogger()
-    return target.level
+    return logging.getLogger(logger_name).level
 
 
 def get_log_level_overrides() -> dict[str, int]:
-    """Return all runtime log level overrides."""
     with _LOG_LEVEL_LOCK:
         return dict(_LOG_LEVEL_OVERRIDES)
 
 
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 # Log file utilities
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 
 def cleanup_old_logs(log_dir: str | os.PathLike[str], retention_days: int) -> None:
-    """Remove old log files based on modification time."""
     directory = Path(log_dir)
     if not directory.exists():
         return
@@ -758,33 +661,16 @@ def query_logs(
     end_time: datetime | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    """Query log files with simple filtering.
-
-    Args:
-        log_dir: Directory to search (default: settings.logging.directory)
-        level: Filter by level name (e.g., "ERROR")
-        event_pattern: Regex pattern to match event field
-        request_id: Exact request_id match
-        start_time: Filter records after this time
-        end_time: Filter records before this time
-        limit: Maximum records to return
-
-    Returns:
-        List of parsed log records (newest first)
-    """
     directory = Path(log_dir or settings.logging.directory)
     if not directory.exists():
         return []
 
-    import re as re_module
+    import re as _re
 
-    event_re = re_module.compile(event_pattern) if event_pattern else None
+    ev_re = _re.compile(event_pattern) if event_pattern else None
     results: list[dict[str, Any]] = []
 
-    # Get all log files sorted by modification time (newest first)
-    log_files = sorted(directory.glob("kronos-*.log*"), key=lambda p: p.stat().st_mtime, reverse=True)
-
-    for log_file in log_files:
+    for log_file in sorted(directory.glob("kronos-*.log*"), key=lambda p: p.stat().st_mtime, reverse=True):
         if len(results) >= limit:
             break
         try:
@@ -794,28 +680,24 @@ def query_logs(
                     if not line:
                         continue
                     try:
-                        record = json.loads(line)
+                        rec = json.loads(line)
                     except json.JSONDecodeError:
-                        # Skip non-JSON lines (text format not queryable)
                         continue
-
-                    # Apply filters
-                    if level and record.get("level") != level:
+                    if level and rec.get("lv") != level:
                         continue
-                    if request_id and record.get("request_id") != request_id:
+                    if request_id and rec.get("rid") != request_id:
                         continue
-                    if event_re and not event_re.search(record.get("event", "")):
+                    if ev_re and not ev_re.search(rec.get("ev", "")):
                         continue
                     if start_time:
-                        ts = record.get("timestamp", "")
+                        ts = rec.get("t", "")
                         if ts and ts < start_time.isoformat():
                             continue
                     if end_time:
-                        ts = record.get("timestamp", "")
+                        ts = rec.get("t", "")
                         if ts and ts > end_time.isoformat():
                             continue
-
-                    results.append(record)
+                    results.append(rec)
                     if len(results) >= limit:
                         break
         except OSError:
@@ -824,9 +706,9 @@ def query_logs(
     return results
 
 
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 # Helpers
-# =============================================================================
+# ═════════════════════════════════════════════════════════════════════════════
 
-def _iso_timestamp(created: float) -> str:
+def _iso(created: float) -> str:
     return datetime.fromtimestamp(created, tz=timezone.utc).isoformat(timespec="milliseconds")

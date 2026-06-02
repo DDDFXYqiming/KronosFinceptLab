@@ -15,6 +15,7 @@ from kronos_fincept.predictor import (
     ProbabilisticForecastResult,
     prewarm_predictor,
 )
+from kronos_fincept.logging_config import log_event, log_perf
 from kronos_fincept.schemas import (
     DEFAULT_MODEL_ID,
     ForecastRequest,
@@ -90,6 +91,7 @@ def _build_forecast_response(
     return resp
 
 
+@log_perf(event="svc.forecast", level=20)
 def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
     """Run a forecast request and return the stable JSON contract.
 
@@ -194,6 +196,7 @@ class RankedSignal:
     forecast: list[dict[str, Any]]
 
 
+@log_perf(event="svc.batch_forecast", level=20)
 def batch_forecast_from_requests(
     requests: list[ForecastRequest],
 ) -> list[RankedSignal]:

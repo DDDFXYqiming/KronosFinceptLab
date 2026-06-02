@@ -20,7 +20,7 @@ from typing import Any
 
 from kronos_fincept.config import settings
 from kronos_fincept.cninfo import CninfoDisclosureClient
-from kronos_fincept.logging_config import get_request_id, log_event
+from kronos_fincept.logging_config import get_request_id, log_event, log_perf
 from kronos_fincept.macro import MacroDataManager, MacroGatherResult, MacroQuery
 from kronos_fincept.schemas import (
     DEFAULT_MODEL_ID,
@@ -368,6 +368,28 @@ def _provider_is_configured(config: Any) -> bool:
 
 
 def _llm_provider_chain() -> list[LLMChatProvider]:
+    """Build the ordered LLM provider chain from config (supports fallback chain)."""
+    llm_cfg = _settings_llm()
+    if llm_cfg is None:
+        return []
+
+    # Prefer fallback chain if enabled
+    get_fb = getattr(llm_cfg, "get_fallback_providers", None)
+    if callable(get_fb):
+        fallback_providers = get_fb()
+        if fallback_providers:
+            return [
+                LLMChatProvider(
+                    name=p.name,
+                    display_name=p.display_name,
+                    api_key=p.api_key,
+                    base_url=p.base_url,
+                    model=p.model,
+                )
+                for p in fallback_providers
+            ]
+
+    # Fallback to legacy single provider
     provider = _llm_config()
     if not _provider_is_configured(provider):
         return []
@@ -519,7 +541,14 @@ def _call_structured_llm_json(
         return None
 
     max_attempts = max(1, env_int("KRONOS_LLM_MAX_PROVIDER_ATTEMPTS", 2))
-    for provider in providers[:max_attempts]:
+    # Use fallback chain max_attempts if configured and larger
+    llm_cfg = _settings_llm()
+    if llm_cfg is not None:
+        fb = getattr(llm_cfg, "fallback_chain", None)
+        if fb is not None and fb.enabled and fb.max_attempts > max_attempts:
+            max_attempts = fb.max_attempts
+
+    for attempt_idx, provider in enumerate(providers[:max_attempts]):
         if _llm_provider_circuit_open(provider):
             if purpose == "report":
                 _record_report_llm_failure(provider, "circuit_open")
@@ -527,7 +556,7 @@ def _call_structured_llm_json(
                 logger,
                 logging.WARNING,
                 f"agent.llm.{purpose}.circuit_open",
-                f"{provider.display_name} skipped because its failure circuit is open.",
+                f"{provider.display_name} skipped (circuit open)",
                 provider=provider.name,
                 model=provider.model,
             )
@@ -557,17 +586,23 @@ def _call_structured_llm_json(
                         status_code=response.status_code,
                         response_body=response_body[:200],
                     )
+                # Log fallback info if there are more providers to try
+                next_provider = providers[attempt_idx + 1] if attempt_idx + 1 < len(providers[:max_attempts]) else None
                 log_event(
                     logger,
                     logging.WARNING,
                     f"agent.llm.{purpose}.http_error",
-                    f"{provider.display_name} returned HTTP {response.status_code}; trying fallback provider if available.",
+                    f"{provider.display_name} HTTP {response.status_code}; "
+                    f"{'fallback to ' + next_provider.display_name if next_provider else 'no more providers'}",
                     provider=provider.name,
                     model=provider.model,
                     status_code=response.status_code,
                     endpoint=endpoint,
                     timeout_seconds=provider_timeout,
                     response_body=response_body,
+                    fallback_attempt=attempt_idx + 1,
+                    total_providers=len(providers[:max_attempts]),
+                    next_provider=next_provider.name if next_provider else None,
                 )
                 continue
             try:
@@ -579,7 +614,7 @@ def _call_structured_llm_json(
                     logger,
                     logging.WARNING,
                     f"agent.llm.{purpose}.invalid_json_response",
-                    f"{provider.display_name} returned invalid JSON response: {_short_error(exc)}",
+                    f"{provider.display_name} invalid JSON",
                     provider=provider.name,
                     model=provider.model,
                     error_type=type(exc).__name__,
@@ -600,7 +635,7 @@ def _call_structured_llm_json(
                     logger,
                     logging.WARNING,
                     f"agent.llm.{purpose}.unparseable_content",
-                    f"{provider.display_name} did not return a parseable JSON object.",
+                    f"{provider.display_name} unparseable JSON",
                     provider=provider.name,
                     model=provider.model,
                     timeout_seconds=provider_timeout,
@@ -614,16 +649,21 @@ def _call_structured_llm_json(
             _record_llm_provider_failure(provider)
             if purpose == "report":
                 _record_report_llm_failure(provider, "exception", error_type=type(exc).__name__)
+            next_provider = providers[attempt_idx + 1] if attempt_idx + 1 < len(providers[:max_attempts]) else None
             log_event(
                 logger,
                 logging.WARNING,
                 f"agent.llm.{purpose}.exception",
-                f"{provider.display_name} call failed: {_short_error(exc)}",
+                f"{provider.display_name} failed: {_short_error(exc)}; "
+                f"{'fallback to ' + next_provider.display_name if next_provider else 'no more providers'}",
                 provider=provider.name,
                 model=provider.model,
                 endpoint=endpoint,
                 timeout_seconds=provider_timeout,
                 error_type=type(exc).__name__,
+                fallback_attempt=attempt_idx + 1,
+                total_providers=len(providers[:max_attempts]),
+                next_provider=next_provider.name if next_provider else None,
             )
             continue
     return None
@@ -868,6 +908,7 @@ class AgentAnalysisResult:
         return payload
 
 
+@log_perf(event="agent.analyze", level=20)
 def analyze_investment_question(
     question: str,
     *,
@@ -1198,6 +1239,7 @@ def analyze_investment_question(
     )
 
 
+@log_perf(event="agent.macro", level=20)
 def analyze_macro_question(
     question: str,
     *,
@@ -2061,6 +2103,7 @@ def _filter_market_review_rows(rows: Any, symbol: str) -> list[dict[str, Any]]:
     return hits
 
 
+@log_perf(event="agent.asset_ctx", level=20)
 def _build_asset_context(
     item: ResolvedSymbol,
     *,
@@ -2247,6 +2290,7 @@ def _build_asset_context(
     return asset, calls
 
 
+@log_perf(event="agent.research", level=20)
 def _build_online_research(
     item: ResolvedSymbol,
     *,
@@ -2675,6 +2719,7 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
     return selected
 
 
+@log_perf(event="agent.macro_ctx", level=20)
 def _build_macro_context(
     question: str,
     *,
@@ -3275,6 +3320,7 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
     }
 
 
+@log_perf(event="agent.batch_pred", level=20)
 def _build_batch_predictions(
     items: list[ResolvedSymbol],
     asset_contexts: list[dict[str, Any]],

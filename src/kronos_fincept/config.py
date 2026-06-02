@@ -9,6 +9,7 @@ Supports three tiers of configuration:
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -76,7 +77,7 @@ class KronosConfig:
 
 @dataclass(frozen=True)
 class LLMProviderConfig:
-    """OpenAI-compatible LLM API config."""
+    """OpenAI-compatible LLM API config (primary provider)."""
     api_key: str = field(default_factory=lambda: _get("LLM_API_KEY"))
     base_url: str = field(default_factory=lambda: _get("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions"))
     model: str = field(default_factory=lambda: _get("LLM_MODEL", "gpt-4o-mini"))
@@ -84,6 +85,93 @@ class LLMProviderConfig:
     @property
     def is_configured(self) -> bool:
         return bool(self.api_key and not self.api_key.startswith(("sk-xxxx", "xxxx")))
+
+
+@dataclass(frozen=True)
+class LLMProviderEntry:
+    """Single LLM provider entry in the fallback chain."""
+    name: str
+    api_key: str
+    base_url: str
+    model: str
+    enabled: bool = True
+    priority: int = 0
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.api_key and not self.api_key.startswith(("sk-xxxx", "xxxx")))
+
+    @property
+    def display_name(self) -> str:
+        return self.name
+
+
+@dataclass(frozen=True)
+class LLMFallbackChainConfig:
+    """LLM fallback chain: ordered list of providers with priority-based fallback."""
+    providers: list[LLMProviderEntry] = field(default_factory=list)
+    order: tuple[str, ...] = ()
+    enabled: bool = False
+    max_attempts: int = 3
+
+    def get_ordered_providers(self) -> list[LLMProviderEntry]:
+        """Return enabled, configured providers in fallback order."""
+        available = {p.name: p for p in self.providers if p.enabled and p.is_configured}
+        ordered: list[LLMProviderEntry] = []
+        for name in self.order:
+            if name in available:
+                ordered.append(available.pop(name))
+        # Append remaining by priority
+        remaining = sorted(available.values(), key=lambda p: p.priority)
+        return ordered + remaining
+
+    @classmethod
+    def from_env(cls) -> "LLMFallbackChainConfig":
+        """Build fallback chain from environment variables.
+
+        Supports:
+          - LLM_API_KEY / LLM_BASE_URL / LLM_MODEL  (primary)
+          - LLM_FALLBACK_{N}_API_KEY / BASE_URL / MODEL  (N = 1,2,3,...)
+          - LLM_FALLBACK_ORDER  (comma-separated names, e.g. "primary,fallback_1")
+          - LLM_ENABLE_FALLBACK_CHAIN  (0/1)
+          - LLM_MAX_PROVIDER_ATTEMPTS  (default 3)
+        """
+        providers: list[LLMProviderEntry] = []
+
+        # Primary provider
+        primary = LLMProviderEntry(
+            name="primary",
+            api_key=_get("LLM_API_KEY"),
+            base_url=_get("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions"),
+            model=_get("LLM_MODEL", "gpt-4o-mini"),
+            priority=0,
+        )
+        providers.append(primary)
+
+        # Fallback providers (1-9)
+        for i in range(1, 10):
+            key = _get(f"LLM_FALLBACK_{i}_API_KEY")
+            if not key:
+                continue
+            providers.append(
+                LLMProviderEntry(
+                    name=f"fallback_{i}",
+                    api_key=key,
+                    base_url=_get(f"LLM_FALLBACK_{i}_BASE_URL", "https://api.openai.com/v1/chat/completions"),
+                    model=_get(f"LLM_FALLBACK_{i}_MODEL", "gpt-4o-mini"),
+                    priority=i,
+                )
+            )
+
+        order_raw = _get("LLM_FALLBACK_ORDER", "")
+        order = tuple(p.strip() for p in order_raw.split(",") if p.strip()) if order_raw else ()
+
+        return cls(
+            providers=providers,
+            order=order,
+            enabled=_get_bool("LLM_ENABLE_FALLBACK_CHAIN", False),
+            max_attempts=_get_int("LLM_MAX_PROVIDER_ATTEMPTS", 3),
+        )
 
 
 @dataclass(frozen=True)
@@ -139,14 +227,30 @@ class LoggingConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    """Unified OpenAI-compatible LLM provider config."""
+    """Unified OpenAI-compatible LLM provider config with fallback chain support."""
     provider: LLMProviderConfig = field(default_factory=LLMProviderConfig)
+    fallback_chain: LLMFallbackChainConfig = field(default_factory=LLMFallbackChainConfig.from_env)
 
     def get_active_provider(self) -> str | None:
         """Return the first configured provider name, or None."""
         if self.provider.is_configured:
             return "llm"
         return None
+
+    def get_fallback_providers(self) -> list[LLMProviderEntry]:
+        """Return ordered fallback providers (empty if fallback chain disabled)."""
+        if not self.fallback_chain.enabled:
+            if self.provider.is_configured:
+                return [
+                    LLMProviderEntry(
+                        name="primary",
+                        api_key=self.provider.api_key,
+                        base_url=self.provider.base_url,
+                        model=self.provider.model,
+                    )
+                ]
+            return []
+        return self.fallback_chain.get_ordered_providers()
 
 
 # ---------------------------------------------------------------------------
