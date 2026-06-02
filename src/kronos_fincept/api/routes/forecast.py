@@ -11,6 +11,7 @@ from kronos_fincept.api.models import (
     ForecastRequestIn,
     ForecastResponseOut,
 )
+from kronos_fincept.logging_config import log_perf
 from kronos_fincept.schemas import ForecastRequest, RESEARCH_WARNING
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ router = APIRouter()
 
 
 @router.post("/forecast", response_model=ForecastResponseOut)
+@log_perf(event="api.forecast", level=20)
 async def predict(req: ForecastRequestIn) -> ForecastResponseOut:
     """Run single-asset forecast.
 
