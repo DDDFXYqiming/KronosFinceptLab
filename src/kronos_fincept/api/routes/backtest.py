@@ -21,6 +21,7 @@ from kronos_fincept.api.models import (
     ForecastMetadataOut,
 )
 from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+from kronos_fincept.logging_config import log_perf
 from kronos_fincept.schemas import RESEARCH_WARNING
 
 if TYPE_CHECKING:
@@ -413,6 +414,7 @@ def _build_strategy_result(strategy: str, dfs: dict[str, pd.DataFrame], symbols:
 
 
 @router.post("/backtest/strategy", response_model=StrategyBacktestResponseOut)
+@log_perf(event="api.backtest.strategy", level=20)
 async def backtest_strategy(req: StrategyBacktestRequestIn) -> StrategyBacktestResponseOut:
     """Run and compare multiple portfolio strategies on the same universe."""
     _validate_backtest_request(req)
@@ -438,6 +440,7 @@ async def backtest_strategy(req: StrategyBacktestRequestIn) -> StrategyBacktestR
 
 
 @router.post("/backtest/strategy/scan", response_model=StrategyScanResponseOut)
+@log_perf(event="api.backtest.scan", level=20)
 async def backtest_strategy_scan(req: StrategyScanRequestIn) -> StrategyScanResponseOut:
     """Run a small parameter grid for one strategy and rank configurations."""
     _validate_backtest_request(req)
@@ -466,6 +469,7 @@ async def backtest_strategy_scan(req: StrategyScanRequestIn) -> StrategyScanResp
 
 
 @router.post("/backtest/strategy/rolling", response_model=StrategyRollingResponseOut)
+@log_perf(event="api.backtest.rolling", level=20)
 async def backtest_strategy_rolling(req: StrategyRollingRequestIn) -> StrategyRollingResponseOut:
     """Run walk-forward style rolling validation by splitting each symbol's aligned data."""
     _validate_backtest_request(req)

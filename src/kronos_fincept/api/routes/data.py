@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from kronos_fincept.api.models import DataResponseOut, MARKET_PATTERN, SearchResponseOut, SearchResultOut, SYMBOL_PATTERN
 from kronos_fincept.akshare_adapter import fetch_a_stock_ohlcv
+from kronos_fincept.logging_config import log_perf
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ def fetch_market_rows_for_batch(
 
 
 @router.post("/data/batch", response_model=BatchDataResponseOut)
+@log_perf(event="api.data.batch", level=20)
 async def get_batch_market_data(req: BatchDataRequestIn) -> BatchDataResponseOut:
     """Fetch OHLCV rows for multiple symbols and return per-symbol failures."""
     _validate_date_range(req.start_date, req.end_date)
@@ -263,6 +265,7 @@ async def get_source_market_artifact(
 
 
 @router.get("/data/global/{symbol}", response_model=DataResponseOut)
+@log_perf(event="api.data.global", level=20)
 async def get_global_market_data(
     symbol: str = Path(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN),
     market: str = Query("us", min_length=1, max_length=16, pattern=MARKET_PATTERN, description="Market: us, hk, commodity"),
@@ -350,6 +353,7 @@ async def get_technical_indicators(
 
 
 @router.get("/data/a-stock/{symbol}", response_model=DataResponseOut)
+@log_perf(event="api.data.a_stock", level=20)
 async def get_a_stock_data(
     symbol: str = Path(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN),
     start_date: str = Query(..., min_length=8, max_length=8, description="Start date YYYYMMDD"),

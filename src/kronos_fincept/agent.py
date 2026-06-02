@@ -509,6 +509,7 @@ def _report_llm_fallback_summary(failures: list[dict[str, Any]]) -> str:
     return f"{detail}，已使用本地结构化报告模板。"
 
 
+@log_perf(event="agent.llm_structured", level=20)
 def _call_structured_llm_json(
     messages: list[dict[str, str]],
     *,
@@ -1433,6 +1434,7 @@ def _hard_security_rejection(text: str) -> str | None:
     return None
 
 
+@log_perf(event="agent.classify", level=20)
 def classify_agent_request(
     text: str,
     *,
@@ -1470,6 +1472,7 @@ def evaluate_agent_safety(text: str) -> dict[str, Any]:
     }
 
 
+@log_perf(event="agent.classify_macro", level=20)
 def classify_macro_request(
     text: str,
     *,
@@ -1852,6 +1855,7 @@ def _with_explicit_symbol(
     )
 
 
+@log_perf(event="agent.resolve_symbols", level=20)
 def resolve_symbols(
     question: str,
     *,
@@ -3587,6 +3591,7 @@ def _risk_level_from_metrics(risk_metrics: dict[str, Any]) -> str:
     return "中"
 
 
+@log_perf(event="agent.generate_report", level=20)
 def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
     _clear_last_report_llm_metadata()
@@ -3886,6 +3891,7 @@ def _report_provider_timeouts(context: dict[str, Any]) -> dict[str, int]:
     return {"llm": _llm_report_timeout_seconds(context)}
 
 
+@log_perf(event="agent.llm_report", level=20)
 def _call_llm_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
     if not _llm_provider_chain():
         log_event(
