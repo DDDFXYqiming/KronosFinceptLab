@@ -341,8 +341,21 @@ async def get_technical_indicators(
         result = {}
         for name, obj in indicators.items():
             if hasattr(obj, "__dict__"):
-                result[name] = {k: round(float(v), 4) if isinstance(v, (int, float)) else v
-                               for k, v in obj.__dict__.items()}
+                row = {k: round(float(v), 4) if isinstance(v, (int, float)) else v
+                       for k, v in obj.__dict__.items()}
+                # Include @property computed values (current, current_k, etc.)
+                for attr in dir(obj):
+                    if attr.startswith("_"):
+                        continue
+                    if attr in row:
+                        continue
+                    try:
+                        val = getattr(obj, attr)
+                        if not callable(val) and isinstance(val, (int, float)):
+                            row[attr] = round(float(val), 4)
+                    except Exception:
+                        pass
+                result[name] = row
             else:
                 result[name] = str(obj)
 
