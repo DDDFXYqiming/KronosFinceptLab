@@ -164,7 +164,7 @@ function DataPageInner() {
         }),
         queryClient.fetchQuery({
           queryKey: indicatorKey,
-          queryFn: ({ signal }) => api.getIndicators(requestSymbol, market, { signal }),
+          queryFn: ({ signal }) => api.getIndicators(requestSymbol, market, startDate, endDate, { signal }),
         }).catch((e) => { setIndicatorError(formatApiError(e, "指标获取失败")); return null; }),
       ]);
       setData({ ...res, market });
@@ -196,24 +196,18 @@ function DataPageInner() {
     addToWatchlist({ symbol: requestSymbol, market, addedAt: new Date().toISOString() });
   };
 
-  const rsi = getIndicatorNumber(indicators, "rsi", "value") ?? getIndicatorNumber(indicators, "rsi");
-  const macd = getIndicatorNumber(indicators, "macd", "macd");
-  const signal = getIndicatorNumber(indicators, "macd", "signal");
+  const rsi = getIndicatorNumber(indicators, "rsi_14", "current") ?? getIndicatorNumber(indicators, "rsi", "value") ?? getIndicatorNumber(indicators, "rsi");
+  const kdjK = getIndicatorNumber(indicators, "kdj", "current_k") ?? getIndicatorNumber(indicators, "kdj", "k");
+  const kdjD = getIndicatorNumber(indicators, "kdj", "current_d") ?? getIndicatorNumber(indicators, "kdj", "d");
+  const kdjJ = getIndicatorNumber(indicators, "kdj", "current_j") ?? getIndicatorNumber(indicators, "kdj", "j");
+  const cci = getIndicatorNumber(indicators, "cci", "current") ?? getIndicatorNumber(indicators, "cci");
 
   return (
     <div className="page-shell space-y-6">
       <SectionLabel>数据浏览</SectionLabel>
       <h1 className="page-title">数据浏览</h1>
       <Card>
-        <CardTitle subtitle="搜索、跨市场拉取、查看指标，并一键跳转预测/分析。">搜索股票</CardTitle>
-        <div className="grid grid-cols-1 gap-3 md:flex md:gap-4">
-          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleSearch()} className="app-input flex-1" placeholder="输入代码或名称搜索..." />
-          <Button onClick={() => handleSearch(false)} loading={searchLoading} className="w-full md:w-auto">搜索</Button>
-        </div>
-        {searchResults.length > 0 && <div className="mt-4 space-y-1">{searchResults.map((r) => <button key={`${r.market}-${r.code}`} onClick={() => handleSelectSearchResult(r)} className="flex min-h-11 w-full flex-col gap-1 rounded px-3 py-2 text-left hover:bg-muted sm:flex-row sm:justify-between"><span className="font-mono">{r.code}</span><span>{r.name}</span><span className="text-sm text-muted-foreground">{r.market}</span></button>)}</div>}
-      </Card>
-      <Card>
-        <CardTitle>获取数据</CardTitle>
+        <CardTitle subtitle="跨市场拉取行情、查看指标，并一键跳转预测/分析。">获取数据</CardTitle>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div><label className="field-label">代码</label><input type="text" value={symbol} onChange={(e) => setSymbol(e.target.value)} className="app-input mt-1 font-mono" placeholder={DEFAULT_SYMBOL} /></div>
           <div><label className="field-label">市场</label><AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel="市场" className="mt-1" /></div>
@@ -227,7 +221,7 @@ function DataPageInner() {
         </div>
       </Card>
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
-      {data && summary && <><div className="grid grid-cols-2 gap-4 md:grid-cols-5"><Card><p className="text-sm text-muted-foreground">数据摘要</p><p className="text-xl font-bold">{getMarketLabel(data.market || market, preferences.language)} / {data.count}条</p></Card><Card><p className="text-sm text-muted-foreground">最新收盘</p><p className="text-xl font-bold">{formatNumber(summary.last.close, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间收益</p><p className={summary.returnPct >= 0 ? "text-xl font-bold text-accent-green" : "text-xl font-bold text-accent-red"}>{(summary.returnPct * 100).toFixed(2)}%</p></Card><Card><p className="text-sm text-muted-foreground">区间最高</p><p className="text-xl font-bold">{formatNumber(summary.high, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间最低</p><p className="text-xl font-bold">{formatNumber(summary.low, 2)}</p></Card></div><Card><CardTitle>收盘价走势</CardTitle><PriceLineChart rows={data.rows} /></Card><Card><CardTitle>技术指标</CardTitle><div className="grid grid-cols-2 gap-4 md:grid-cols-4"><div><p className="text-sm text-muted-foreground">RSI</p><p className="text-xl font-bold">{rsi === null ? "-" : formatNumber(rsi, 2)}</p></div><div><p className="text-sm text-muted-foreground">MACD</p><p className="text-xl font-bold">{macd === null ? "-" : formatNumber(macd, 4)}</p></div><div><p className="text-sm text-muted-foreground">Signal</p><p className="text-xl font-bold">{signal === null ? "-" : formatNumber(signal, 4)}</p></div><div><p className="text-sm text-muted-foreground">指标样本</p><p className="text-xl font-bold">{indicators?.data_points || "-"}</p></div></div>{indicatorError && <p className="mt-3 text-sm text-amber-400">⚠ {indicatorError}</p>}</Card><Card><CardTitle>{data.symbol} — 行情明细</CardTitle><div className="table-scroll max-h-96 overflow-y-auto"><table className="min-w-[48rem] w-full text-sm"><thead className="sticky top-0 bg-surface-raised"><tr className="border-b border-gray-700 text-gray-400"><th className="py-2 text-left pr-4">日期</th><th className="py-2 text-right pr-4">开盘</th><th className="py-2 text-right pr-4">收盘</th><th className="py-2 text-right pr-4">最高</th><th className="py-2 text-right pr-4">最低</th><th className="py-2 text-right pr-4">成交量</th><th className="py-2 text-right pr-4">成交额</th></tr></thead><tbody>{data.rows.map((row, idx) => <tr key={idx} className="border-b border-gray-800"><td className="py-2 pr-4 text-gray-400">{String(row.timestamp).slice(0, 10)}</td><td className="py-2 text-right pr-4">{formatNumber(row.open, 2)}</td><td className="py-2 text-right pr-4 font-semibold">{formatNumber(row.close, 2)}</td><td className="py-2 text-right pr-4">{formatNumber(row.high, 2)}</td><td className="py-2 text-right pr-4">{formatNumber(row.low, 2)}</td><td className="py-2 text-right pr-4">{formatNumber(row.volume ?? 0, 0)}</td><td className="py-2 text-right pr-4">{formatNumber(row.amount ?? 0, 0)}</td></tr>)}</tbody></table></div></Card></>}
+      {data && summary && <><div className="grid grid-cols-2 gap-4 md:grid-cols-5"><Card><p className="text-sm text-muted-foreground">数据摘要</p><p className="text-xl font-bold">{getMarketLabel(data.market || market, preferences.language)} / {data.count}条</p></Card><Card><p className="text-sm text-muted-foreground">最新收盘</p><p className="text-xl font-bold">{formatNumber(summary.last.close, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间收益</p><p className={summary.returnPct >= 0 ? "text-xl font-bold text-accent-green" : "text-xl font-bold text-accent-red"}>{(summary.returnPct * 100).toFixed(2)}%</p></Card><Card><p className="text-sm text-muted-foreground">区间最高</p><p className="text-xl font-bold">{formatNumber(summary.high, 2)}</p></Card><Card><p className="text-sm text-muted-foreground">区间最低</p><p className="text-xl font-bold">{formatNumber(summary.low, 2)}</p></Card></div><Card><CardTitle>收盘价走势</CardTitle><PriceLineChart rows={data.rows} /></Card><Card><CardTitle>技术指标</CardTitle><div className="grid grid-cols-2 gap-4 md:grid-cols-5"><div><p className="text-sm text-muted-foreground">RSI(14)</p><p className="text-xl font-bold">{rsi === null ? "-" : formatNumber(rsi, 2)}</p></div><div><p className="text-sm text-muted-foreground">KDJ - K</p><p className="text-xl font-bold">{kdjK === null ? "-" : formatNumber(kdjK, 2)}</p></div><div><p className="text-sm text-muted-foreground">KDJ - D</p><p className="text-xl font-bold">{kdjD === null ? "-" : formatNumber(kdjD, 2)}</p></div><div><p className="text-sm text-muted-foreground">KDJ - J</p><p className="text-xl font-bold">{kdjJ === null ? "-" : formatNumber(kdjJ, 2)}</p></div><div><p className="text-sm text-muted-foreground">CCI(20)</p><p className="text-xl font-bold">{cci === null ? "-" : formatNumber(cci, 2)}</p></div></div>{indicatorError && <p className="mt-3 text-sm text-amber-400">⚠ {indicatorError}</p>}</Card><Card><CardTitle>{data.symbol} — 行情明细</CardTitle><div className="table-scroll max-h-96 overflow-y-auto"><table className="min-w-[48rem] w-full text-sm"><thead className="sticky top-0 bg-surface-raised"><tr className="border-b border-gray-700 text-gray-400"><th className="py-2 text-left pr-4">日期</th><th className="py-2 text-right pr-4">开盘</th><th className="py-2 text-right pr-4">收盘</th><th className="py-2 text-right pr-4">最高</th><th className="py-2 text-right pr-4">最低</th><th className="py-2 text-right pr-4">成交量</th><th className="py-2 text-right pr-4">成交额</th></tr></thead><tbody>{data.rows.map((row, idx) => <tr key={idx} className="border-b border-gray-800"><td className="py-2 pr-4 text-gray-400">{String(row.timestamp).slice(0, 10)}</td><td className="py-2 text-right pr-4">{formatNumber(row.open, 2)}</td><td className="py-2 text-right pr-4 font-semibold">{formatNumber(row.close, 2)}</td><td className="py-2 text-right pr-4">{formatNumber(row.high, 2)}</td><td className="py-2 text-right pr-4">{formatNumber(row.low, 2)}</td><td className="py-2 text-right pr-4">{formatNumber(row.volume ?? 0, 0)}</td><td className="py-2 text-right pr-4">{formatNumber(row.amount ?? 0, 0)}</td></tr>)}</tbody></table></div></Card></>}
     </div>
   );
 }

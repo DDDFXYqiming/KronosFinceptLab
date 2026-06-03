@@ -303,17 +303,27 @@ async def get_global_market_data(
 async def get_technical_indicators(
     symbol: str = Path(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN),
     market: str = Query("cn", min_length=1, max_length=16, pattern=MARKET_PATTERN, description="Market: cn, us, hk, commodity"),
+    start_date: str = Query("", min_length=0, max_length=8, description="Start date YYYYMMDD (empty = auto)"),
+    end_date: str = Query("", min_length=0, max_length=8, description="End date YYYYMMDD (empty = auto)"),
 ) -> dict:
-    """Calculate technical indicators for a symbol (SMA, EMA, RSI, MACD, Bollinger, KDJ)."""
+    """Calculate technical indicators for a symbol (RSI, KDJ, CCI, MACD, Bollinger)."""
     try:
         from kronos_fincept.financial import TechnicalIndicators, GlobalMarketSource
 
+        # Default to recent 1 year if no dates provided
+        if not start_date or not end_date:
+            from datetime import datetime, timedelta
+            end_dt = datetime.now()
+            start_dt = end_dt - timedelta(days=365)
+            start_date = start_date or start_dt.strftime("%Y%m%d")
+            end_date = end_date or end_dt.strftime("%Y%m%d")
+
         def _fetch_data():
             if market == "cn":
-                return fetch_a_stock_ohlcv(symbol, "20250101", "20260430")
+                return fetch_a_stock_ohlcv(symbol, start_date, end_date)
             else:
                 gms = GlobalMarketSource()
-                return gms.fetch_data(symbol, "20250101", "20260430", market=market)
+                return gms.fetch_data(symbol, start_date, end_date, market=market)
 
         rows = await asyncio.to_thread(_fetch_data)
 

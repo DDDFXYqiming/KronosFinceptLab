@@ -441,8 +441,12 @@ export const api = {
       options
     ),
 
-  getIndicators: (symbol: string, market = "cn", options?: ApiClientOptions) =>
-    get<IndicatorResponse>(`/data/indicator/${symbol}?market=${market}`, options),
+  getIndicators: (symbol: string, market = "cn", startDate?: string, endDate?: string, options?: ApiClientOptions) => {
+    let url = `/data/indicator/${symbol}?market=${market}`;
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    return get<IndicatorResponse>(url, options);
+  },
 
   getMoneyFlow: (symbol: string, options?: ApiClientOptions & { limit?: number; startDate?: string; endDate?: string }) => {
     const params = new URLSearchParams();
