@@ -17,6 +17,7 @@ import re
 import time
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -43,14 +44,291 @@ _cache_locks: dict[str, asyncio.Lock] = {
 # History: track last 3 generations per cache key to avoid repeats
 _history: dict[str, deque[list[str]]] = {"analysis": deque(maxlen=3), "macro": deque(maxlen=3)}
 
-SUGGESTION_CACHE_TTL_SECONDS = 8 * 3600
+SUGGESTION_CACHE_TTL_SECONDS = 2 * 3600
 MAX_RETRIES = 3
+
+# ── Random concept injection pool ──
+# Unrelated Chinese words to break LLM mode collapse (arXiv:2601.18053)
+_RANDOM_WORDS = [
+    "潮汐", "蜂鸟", "琥珀", "漩涡", "极光", "珊瑚", "闪电", "露珠", "星尘", "迷雾",
+    "竹林", "瀑布", "沙漏", "羽毛", "齿轮", "水晶", "火山", "冰川", "沙漠", "彩虹",
+    "蝴蝶", "海豚", "鲸鱼", "老鹰", "松鼠", "企鹅", "海鸥", "孔雀", "骆驼", "猎豹",
+    "钢琴", "小提琴", "鼓点", "旋律", "和弦", "节拍", "音符", "交响", "回声", "寂静",
+    "水墨", "油画", "素描", "雕塑", "陶艺", "篆刻", "书法", "壁画", "版画", "拼贴",
+    "咖啡", "抹茶", "可可", "薄荷", "肉桂", "柠檬", "芒果", "荔枝", "杨梅", "椰子",
+    "丝绸", "棉麻", "羊毛", "皮革", "牛仔", "天鹅绒", "亚麻", "雪纺", "灯芯绒", "帆布",
+    "望远镜", "指南针", "地图", "灯笼", "火把", "蜡烛", "油灯", "手电", "信号弹", "篝火",
+    "风筝", "陀螺", "弹珠", "积木", "拼图", "万花筒", "棱镜", "沙盘", "魔方", "九连环",
+    "山涧", "峡谷", "悬崖", "洞穴", "温泉", "湖泊", "沼泽", "绿洲", "草原", "雨林",
+    "铁匠", "木匠", "陶工", "织工", "渔夫", "猎人", "农夫", "园丁", "石匠", "画师",
+    "春风", "夏雨", "秋叶", "冬雪", "晨曦", "暮色", "月光", "星空", "云海", "霞光",
+    "围棋", "象棋", "桥牌", "麻将", "谜语", "灯谜", "对联", "诗词", "歌赋", "戏曲",
+    "青瓷", "紫砂", "漆器", "玉雕", "木雕", "竹编", "草编", "剪纸", "年画", "刺绣",
+    "信鸽", "燕子", "喜鹊", "鹦鹉", "画眉", "百灵", "黄鹂", "杜鹃", "麻雀", "乌鸦",
+    "石桥", "拱门", "庭院", "回廊", "亭台", "楼阁", "城墙", "古塔", "牌坊", "戏台",
+]
+
+# ── Expanded question banks (50+ each) for few-shot injection ──
+_ANALYSIS_QUESTION_BANK = [
+    "比亚迪最近还能上车吗",
+    "腾讯控股现在估值合理吗",
+    "小米集团的短期走势怎么看",
+    "美团技术面有什么信号",
+    "网易最近表现怎么样",
+    "京东和拼多多谁更值得买",
+    "百度的AI概念还能炒多久",
+    "快手的反弹空间有多大",
+    "中国平安的保险业务还行吗",
+    "招商银行和工商银行选哪个",
+    "贵州茅台现在是高位还是低位",
+    "宁德时代的产能过剩风险大吗",
+    "比亚迪和特斯拉对比分析",
+    "中芯国际的半导体前景如何",
+    "药明康德的CXO赛道还能投吗",
+    "隆基绿能的光伏拐点到了吗",
+    "海天味业的消费复苏逻辑成立吗",
+    "五粮液和茅台差距在哪",
+    "中国中免的免税逻辑还通吗",
+    "长江电力的高股息能持续吗",
+    "紫金矿业的金价弹性有多大",
+    "中国神华的煤炭逻辑还能撑多久",
+    "恒瑞医药的创新药管线怎么样",
+    "迈瑞医疗的国际化进展如何",
+    "三一重工的工程机械周期到哪了",
+    "万华化学的MDI价格走势",
+    "海螺水泥的基建拉动效应",
+    "上汽集团的新能源转型进展",
+    "分众传媒的广告周期复苏了吗",
+    "东方财富的券商属性强不强",
+    "牧原股份的猪周期拐点",
+    "伊利股份的乳制品消费趋势",
+    "泸州老窖和汾酒谁更有潜力",
+    "中国建筑的订单增长如何",
+    "阳光电源的储能业务怎么样",
+    "汇川技术的工控龙头地位稳吗",
+    "韦尔股份的CIS市场格局",
+    "兆易创新的存储芯片前景",
+    "科大讯飞的AI落地情况",
+    "用友网络的SaaS转型到了哪一步",
+    "金山办公的信创逻辑还成立吗",
+    "海尔智家的海外扩张怎么样",
+    "格力电器和美的集团对比",
+    "联通和移动谁更有投资价值",
+    "中远海控的航运周期怎么看",
+    "中国中铁的基建订单趋势",
+    "北方华创的半导体设备国产化",
+    "中微公司的刻蚀机前景",
+    "沪硅产业的硅片国产替代进展",
+    "百济神州的创新药出海怎么样",
+]
+
+_MACRO_QUESTION_BANK = [
+    "现在适合买黄金吗",
+    "美联储下一步会加息还是降息",
+    "AI是不是泡沫",
+    "比特币到底了吗",
+    "美元走势怎么看",
+    "原油价格还会涨吗",
+    "铜价的上涨空间有多大",
+    "白银是不是被低估了",
+    "美债收益率还会升吗",
+    "通胀是不是已经见顶了",
+    "全球衰退的概率有多大",
+    "日本央行什么时候退出YCC",
+    "欧洲经济会不会硬着陆",
+    "新兴市场还有投资机会吗",
+    "VIX恐慌指数说明了什么",
+    "美股现在估值泡沫大吗",
+    "A股的底部到底在哪里",
+    "港股为什么一直跌",
+    "房地产还会继续下行吗",
+    "中国的消费复苏进度如何",
+    "供应链转移对中国制造业的影响",
+    "半导体周期什么时候见底",
+    "新能源车的渗透率天花板在哪",
+    "碳中和目标下的投资机会",
+    "地缘冲突对油价的影响有多大",
+    "人民币汇率会破7吗",
+    "全球央行的购金趋势",
+    "加密货币监管趋严的影响",
+    "DeFi还有未来吗",
+    "以太坊和比特币谁更值得持有",
+    "NFT市场还有回暖的可能吗",
+    "全球粮食危机的风险",
+    "气候风险对投资组合的影响",
+    "ESG投资真的有效吗",
+    "量化宽松的退出路径",
+    "银行危机还会重演吗",
+    "商业地产的风险有多大",
+    "科技股泡沫和2000年比怎么样",
+    "就业市场的韧性还能持续多久",
+    "消费者信心指数的趋势",
+    "PMI数据暗示了什么",
+    "财政赤字对长期利率的影响",
+    "中美关系对市场的影响",
+    "台海风险如何定价",
+    "中东局势对能源市场的影响",
+    "印度经济的增长潜力",
+    "越南制造业崛起的机遇",
+    "全球债务规模的风险",
+    "利率倒挂意味着什么",
+    "实际利率转正对资产配置的影响",
+]
+
+_ANALYSIS_QUESTION_BANK_EN = [
+    "Can I still buy AAPL at this price?",
+    "Is NVDA overvalued after the AI rally?",
+    "TSLA short-term technical outlook",
+    "Compare MSFT and GOOGL risk profiles",
+    "META earnings momentum analysis",
+    "AMZN vs AAPL which is a better hold",
+    "BABA valuation after the China selloff",
+    "Tencent growth prospects in 2025",
+    "JD.com competitive position vs PDD",
+    "BYD electric vehicle expansion outlook",
+    "TSMC semiconductor cycle positioning",
+    "LLY obesity drug pipeline valuation",
+    "JPM bank earnings in a high-rate env",
+    "V and MA which payment stock to buy",
+    "NFLX subscriber growth sustainability",
+    "DIS turnaround story progress",
+    "BA recovery timeline assessment",
+    "XOM energy sector dividend safety",
+    "CVX oil price sensitivity analysis",
+    "PFE post-COVID revenue trajectory",
+    "INTC foundry strategy execution risk",
+    "AMD data center market share gains",
+    "CRM AI integration monetization",
+    "ADSK enterprise software demand",
+    "ORCL cloud infrastructure growth",
+    "QCOM mobile chip cycle outlook",
+    "AVGO networking demand from AI",
+    "NOW ITSM market dominance check",
+    "SNAP user growth turnaround",
+    "SQ fintech competitive moat",
+    "SHOP merchant GMV trajectory",
+    "SE Southeast Asia expansion pace",
+    "NIO delivery numbers trajectory",
+    "LI Auto vs NIO competitive dynamics",
+    "XPEV technology partnership value",
+    "BIDU AI cloud revenue growth",
+    "PDD Temu global expansion burn rate",
+    "BILI monetization model progress",
+    "ZTO Express logistics margin trend",
+    "MNSO retail consumption recovery",
+    "FUTU retail trading volume trend",
+    "TIGR international expansion pace",
+    "EDU education policy normalization",
+    "TAL learning device pivot progress",
+    "YMM trucking platform economics",
+    "ZH content platform monetization",
+    "IQ streaming competition dynamics",
+    "VNET data center demand from AI",
+    "KC Kingsoft cloud gaming pivot",
+    "SOHU Sogou AI search revival",
+]
+
+_MACRO_QUESTION_BANK_EN = [
+    "Is now a good time to buy gold?",
+    "Will the Fed cut or hike next?",
+    "Is the AI trade a bubble?",
+    "Has Bitcoin bottomed yet?",
+    "USD dollar index trajectory",
+    "Crude oil price forecast",
+    "Copper demand outlook from EVs",
+    "Silver undervaluation thesis",
+    "US Treasury yield direction",
+    "Has inflation peaked?",
+    "Global recession probability",
+    "BOJ yield curve control exit timing",
+    "European economic hard landing risk",
+    "Emerging market investment case",
+    "VIX what is the fear gauge saying",
+    "US equity valuation bubble check",
+    "China A-shares bottom fishing timing",
+    "Hong Kong market structural discount",
+    "US commercial real estate risk",
+    "Supply chain reshoring impact",
+    "Semiconductor cycle bottom timing",
+    "EV penetration ceiling analysis",
+    "Climate risk portfolio impact",
+    "ESG investing effectiveness debate",
+    "QE exit path and market impact",
+    "Banking crisis recurrence risk",
+    "Tech bubble vs 2000 comparison",
+    "Labor market resilience duration",
+    "Consumer confidence trend",
+    "PMI leading indicator signals",
+    "Fiscal deficit rate impact",
+    "US-China decoupling investment risk",
+    "Taiwan risk premium pricing",
+    "Middle East energy supply disruption",
+    "India growth potential analysis",
+    "Vietnam manufacturing opportunity",
+    "Global debt sustainability risk",
+    "Yield curve inversion signal",
+    "Real rates turning positive impact",
+    "Crypto regulation tightening effect",
+    "DeFi future viability assessment",
+    "ETH vs BTC relative value",
+    "NFT market recovery possibility",
+    "Global food security risk",
+    "Brexit long-term economic impact",
+    "Japan equity re-rating thesis",
+    "Korea semiconductor export trend",
+    "Brazil fiscal reform progress",
+    "Mexico nearshoring beneficiary play",
+    "Turkey unorthodox policy reversal",
+]
+
+
+def _extract_entities_from_history(history: deque[list[str]]) -> set[str]:
+    """Extract stock names, tickers, and codes from historical questions for blacklist."""
+    entities: set[str] = set()
+    known_stocks = [
+        "招商银行", "贵州茅台", "茅台", "宁德时代", "比亚迪", "腾讯", "阿里巴巴",
+        "拼多多", "京东", "百度", "小米", "美团", "快手", "网易", "中国平安", "万科",
+        "美的", "格力", "工商银行", "农业银行", "中国银行", "建设银行", "交通银行",
+        "兴业银行", "浦发银行", "民生银行", "中信银行", "光大银行", "平安银行",
+        "五粮液", "泸州老窖", "汾酒", "洋河股份", "海天味业", "伊利股份",
+        "恒瑞医药", "迈瑞医疗", "药明康德", "中芯国际", "隆基绿能", "中国中免",
+        "长江电力", "紫金矿业", "中国神华", "三一重工", "万华化学", "海螺水泥",
+        "上汽集团", "分众传媒", "东方财富", "牧原股份", "阳光电源", "汇川技术",
+        "韦尔股份", "兆易创新", "科大讯飞", "用友网络", "金山办公", "海尔智家",
+        "格力电器", "美的集团", "中国联通", "中国移动", "中国电信", "中远海控",
+        "中国中铁", "北方华创", "中微公司", "沪硅产业", "百济神州", "中国建筑",
+        "特斯拉", "苹果", "英伟达", "微软", "谷歌", "亚马逊", "Meta", "台积电",
+    ]
+    us_ticker_pattern = re.compile(r"(?<![a-zA-Z])([A-Z]{2,5})(?![a-zA-Z])")
+    cn_code_pattern = re.compile(r"(?<!\d)(\d{6}|\d{5})(?!\d)")
+    _SKIP_TICKERS = {"A股", "港股", "美股", "CPI", "GDP", "PMI", "ETF", "LLM",
+                     "AI", "BTC", "ETH", "VIX", "UV", "OK", "THE", "FOR", "AND",
+                     "BUT", "NOT", "HAS", "HAD", "WAS", "ARE", "ITS", "CAN", "GET"}
+
+    for past_set in history:
+        text = " ".join(past_set)
+        for stock in known_stocks:
+            if stock in text:
+                entities.add(stock)
+        for m in us_ticker_pattern.finditer(text):
+            ticker = m.group(1)
+            if ticker not in _SKIP_TICKERS:
+                entities.add(ticker)
+        for m in cn_code_pattern.finditer(text):
+            entities.add(m.group(1))
+    return entities
 
 # ── Prompt templates ──
 
 _ANALYSIS_SYSTEM = """\
 你是 KronosFinceptLab 的个股分析问题生成器。
 输出必须是纯 JSON，格式：{"questions": ["问题1", "问题2", "问题3"]}
+
+生成策略（必须严格按步骤执行）：
+第一步：在脑中列出 10 个你可能会分析的个股标的，确保覆盖 A股、港股、美股三个市场，
+       优先选择市场关注度中等、非龙头热门的股票，避免总是选择最知名的蓝筹。
+第二步：从这 10 个中选出 3 个最有分析价值且互相差异最大的标的。
+第三步：为每个标的生成一个口语化的分析问题。
 
 要求：
 - 生成 3 个中文个股分析建议问题
@@ -70,6 +348,13 @@ _ANALYSIS_SYSTEM = """\
 _MACRO_SYSTEM = """\
 你是 KronosFinceptLab 的宏观洞察问题生成器。
 输出必须是纯 JSON，格式：{"questions": ["问题1", "问题2", "问题3", "问题4"]}
+
+生成策略（必须严格按步骤执行）：
+第一步：在脑中列出 8 个不同的宏观/跨市场主题方向，确保覆盖：利率政策、大宗商品、
+       地缘政治、加密货币、权益市场、汇率、房地产、新兴市场、气候/ESG、
+       消费/就业、科技周期等（不能只选最热门的 2-3 个）。
+第二步：从这 8 个方向中选出 4 个差异最大的方向。
+第三步：为每个方向生成一个口语化的宏观洞察问题，确保问题涉及的具体资产/指标各不相同。
 
 要求：
 - 生成 4 个中文宏观经济/市场洞察问题
@@ -307,11 +592,26 @@ def _call_llm_for_suggestions(
     language: str = "zh-CN",
     history_key: str | None = None,
 ) -> list[str]:
-    """Call the LLM to generate suggestions, with diversity retries."""
+    """Call the LLM to generate suggestions, with diversity retries.
+
+    Diversity techniques applied:
+    1. Random concept injection (arXiv:2601.18053) — 3 unrelated random words prepended
+    2. Entity blacklist — stock names/codes from recent history explicitly excluded
+    3. CoT two-step prompting (Wharton 2024) — system prompt instructs think-before-generate
+    4. Few-shot from question bank — different examples each time
+    5. Flavor rotation — different thematic direction per attempt
+    """
     from kronos_fincept.agent import _call_structured_llm_json
 
     history = _history.setdefault(history_key or question_type, deque(maxlen=3))
     used_flavors: set[str] = set()
+
+    # Select few-shot examples from question bank (different each call)
+    bank = (_ANALYSIS_QUESTION_BANK if question_type == "analysis" else _MACRO_QUESTION_BANK) \
+        if language != "en-US" else \
+        (_ANALYSIS_QUESTION_BANK_EN if question_type == "analysis" else _MACRO_QUESTION_BANK_EN)
+    few_shot_count = min(5, len(bank))
+    few_shot_examples = random.sample(bank, few_shot_count)
 
     for attempt in range(MAX_RETRIES):
         # Pick a random flavor not yet tried in this generation cycle
@@ -321,12 +621,27 @@ def _call_llm_for_suggestions(
         flavor = random.choice(available)
         used_flavors.add(flavor)
 
-        # Build user prompt with diversity instructions
+        # ── Random concept injection (breaks LLM mode collapse) ──
+        random_concepts = random.sample(_RANDOM_WORDS, 3)
+        concept_str = "、".join(random_concepts)
+
+        # ── Entity blacklist from history ──
+        blacklist_text = ""
+        if history:
+            entities = _extract_entities_from_history(history)
+            if entities:
+                entity_list = "、".join(sorted(entities)[:20])  # cap at 20
+                if language == "en-US":
+                    blacklist_text = f"\nDO NOT generate questions about these already-mentioned entities: {entity_list}"
+                else:
+                    blacklist_text = f"\n严禁再次生成涉及以下已出现过的标的/主体的问题：{entity_list}"
+
+        # ── Historical question blacklist (full text) ──
         avoid_text = ""
         if history:
             past_samples = []
             for past_set in history:
-                past_samples.extend(past_set[:2])  # show at most 2 per past set
+                past_samples.extend(past_set[:2])
             if past_samples:
                 sample_str = "、".join(f"「{q}」" for q in past_samples[:6])
                 avoid_text = (
@@ -335,8 +650,27 @@ def _call_llm_for_suggestions(
                     else f"\n严禁生成与以下历史建议重复或高度相似的问题：{sample_str}"
                 )
 
+        # ── Build few-shot section ──
+        if language == "en-US":
+            few_shot_label = "Here are examples of good questions (for reference style only, DO NOT copy these):"
+        else:
+            few_shot_label = "以下是一些示例问题（仅供参考风格，不允许抄袭）："
+        few_shot_text = "\n".join(f"- {q}" for q in few_shot_examples)
+
+        # ── Compose final prompt ──
         focus_prefix = "Focus direction" if language == "en-US" else "本次侧重方向"
-        user_prompt = f"{user_prompt_template}\n{focus_prefix}：{flavor}。{avoid_text}"
+        if language == "en-US":
+            concept_prefix = "Creative seed words (use as inspiration, not as topic):"
+        else:
+            concept_prefix = "创意种子词（仅作为灵感触发，不是主题）："
+
+        user_prompt = (
+            f"{user_prompt_template}\n"
+            f"{focus_prefix}：{flavor}。\n"
+            f"{concept_prefix}{concept_str}。\n"
+            f"{few_shot_label}\n{few_shot_text}\n"
+            f"{blacklist_text}{avoid_text}"
+        )
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -347,7 +681,7 @@ def _call_llm_for_suggestions(
             result = _call_structured_llm_json(
                 messages,
                 temperature=0.95,
-                max_tokens=300,
+                max_tokens=500,
                 timeout=15,
                 purpose="suggestions",
             )
@@ -422,6 +756,54 @@ def _call_llm_for_suggestions(
     return _fallback_questions(question_type, language)
 
 
+# ── Pre-generated file support ──
+
+import json as _json
+from pathlib import Path as _Path
+
+_PREGEN_FILE = _Path(__file__).resolve().parents[3] / "data" / "suggestions_pregen.json"
+_PREGEN_MAX_AGE = 24 * 3600  # pregen file valid for 24 hours
+
+_pregen_cache: dict[str, Any] | None = None
+_pregen_loaded_at: float = 0.0
+
+
+def _read_pregen_file() -> dict[str, Any] | None:
+    """Read and cache the pre-generated suggestions file."""
+    global _pregen_cache, _pregen_loaded_at
+    if not _PREGEN_FILE.exists():
+        return None
+    try:
+        mtime = _PREGEN_FILE.stat().st_mtime
+        if _pregen_cache and (time.time() - _pregen_loaded_at) < 60:
+            return _pregen_cache  # in-memory cache for 60s
+        data = _json.loads(_PREGEN_FILE.read_text(encoding="utf-8"))
+        if (time.time() - data.get("generated_ts", 0)) > _PREGEN_MAX_AGE:
+            return None  # file too old
+        _pregen_cache = data
+        _pregen_loaded_at = time.time()
+        return data
+    except Exception:
+        return None
+
+
+def _pick_pregen_slot(
+    pregen: dict[str, Any],
+    cache_key: str,
+) -> tuple[list[str], float] | None:
+    """Pick the current time-slot from pre-generated data."""
+    slots = pregen.get("slots", {}).get(cache_key)
+    if not slots or not isinstance(slots, list):
+        return None
+    now = datetime.now()
+    slot_idx = (now.hour * 60 + now.minute) // (24 * 60 // len(slots))
+    slot_idx = min(slot_idx, len(slots) - 1)
+    questions = slots[slot_idx]
+    if not questions:
+        return None
+    return questions, pregen.get("generated_ts", time.time())
+
+
 # ── Route ──
 
 
@@ -430,7 +812,7 @@ async def get_suggestions(
     type: str = Query("analysis", description="Suggestion type: 'analysis' or 'macro'"),
     language: Literal["zh-CN", "en-US"] = Query("zh-CN", description="Natural-language output language"),
 ) -> dict[str, Any]:
-    """Return LLM-generated question suggestions (cached for 8 hours)."""
+    """Return question suggestions. Prefers pre-generated file, falls back to lazy LLM."""
     if language not in ("zh-CN", "en-US"):
         language = "zh-CN"
     if type not in ("analysis", "macro"):
@@ -439,7 +821,19 @@ async def get_suggestions(
     cache_key = type if language == "zh-CN" else f"{type}:{language}"
     _cache_locks.setdefault(cache_key, asyncio.Lock())
 
-    # Check cache
+    # ── 1. Try pre-generated file (fastest path) ──
+    pregen = await asyncio.to_thread(_read_pregen_file)
+    if pregen:
+        picked = _pick_pregen_slot(pregen, cache_key)
+        if picked:
+            questions, gen_ts = picked
+            return {
+                "questions": questions,
+                "generated_at": gen_ts,
+                "source": "pregen",
+            }
+
+    # ── 2. In-memory cache ──
     cached = _cache.get(cache_key)
     now = time.time()
     if cached and (now - cached.generated_at) < SUGGESTION_CACHE_TTL_SECONDS:
@@ -449,6 +843,7 @@ async def get_suggestions(
             "source": "cache",
         }
 
+    # ── 3. Lazy LLM generation (fallback) ──
     async with _cache_locks[cache_key]:
         cached = _cache.get(cache_key)
         now = time.time()
@@ -504,7 +899,6 @@ async def get_suggestions(
                 cache_key,
             )
 
-        # Store in cache
         generated_at = time.time()
         result = SuggestionResult(questions=questions, generated_at=generated_at)
         _cache[cache_key] = result
@@ -513,7 +907,7 @@ async def get_suggestions(
             logger,
             logging.INFO,
             "suggestions.generated",
-            f"Generated {len(questions)} {type} suggestions",
+            f"Generated {len(questions)} {type} suggestions (fallback)",
             suggestion_type=type,
             count=len(questions),
         )

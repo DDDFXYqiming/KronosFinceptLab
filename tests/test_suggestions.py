@@ -231,9 +231,9 @@ def test_frontend_pages_keep_cached_dynamic_suggestions_with_fallbacks():
     assert "const _HARDCODED_EXAMPLES" in analysis
     assert 'api.getSuggestions("analysis")' in analysis
     assert '"kronos-analysis-suggestions"' in analysis
-    assert "8 * 3600" in analysis
+    assert "2 * 3600" in analysis
 
     assert "const _HARDCODED_EXAMPLES" in macro
     assert 'api.getSuggestions("macro")' in macro
     assert '"kronos-macro-suggestions"' in macro
-    assert "8 * 3600" in macro
+    assert "2 * 3600" in macro
