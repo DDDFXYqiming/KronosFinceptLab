@@ -163,6 +163,28 @@ class OBV:
         return self.values[-1] if self.values else 0.0
 
 
+@dataclass
+class CCI:
+    """Commodity Channel Index result."""
+    values: List[float]
+    period: int
+
+    @property
+    def current(self) -> float:
+        """Current CCI value."""
+        return self.values[-1] if self.values else 0.0
+
+    @property
+    def is_overbought(self) -> bool:
+        """Check if overbought (>100)."""
+        return self.current > 100
+
+    @property
+    def is_oversold(self) -> bool:
+        """Check if oversold (<-100)."""
+        return self.current < -100
+
+
 class TechnicalIndicators:
     """
     Technical indicators calculator.
@@ -525,5 +547,35 @@ class TechnicalIndicators:
         # OBV (if volume available)
         if volumes and len(volumes) == len(closes):
             result['obv'] = self.calculate_obv(closes, volumes)
-        
+
+        # CCI (if high/low available)
+        if highs and lows and len(highs) == len(closes) and len(lows) == len(closes):
+            result['cci'] = self.calculate_cci(highs, lows, closes)
+
         return result
+
+    def calculate_cci(
+        self, highs: List[float], lows: List[float], closes: List[float], period: int = 20
+    ) -> CCI:
+        """Calculate Commodity Channel Index.
+
+        CCI = (Typical Price - SMA(TP)) / (0.015 * Mean Deviation)
+        Typical Price = (High + Low + Close) / 3
+        """
+        n = len(closes)
+        if n < period:
+            return CCI(values=[], period=period)
+
+        tp = [(highs[i] + lows[i] + closes[i]) / 3.0 for i in range(n)]
+        cci_values: List[float] = []
+
+        for i in range(period - 1, n):
+            window = tp[i - period + 1: i + 1]
+            sma_tp = sum(window) / period
+            mean_dev = sum(abs(v - sma_tp) for v in window) / period
+            if mean_dev == 0:
+                cci_values.append(0.0)
+            else:
+                cci_values.append((tp[i] - sma_tp) / (0.015 * mean_dev))
+
+        return CCI(values=cci_values, period=period)
