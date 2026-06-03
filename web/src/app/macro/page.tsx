@@ -584,7 +584,7 @@ function MacroContent() {
       const cached = window.sessionStorage.getItem(cacheKey);
       if (cached) {
         const { questions, generated_at } = JSON.parse(cached);
-        if (Date.now() / 1000 - generated_at < 8 * 3600) {
+        if (Date.now() / 1000 - generated_at < 2 * 3600) {
           setExamples(questions);
           return;
         }
