@@ -126,12 +126,19 @@ def data_fetch(ctx: click.Context, symbol: str, market: str, asset_type: str, st
 @data_group.command("indicator")
 @click.option("--symbol", "-s", type=str, required=True, help="Symbol to calculate indicators for")
 @click.option("--market", type=click.Choice(["cn", "us", "hk", "commodity"]), default="cn", help="Market")
-@click.option("--start", type=str, default="20250101", help="Start date YYYYMMDD")
-@click.option("--end", type=str, default="20260430", help="End date YYYYMMDD")
+@click.option("--start", type=str, default="", help="Start date YYYYMMDD (default: 1 year ago)")
+@click.option("--end", type=str, default="", help="End date YYYYMMDD (default: today)")
 @click.pass_context
 def data_indicator(ctx: click.Context, symbol: str, market: str, start: str, end: str) -> None:
     """Calculate technical indicators for fetched market data."""
     output_format = ctx.obj.get("output_format", "json")
+    # Default dates: last 1 year if not specified
+    if not start or not end:
+        from datetime import datetime, timedelta
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=365)
+        start = start or start_dt.strftime("%Y%m%d")
+        end = end or end_dt.strftime("%Y%m%d")
     try:
         from kronos_fincept.financial import TechnicalIndicators
         rows = _fetch_market_rows(symbol, market, start, end, "qfq")
@@ -143,7 +150,25 @@ def data_indicator(ctx: click.Context, symbol: str, market: str, start: str, end
         volumes = [row.get("volume", 0) for row in rows]
         ti = TechnicalIndicators()
         indicators = ti.calculate_all_indicators(closes, highs, lows, volumes)
-        result = {"ok": True, "symbol": symbol, "market": market, "current_price": rows[-1]["close"], "indicators": {name: obj.__dict__ if hasattr(obj, "__dict__") else obj for name, obj in indicators.items()}, "data_points": len(rows)}
+        # Serialize including @property values
+        ind_result = {}
+        for name, obj in indicators.items():
+            if hasattr(obj, "__dict__"):
+                row_d = {k: round(float(v), 4) if isinstance(v, (int, float)) else v
+                         for k, v in obj.__dict__.items()}
+                for attr in dir(obj):
+                    if attr.startswith("_") or attr in row_d:
+                        continue
+                    try:
+                        val = getattr(obj, attr)
+                        if not callable(val) and isinstance(val, (int, float)):
+                            row_d[attr] = round(float(val), 4)
+                    except Exception:
+                        pass
+                ind_result[name] = row_d
+            else:
+                ind_result[name] = str(obj)
+        result = {"ok": True, "symbol": symbol, "market": market, "current_price": rows[-1]["close"], "indicators": ind_result, "data_points": len(rows)}
     except Exception as exc:
         result = {"ok": False, "symbol": symbol, "market": market, "error": str(exc)}
         if output_format == "json":

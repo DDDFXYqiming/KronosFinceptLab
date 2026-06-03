@@ -729,7 +729,7 @@ function AnalysisContent() {
   });
   const displayLoading = loading || activeRunFetching > 0 || Boolean(activeRun && !error);
 
-  // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
+  // Fetch LLM-generated suggestions (cached 2h in sessionStorage)
   useEffect(() => {
     setExamples(fallbackAnalysisExamples(language));
     // Legacy cache key prefix retained for tests and migration: "kronos-analysis-suggestions"
