@@ -769,3 +769,40 @@ def ai_question(ctx, question, symbol, output_format):
     except Exception as e:
         click.echo(f"Error: {e}")
         return 1
+
+
+@analyze_group.command("providers")
+@click.option("--output", "output_format", type=click.Choice(["json", "table"]), default="json")
+@click.pass_context
+def providers(ctx, output_format):
+    """Show macro provider status and configuration."""
+    try:
+        from kronos_fincept.macro import MacroDataManager
+
+        manager = MacroDataManager()
+        status_rows = manager.provider_status()
+
+        if output_format == "json":
+            output = {
+                "total": len(status_rows),
+                "providers": status_rows,
+            }
+            click.echo(json.dumps(output, indent=2, default=str))
+        else:
+            click.echo(f"Macro Providers ({len(status_rows)})")
+            click.echo("-" * 60)
+            for row in status_rows:
+                status = row.get("status", "unknown")
+                name = row.get("display_name", row.get("provider_id", "?"))
+                pid = row.get("provider_id", "?")
+                failures = row.get("failure_count", 0)
+                cached = row.get("cached_entries", 0)
+                click.echo(f"  {pid:<30} [{status}]  failures={failures}  cached={cached}")
+                if row.get("description"):
+                    click.echo(f"    {row['description']}")
+
+        return 0
+
+    except Exception as e:
+        click.echo(f"Error: {e}")
+        return 1

@@ -502,6 +502,157 @@ async def list_tools() -> list[Tool]:
                 "properties": {"deep": {"type": "boolean", "default": False}},
             },
         ),
+        # ── Analysis tools ──
+        Tool(
+            name="analyze_dcf",
+            description="DCF valuation analysis, aligned with POST /api/v1/analyze/dcf.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Stock symbol"},
+                    "shares_outstanding": {"type": "number", "default": 1000000000},
+                    "beta": {"type": "number", "default": 1.0},
+                    "debt_value": {"type": "number", "default": 0},
+                    "cash_value": {"type": "number", "default": 0},
+                    "tax_rate": {"type": "number", "default": 0.25},
+                },
+                "required": ["symbol"],
+            },
+        ),
+        Tool(
+            name="analyze_risk",
+            description="Risk analysis (VaR, Sharpe, Sortino, max drawdown), aligned with POST /api/v1/analyze/risk.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Stock symbol"},
+                    "market_symbol": {"type": "string", "default": "000300", "description": "Market index for beta"},
+                    "days": {"type": "integer", "default": 252, "description": "Trading days"},
+                },
+                "required": ["symbol"],
+            },
+        ),
+        Tool(
+            name="analyze_portfolio",
+            description="Portfolio optimization, aligned with POST /api/v1/analyze/portfolio.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "array", "items": {"type": "string"}, "description": "List of stock symbols"},
+                    "method": {"type": "string", "default": "max_sharpe", "enum": ["max_sharpe", "min_vol", "risk_parity"]},
+                    "risk_free_rate": {"type": "number", "default": 0.03},
+                    "days": {"type": "integer", "default": 252},
+                },
+                "required": ["symbols"],
+            },
+        ),
+        Tool(
+            name="analyze_derivative",
+            description="Options pricing (Black-Scholes), aligned with POST /api/v1/analyze/derivative.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "underlying_price": {"type": "number", "description": "Current underlying price"},
+                    "strike_price": {"type": "number", "description": "Strike price"},
+                    "time_to_expiration": {"type": "number", "description": "Time to expiry in years"},
+                    "volatility": {"type": "number", "description": "Annualized volatility"},
+                    "risk_free_rate": {"type": "number", "default": 0.03},
+                    "option_type": {"type": "string", "default": "call", "enum": ["call", "put"]},
+                },
+                "required": ["underlying_price", "strike_price", "time_to_expiration", "volatility"],
+            },
+        ),
+        Tool(
+            name="analyze_ai",
+            description="Full AI stock analysis via LLM, aligned with POST /api/v1/analyze/ai.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Stock symbol"},
+                    "market": {"type": "string", "default": "cn", "enum": ["cn", "hk", "us", "commodity"]},
+                },
+                "required": ["symbol"],
+            },
+        ),
+        # ── Alert tools ──
+        Tool(
+            name="list_alert_rules",
+            description="List all alert rules, aligned with GET /api/alert/rules.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="delete_alert_rule",
+            description="Delete an alert rule by ID, aligned with DELETE /api/alert/rules/{rule_id}.",
+            inputSchema={
+                "type": "object",
+                "properties": {"rule_id": {"type": "string", "description": "Alert rule ID"}},
+                "required": ["rule_id"],
+            },
+        ),
+        Tool(
+            name="check_alert_rules",
+            description="Run a one-time check of alert rules, aligned with POST /api/alert/check.",
+            inputSchema={
+                "type": "object",
+                "properties": {"rule_id": {"type": "string", "description": "Optional specific rule ID to check"}},
+            },
+        ),
+        # ── Jobs tools ──
+        Tool(
+            name="list_jobs",
+            description="List background jobs, aligned with GET /api/jobs.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "default": 50},
+                    "status": {"type": "string", "description": "Filter by status: running, completed, failed"},
+                    "kind": {"type": "string", "description": "Filter by kind: forecast, analyze, batch, backtest"},
+                },
+            },
+        ),
+        Tool(
+            name="cancel_job",
+            description="Cancel a running job, aligned with POST /api/jobs/{job_id}/cancel.",
+            inputSchema={
+                "type": "object",
+                "properties": {"job_id": {"type": "string", "description": "Job ID to cancel"}},
+                "required": ["job_id"],
+            },
+        ),
+        # ── Backtest strategy tools ──
+        Tool(
+            name="run_strategy_backtest",
+            description="Compare multiple strategies on the same universe, aligned with POST /api/backtest/strategy.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "string", "description": "Comma-separated stock symbols"},
+                    "start_date": {"type": "string", "description": "Start date YYYYMMDD"},
+                    "end_date": {"type": "string", "description": "End date YYYYMMDD"},
+                    "strategies": {"type": "array", "items": {"type": "string"}, "default": ["equal_weight", "momentum", "mean_reversion", "top_k_ranking"]},
+                    "top_k": {"type": "integer", "default": 3},
+                    "window_size": {"type": "integer", "default": 60},
+                    "step": {"type": "integer", "default": 5},
+                },
+                "required": ["symbols", "start_date", "end_date"],
+            },
+        ),
+        Tool(
+            name="run_strategy_scan",
+            description="Grid-scan parameters for a single strategy, aligned with POST /api/backtest/strategy/scan.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "symbols": {"type": "string", "description": "Comma-separated stock symbols"},
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                    "strategy": {"type": "string", "default": "momentum"},
+                    "top_k_values": {"type": "array", "items": {"type": "integer"}, "default": [1, 2, 3]},
+                    "step_values": {"type": "array", "items": {"type": "integer"}, "default": [5, 10, 20]},
+                },
+                "required": ["symbols", "start_date", "end_date"],
+            },
+        ),
     ]
 
 
@@ -550,6 +701,34 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return await _handle_watchlist_research(arguments)
         elif name == "health_check":
             return _handle_health_check(arguments)
+        # ── Analysis tools ──
+        elif name == "analyze_dcf":
+            return await _handle_analyze_dcf(arguments)
+        elif name == "analyze_risk":
+            return await _handle_analyze_risk(arguments)
+        elif name == "analyze_portfolio":
+            return await _handle_analyze_portfolio(arguments)
+        elif name == "analyze_derivative":
+            return await _handle_analyze_derivative(arguments)
+        elif name == "analyze_ai":
+            return await _handle_analyze_ai(arguments)
+        # ── Alert tools ──
+        elif name == "list_alert_rules":
+            return await _handle_list_alert_rules(arguments)
+        elif name == "delete_alert_rule":
+            return await _handle_delete_alert_rule(arguments)
+        elif name == "check_alert_rules":
+            return await _handle_check_alert_rules(arguments)
+        # ── Jobs tools ──
+        elif name == "list_jobs":
+            return await _handle_list_jobs(arguments)
+        elif name == "cancel_job":
+            return await _handle_cancel_job(arguments)
+        # ── Backtest strategy tools ──
+        elif name == "run_strategy_backtest":
+            return await _handle_run_strategy_backtest(arguments)
+        elif name == "run_strategy_scan":
+            return await _handle_run_strategy_scan(arguments)
         else:
             return _json_text({"ok": False, "error": f"Unknown tool: {name}"})
     except Exception as e:
@@ -995,6 +1174,151 @@ def _handle_health_check(args: dict[str, Any]) -> list[TextContent]:
         "capabilities": model_info["capabilities"],
         "model_error": model_info["model_error"],
     })
+
+
+# ---------------------------------------------------------------------------
+# New tool handlers (analysis, alerts, jobs, backtest strategy)
+# ---------------------------------------------------------------------------
+
+async def _handle_analyze_dcf(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.analyze import DCFRequest, analyze_dcf
+    req = DCFRequest(
+        symbol=args["symbol"],
+        shares_outstanding=args.get("shares_outstanding", 1_000_000_000),
+        beta=args.get("beta", 1.0),
+        debt_value=args.get("debt_value", 0.0),
+        cash_value=args.get("cash_value", 0.0),
+        tax_rate=args.get("tax_rate", 0.25),
+    )
+    return _json_text(_model_to_dict(await analyze_dcf(req)))
+
+
+async def _handle_analyze_risk(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.analyze import RiskRequest, analyze_risk
+    req = RiskRequest(
+        symbol=args["symbol"],
+        market_symbol=args.get("market_symbol", "000300"),
+        days=args.get("days", 252),
+    )
+    return _json_text(_model_to_dict(await analyze_risk(req)))
+
+
+async def _handle_analyze_portfolio(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.analyze import PortfolioRequest, analyze_portfolio
+    req = PortfolioRequest(
+        symbols=args["symbols"],
+        method=args.get("method", "max_sharpe"),
+        risk_free_rate=args.get("risk_free_rate", 0.03),
+        days=args.get("days", 252),
+    )
+    return _json_text(_model_to_dict(await analyze_portfolio(req)))
+
+
+async def _handle_analyze_derivative(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.analyze import DerivativeRequest, analyze_derivative
+    req = DerivativeRequest(
+        underlying_price=args["underlying_price"],
+        strike_price=args["strike_price"],
+        time_to_expiration=args["time_to_expiration"],
+        volatility=args["volatility"],
+        risk_free_rate=args.get("risk_free_rate", 0.03),
+        option_type=args.get("option_type", "call"),
+    )
+    return _json_text(_model_to_dict(await analyze_derivative(req)))
+
+
+async def _handle_analyze_ai(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.ai_analyze import AIAnalyzeRequest, ai_analyze
+    req = AIAnalyzeRequest(
+        symbol=args["symbol"],
+        market=args.get("market", "cn"),
+    )
+    return _json_text(_model_to_dict(await ai_analyze(req)))
+
+
+async def _handle_list_alert_rules(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.alert import list_alert_rules
+    result = await list_alert_rules()
+    return _json_text(_model_to_dict(result))
+
+
+async def _handle_delete_alert_rule(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.alert import delete_alert_rule
+    try:
+        result = await delete_alert_rule(args["rule_id"])
+        return _json_text(_model_to_dict(result))
+    except Exception as e:
+        return _json_text({"ok": False, "error": str(e)})
+
+
+async def _handle_check_alert_rules(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.alert import check_alert_rules, AlertCheckIn
+    req = AlertCheckIn(rule_id=args.get("rule_id")) if args.get("rule_id") else None
+    try:
+        result = await check_alert_rules(req)
+        return _json_text(_model_to_dict(result))
+    except Exception as e:
+        return _json_text({"ok": False, "error": str(e)})
+
+
+async def _handle_list_jobs(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.jobs import list_jobs
+    result = await list_jobs(
+        limit=args.get("limit", 50),
+        status=args.get("status"),
+        kind=args.get("kind"),
+    )
+    return _json_text(_model_to_dict(result))
+
+
+async def _handle_cancel_job(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.jobs import cancel_job
+    try:
+        result = await cancel_job(args["job_id"])
+        return _json_text(_model_to_dict(result))
+    except Exception as e:
+        return _json_text({"ok": False, "error": str(e)})
+
+
+async def _handle_run_strategy_backtest(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.backtest import StrategyBacktestRequestIn, backtest_strategy
+    symbols = [s.strip() for s in args["symbols"].split(",") if s.strip()]
+    req = StrategyBacktestRequestIn(
+        symbols=symbols,
+        start_date=args["start_date"],
+        end_date=args["end_date"],
+        strategies=args.get("strategies", ["equal_weight", "momentum", "mean_reversion", "top_k_ranking"]),
+        top_k=args.get("top_k", 3),
+        window_size=args.get("window_size", 60),
+        step=args.get("step", 5),
+    )
+    return _json_text(_model_to_dict(await backtest_strategy(req)))
+
+
+async def _handle_run_strategy_scan(args: dict[str, Any]) -> list[TextContent]:
+    _ensure_src_path()
+    from kronos_fincept.api.routes.backtest import StrategyScanRequestIn, backtest_strategy_scan
+    symbols = [s.strip() for s in args["symbols"].split(",") if s.strip()]
+    req = StrategyScanRequestIn(
+        symbols=symbols,
+        start_date=args["start_date"],
+        end_date=args["end_date"],
+        strategy=args.get("strategy", "momentum"),
+        top_k_values=args.get("top_k_values", [1, 2, 3]),
+        step_values=args.get("step_values", [5, 10, 20]),
+    )
+    return _json_text(_model_to_dict(await backtest_strategy_scan(req)))
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,8 @@ COMMANDS = {
     "health": ("kronos_fincept.cli.commands.health", "health_cmd"),
     "suggestions": ("kronos_fincept.cli.commands.suggestions", "suggestions_cmd"),
     "model": ("kronos_fincept.cli.commands.model", "model_group"),
+    "watchlist": ("kronos_fincept.cli.commands.watchlist", "watchlist_group"),
+    "jobs": ("kronos_fincept.cli.commands.jobs", "jobs_group"),
 }
 
 
