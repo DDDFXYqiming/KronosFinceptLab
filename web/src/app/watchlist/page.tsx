@@ -204,7 +204,7 @@ export default function WatchlistPage() {
         }),
         queryClient.fetchQuery({
           queryKey: indicatorKey,
-          queryFn: ({ signal }) => api.getIndicators(item.symbol, item.market, { signal }),
+          queryFn: ({ signal }) => api.getIndicators(item.symbol, item.market, undefined, undefined, { signal }),
         }).catch(() => null),
       ]) as [DataResponse, IndicatorResponse | null];
       const rows = data.rows || [];
