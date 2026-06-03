@@ -293,14 +293,14 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="calculate_indicators",
-            description="Calculate technical indicators for a stock, aligned with GET /api/data/indicator/{symbol}.",
+            description="Calculate technical indicators for a stock (RSI, KDJ, CCI, MACD, Bollinger, SMA, EMA, ATR, OBV), aligned with GET /api/data/indicator/{symbol}.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "symbol": {"type": "string"},
                     "market": {"type": "string", "default": "cn"},
-                    "start_date": {"type": "string", "default": "20250101"},
-                    "end_date": {"type": "string", "default": "20260430"},
+                    "start_date": {"type": "string", "description": "Start date YYYYMMDD (default: 1 year ago)"},
+                    "end_date": {"type": "string", "description": "End date YYYYMMDD (default: today)"},
                 },
                 "required": ["symbol"],
             },
@@ -664,22 +664,47 @@ def _handle_calculate_indicators(args: dict[str, Any]) -> list[TextContent]:
 
     symbol = args["symbol"]
     market = args.get("market", "cn")
-    start_date = args.get("start_date", "20250101")
-    end_date = args.get("end_date", "20260430")
+    # Default dates: last 1 year if not specified
+    start_date = args.get("start_date", "")
+    end_date = args.get("end_date", "")
+    if not start_date or not end_date:
+        from datetime import datetime, timedelta
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=365)
+        start_date = start_date or start_dt.strftime("%Y%m%d")
+        end_date = end_date or end_dt.strftime("%Y%m%d")
     rows = _fetch_market_rows(symbol, market, start_date, end_date, "qfq")
     if len(rows) < 30:
         raise ValueError(f"Insufficient data for indicators: {len(rows)} rows")
     closes = [row["close"] for row in rows]
     highs = [row["high"] for row in rows]
     lows = [row["low"] for row in rows]
-    volumes = [row.get("volume", 0) for row in rows]
-    indicators = TechnicalIndicators().calculate_all_indicators(closes, highs, lows, volumes)
+    ti = TechnicalIndicators()
+    indicators = ti.calculate_all_indicators(closes, highs, lows, volumes)
+    # Serialize including @property values
+    ind_result = {}
+    for name, obj in indicators.items():
+        if hasattr(obj, "__dict__"):
+            row_d = {k: round(float(v), 4) if isinstance(v, (int, float)) else v
+                     for k, v in obj.__dict__.items()}
+            for attr in dir(obj):
+                if attr.startswith("_") or attr in row_d:
+                    continue
+                try:
+                    val = getattr(obj, attr)
+                    if not callable(val) and isinstance(val, (int, float)):
+                        row_d[attr] = round(float(val), 4)
+                except Exception:
+                    pass
+            ind_result[name] = row_d
+        else:
+            ind_result[name] = str(obj)
     return _json_text({
         "ok": True,
         "symbol": symbol,
         "market": market,
         "current_price": rows[-1]["close"],
-        "indicators": {name: obj.__dict__ if hasattr(obj, "__dict__") else obj for name, obj in indicators.items()},
+        "indicators": ind_result,
         "data_points": len(rows),
     })
 

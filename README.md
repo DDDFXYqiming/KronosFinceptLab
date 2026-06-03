@@ -12,7 +12,7 @@ An integrated quantitative finance analytics platform combining **market data, A
 |------------|-------------|
 | Market Data | OHLCV, search, A-share money flow, sector flow, Stock Connect flow, market-review cache artifacts, HK/US/crypto/commodity data, and auto-fallback providers |
 | AI K-line Forecasting | Future K-line prediction powered by the Kronos foundation model, supporting single-asset, batch, probabilistic sampling, and async jobs |
-| Technical Analysis | SMA, EMA, RSI, MACD, Bollinger, KDJ, ATR, OBV and other common indicators |
+| Technical Analysis | SMA, EMA, RSI, MACD, Bollinger, KDJ, CCI, ATR, OBV and other common indicators |
 | AI Investment Advisor | Natural-language stock Q&A, investment analysis reports, risk assessment, DCF, portfolio optimization, derivatives pricing, and conversational context |
 | Macroeconomic Signals | Digital Oracle style aggregation of 17+ signal types plus China macro, source-project macro cache, optional FRED, NBS live, ChinaDataLive, and web-enriched research |
 | Strategy Backtest | Multi-symbol ranking backtest with HTML report generation |

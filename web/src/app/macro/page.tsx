@@ -575,7 +575,7 @@ function MacroContent() {
   });
   const displayLoading = loading || activeRunFetching > 0 || Boolean(activeRun && !error);
 
-  // Fetch LLM-generated suggestions (cached 8h in sessionStorage)
+  // Fetch LLM-generated suggestions (cached 2h in sessionStorage)
   useEffect(() => {
     setExamples(fallbackMacroExamples(language));
     // Legacy cache key prefix retained for tests and migration: "kronos-macro-suggestions"
