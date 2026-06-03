@@ -104,6 +104,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Override Node.js entrypoint to prevent it from interpreting .sh files
+ENTRYPOINT []
+
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/app/src \
     NEXT_TELEMETRY_DISABLED=1 \
@@ -152,4 +155,4 @@ RUN chmod +x scripts/zeabur_start.sh && \
 
 EXPOSE 3000
 
-CMD ["./scripts/zeabur_start.sh"]
+CMD ["/bin/sh", "./scripts/zeabur_start.sh"]
