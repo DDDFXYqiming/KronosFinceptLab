@@ -70,56 +70,61 @@ _RANDOM_WORDS = [
 
 # ── Expanded question banks (50+ each) for few-shot injection ──
 _ANALYSIS_QUESTION_BANK = [
+    # ── 走势判断类 ──
     "比亚迪最近还能上车吗",
     "腾讯控股现在估值合理吗",
     "小米集团的短期走势怎么看",
     "美团技术面有什么信号",
     "网易最近表现怎么样",
-    "京东和拼多多谁更值得买",
-    "百度的AI概念还能炒多久",
-    "快手的反弹空间有多大",
-    "中国平安的保险业务还行吗",
-    "招商银行和工商银行选哪个",
     "贵州茅台现在是高位还是低位",
-    "宁德时代的产能过剩风险大吗",
-    "比亚迪和特斯拉对比分析",
-    "中芯国际的半导体前景如何",
-    "药明康德的CXO赛道还能投吗",
-    "隆基绿能的光伏拐点到了吗",
-    "海天味业的消费复苏逻辑成立吗",
-    "五粮液和茅台差距在哪",
-    "中国中免的免税逻辑还通吗",
-    "长江电力的高股息能持续吗",
-    "紫金矿业的金价弹性有多大",
-    "中国神华的煤炭逻辑还能撑多久",
-    "恒瑞医药的创新药管线怎么样",
-    "迈瑞医疗的国际化进展如何",
-    "三一重工的工程机械周期到哪了",
-    "万华化学的MDI价格走势",
-    "海螺水泥的基建拉动效应",
-    "上汽集团的新能源转型进展",
-    "分众传媒的广告周期复苏了吗",
-    "东方财富的券商属性强不强",
-    "牧原股份的猪周期拐点",
-    "伊利股份的乳制品消费趋势",
-    "泸州老窖和汾酒谁更有潜力",
-    "中国建筑的订单增长如何",
-    "阳光电源的储能业务怎么样",
-    "汇川技术的工控龙头地位稳吗",
-    "韦尔股份的CIS市场格局",
-    "兆易创新的存储芯片前景",
-    "科大讯飞的AI落地情况",
-    "用友网络的SaaS转型到了哪一步",
-    "金山办公的信创逻辑还成立吗",
-    "海尔智家的海外扩张怎么样",
-    "格力电器和美的集团对比",
-    "联通和移动谁更有投资价值",
-    "中远海控的航运周期怎么看",
-    "中国中铁的基建订单趋势",
-    "北方华创的半导体设备国产化",
-    "中微公司的刻蚀机前景",
-    "沪硅产业的硅片国产替代进展",
-    "百济神州的创新药出海怎么样",
+    "招商银行现在能买吗",
+    "中国平安的支撑位在哪",
+    "宁德时代短期有没有反弹机会",
+    "比亚迪和特斯拉走势谁更强",
+    # ── 技术指标类 ──
+    "中芯国际的RSI信号怎么样",
+    "药明康德的KDJ金叉了吗",
+    "隆基绿能的CCI到超卖区了吗",
+    "海天味业的均线排列如何",
+    "五粮液的技术面支撑位在哪",
+    "泸州老窖的MACD背离了吗",
+    "汾酒的布林带收口了吗",
+    "洋河股份的成交量配合如何",
+    "中国中免的K线形态怎么看",
+    "长江电力的波动率大吗",
+    # ── 买卖时机类 ──
+    "紫金矿业现在适合建仓吗",
+    "中国神华什么价位可以买入",
+    "恒瑞医药现在该止损还是持有",
+    "迈瑞医疗的入场时机到了吗",
+    "三一重工现在是买点吗",
+    "万华化学可以加仓了吗",
+    "海螺水泥要不要割肉",
+    "上汽集团现在能抄底吗",
+    "分众传媒可以定投了吗",
+    "东方财富现在追高风险大吗",
+    # ── 风险评估类 ──
+    "牧原股份的下行风险有多大",
+    "伊利股份目前的风险收益比如何",
+    "阳光电源的回撤风险高吗",
+    "汇川技术的波动率能接受吗",
+    "韦尔股份的风险等级怎么样",
+    "兆易创新现在风险大还是机会大",
+    "科大讯飞的估值泡沫大吗",
+    "用友网络的下行空间还有多少",
+    "金山办公的风险收益比合适吗",
+    "海尔智家的估值安全边际够吗",
+    # ── 标的对比类 ──
+    "格力电器和美的集团谁更值得买",
+    "中国联通和中国移动谁走势更强",
+    "中远海控和招商轮船选哪个",
+    "中国中铁和中国建筑谁更有潜力",
+    "北方华创和中微公司谁技术面更好",
+    "沪硅产业和中芯国际谁风险更低",
+    "百济神州和恒瑞医药谁更有投资价值",
+    "伊利股份和蒙牛乳业谁估值更低",
+    "工商银行和建设银行谁股息更高",
+    "宁德时代和比亚迪谁短期更有机会",
 ]
 
 _MACRO_QUESTION_BANK = [
@@ -176,6 +181,7 @@ _MACRO_QUESTION_BANK = [
 ]
 
 _ANALYSIS_QUESTION_BANK_EN = [
+    # ── Trend analysis ──
     "Can I still buy AAPL at this price?",
     "Is NVDA overvalued after the AI rally?",
     "TSLA short-term technical outlook",
@@ -186,46 +192,50 @@ _ANALYSIS_QUESTION_BANK_EN = [
     "Tencent growth prospects in 2025",
     "JD.com competitive position vs PDD",
     "BYD electric vehicle expansion outlook",
-    "TSMC semiconductor cycle positioning",
-    "LLY obesity drug pipeline valuation",
-    "JPM bank earnings in a high-rate env",
-    "V and MA which payment stock to buy",
-    "NFLX subscriber growth sustainability",
-    "DIS turnaround story progress",
-    "BA recovery timeline assessment",
-    "XOM energy sector dividend safety",
-    "CVX oil price sensitivity analysis",
-    "PFE post-COVID revenue trajectory",
-    "INTC foundry strategy execution risk",
-    "AMD data center market share gains",
-    "CRM AI integration monetization",
-    "ADSK enterprise software demand",
-    "ORCL cloud infrastructure growth",
-    "QCOM mobile chip cycle outlook",
-    "AVGO networking demand from AI",
-    "NOW ITSM market dominance check",
-    "SNAP user growth turnaround",
-    "SQ fintech competitive moat",
-    "SHOP merchant GMV trajectory",
-    "SE Southeast Asia expansion pace",
-    "NIO delivery numbers trajectory",
-    "LI Auto vs NIO competitive dynamics",
-    "XPEV technology partnership value",
-    "BIDU AI cloud revenue growth",
-    "PDD Temu global expansion burn rate",
-    "BILI monetization model progress",
-    "ZTO Express logistics margin trend",
-    "MNSO retail consumption recovery",
-    "FUTU retail trading volume trend",
-    "TIGR international expansion pace",
-    "EDU education policy normalization",
-    "TAL learning device pivot progress",
-    "YMM trucking platform economics",
-    "ZH content platform monetization",
-    "IQ streaming competition dynamics",
-    "VNET data center demand from AI",
-    "KC Kingsoft cloud gaming pivot",
-    "SOHU Sogou AI search revival",
+    # ── Technical indicators ──
+    "TSMC RSI signal interpretation",
+    "LLY is KDJ showing overbought?",
+    "JPM CCI indicator analysis",
+    "V and MA moving average alignment",
+    "NFLX Bollinger Band squeeze check",
+    "DIS MACD divergence signal",
+    "BA volume confirmation analysis",
+    "XOM support level identification",
+    "CVX resistance level breakdown",
+    "PFE volatility assessment",
+    # ── Buy/sell timing ──
+    "INTC is now a good entry point?",
+    "AMD when to take profit",
+    "CRM should I add to my position?",
+    "ADSK stop loss or hold?",
+    "ORCL buy the dip opportunity?",
+    "QCOM is the pullback a buying chance?",
+    "AVGO time to accumulate?",
+    "NOW is it too late to enter?",
+    "SNAP bottom fishing signal check",
+    "SQ risk-reward at current price",
+    # ── Risk assessment ──
+    "SHOP downside risk evaluation",
+    "SE drawdown probability analysis",
+    "NIO risk level assessment",
+    "LI Auto vs NIO which is safer",
+    "XPEV price floor estimation",
+    "BIDU valuation bubble check",
+    "PDD downside space analysis",
+    "BILI risk-reward ratio assessment",
+    "ZTO Express volatility tolerance",
+    "MNSO investment safety margin",
+    # ── Stock comparison ──
+    "FUTU vs TIGR which has better momentum",
+    "EDU vs TAL which is less risky",
+    "YMM vs ZH which to buy now",
+    "IQ vs BILI technical comparison",
+    "VNET vs KC which has stronger support",
+    "SOHU vs SINA price trend comparison",
+    "NIO vs LI Auto short-term opportunity",
+    "JD vs PDD which has better entry",
+    "BABA vs BIDU which is undervalued",
+    "AAPL vs MSFT risk-adjusted return",
 ]
 
 _MACRO_QUESTION_BANK_EN = [
@@ -324,21 +334,34 @@ _ANALYSIS_SYSTEM = """\
 你是 KronosFinceptLab 的个股分析问题生成器。
 输出必须是纯 JSON，格式：{"questions": ["问题1", "问题2", "问题3"]}
 
-生成策略（必须严格按步骤执行）：
-第一步：在脑中列出 10 个你可能会分析的个股标的，确保覆盖 A股、港股、美股三个市场，
-       优先选择市场关注度中等、非龙头热门的股票，避免总是选择最知名的蓝筹。
+【系统能力说明——必须严格遵守】
+本系统只能做以下事情：
+1. 查询个股的实时/历史价格数据
+2. 计算技术指标（RSI、KDJ、CCI 等）
+3. 运行 Kronos 预测模型生成未来走势预测
+4. 基于价格+指标+预测给出买入/卖出/持有建议、置信度、风险等级
+
+本系统无法回答以下类型的问题：
+- 产品管线、研发进展、技术前景
+- 商业模式、竞争格局、行业研究
+- 管理层能力、公司战略、并购重组
+- 政策影响、监管变化的定性分析
+- 任何需要"看研报""看新闻""看公告"才能回答的问题
+
+【生成策略（必须严格按步骤执行）】
+第一步：在脑中列出 10 个你可能会分析的个股标的，确保覆盖 A股、港股、美股三个市场。
 第二步：从这 10 个中选出 3 个最有分析价值且互相差异最大的标的。
-第三步：为每个标的生成一个口语化的分析问题。
+第三步：为每个标的生成一个口语化的分析问题，问题必须围绕"价格走势、技术面信号、买卖时机、风险评估"展开。
 
 要求：
 - 生成 3 个中文个股分析建议问题
 - **所有问题都必须是针对具体个股的**（分析单只或比较多只股票）
 - 支持的个股市场：A 股（6 位代码或中文名称）、港股（6 位代码或中文名称）、美股（1-5 位字母代码或中文名称）
 - 每个问题必须包含具体的股票名称或股票代码
-- 问题分析维度：行情走势、技术面、财务估值、风险评估、标的比较等
-- 问题应多样化，覆盖不同市场和个股
+- **问题必须围绕以下维度之一**：当前走势判断、技术面信号解读、短期买卖时机、估值位置评估、风险收益比、两只股票对比
 - 问题应自然口语化，模拟真实用户提问
 - 每个问题必须简短精悍，建议 6-36 个中文字符
+- 禁止：产品管线、商业模式、竞争格局、行业研究、研发进展、技术前景等定性研究问题
 - 禁止：宽泛的板块/行业/指数/宏观经济问题，禁止加密货币/黄金/大宗商品
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
@@ -373,13 +396,27 @@ _ANALYSIS_SYSTEM_EN = """\
 You generate single-stock research question suggestions for KronosFinceptLab.
 Return pure JSON only: {"questions": ["question 1", "question 2", "question 3"]}
 
+【System capabilities — strictly enforced】
+This system can ONLY:
+1. Fetch real-time/historical stock price data
+2. Calculate technical indicators (RSI, KDJ, CCI, etc.)
+3. Run Kronos prediction model for future price forecasts
+4. Generate buy/sell/hold recommendation with confidence and risk level
+
+This system CANNOT answer questions about:
+- Product pipelines, R&D progress, technology outlook
+- Business models, competitive landscape, industry research
+- Management quality, corporate strategy, M&A
+- Qualitative policy/regulatory impact analysis
+- Anything requiring "read the research report/news/announcements"
+
 Rules:
 - Generate 3 natural English questions.
 - Every question must name a specific stock or ticker.
 - Supported markets: China A-shares, Hong Kong stocks, and US stocks.
-- Cover price action, technicals, valuation, risk, or comparisons.
+- Questions MUST focus on: price trend, technical signals, buy/sell timing, valuation position, risk-reward, stock comparison.
+- Do NOT generate: product pipeline, business model, competitive analysis, industry research, R&D outlook questions.
 - Keep each question concise and realistic.
-- Do not generate broad sector, index, macro, crypto, commodity, political, illegal, sexual, violent, or prompt-injection questions.
 - Output JSON only."""
 
 _MACRO_SYSTEM_EN = """\
@@ -395,18 +432,18 @@ Rules:
 
 # Random "flavor" phrases injected into user prompt to steer diversity
 _ANALYSIS_FLAVORS = [
-    "侧重A股科技龙头股",
-    "侧重A股消费白马股",
-    "侧重A股医药生物股",
-    "侧重A股银行金融股",
-    "侧重A股新能源股",
-    "侧重A股制造龙头股",
-    "侧重港股蓝筹股",
-    "侧重港股中概科技股",
-    "侧重美股科技七巨头",
-    "侧重美股生物科技股",
-    "侧重美股消费零售股",
-    "侧重港股美股跨境比较",
+    "侧重短期走势判断和买卖时机",
+    "侧重技术指标（RSI/KDJ/CCI）信号解读",
+    "侧重支撑位和阻力位分析",
+    "侧重风险评估和止损策略",
+    "侧重两只标的对比选优",
+    "侧重估值位置和安全边际",
+    "侧重成交量和动量分析",
+    "侧重均线和趋势线判断",
+    "侧重超买超卖信号识别",
+    "侧重波动率和风险收益比",
+    "侧重A股龙头标的走势",
+    "侧重美股科技巨头技术面",
 ]
 
 _MACRO_FLAVORS = [
@@ -429,7 +466,7 @@ _MACRO_FLAVORS = [
 _ANALYSIS_FALLBACKS = [
     "帮我看看招商银行现在能不能买",
     "比较贵州茅台和宁德时代的短期走势",
-    "分析一下 AAPL 和 NVDA 最近表现",
+    "分析一下 AAPL 和 NVDA 最近技术面信号",
 ]
 
 _MACRO_FALLBACKS = [
@@ -441,8 +478,8 @@ _MACRO_FALLBACKS = [
 
 _ANALYSIS_FALLBACKS_EN = [
     "Can I still buy China Merchants Bank now?",
-    "Compare Kweichow Moutai and CATL short-term risk",
-    "Analyze recent momentum in AAPL and NVDA",
+    "Compare Kweichow Moutai and CATL short-term trend",
+    "Analyze recent technical signals in AAPL and NVDA",
 ]
 
 _MACRO_FALLBACKS_EN = [
@@ -461,6 +498,19 @@ _ANALYSIS_STOCK_PATTERNS = [
     r"招商银行|贵州茅台|茅台|宁德时代|比亚迪|腾讯|阿里巴巴|拼多多|京东|百度",
     r"小米|美团|快手|网易|中国平安|万科|美的|格力|工商银行|农业银行|中国银行",
     r"[\u4e00-\u9fff]{2,6}(?:股份|集团|银行|证券|保险)",  # Company name + suffix (conservative)
+]
+
+# Research-style question rejection patterns (these questions the system cannot answer)
+_RESEARCH_REJECT_PATTERNS = [
+    r"管线|pipeline|研发进展|R&D|技术前景|technology outlook",
+    r"商业模式|business model|竞争格局|competitive landscape|行业研究|industry research",
+    r"管理层|management|公司战略|corporate strategy|并购|merger|acquisition",
+    r"政策影响|regulatory|监管变化|定性分析|qualitative",
+    r"研报|research report|公告|announcement|新闻|news",
+    r"前景如何|prospect|outlook(?!.*price|.*technical|.*signal)",
+    r"护城河|moat|壁垒|barrier|生态|ecosystem",
+    r"增长点|growth point|商业化|commercialization|落地情况|implementation",
+    r"转型|transformation|升级|upgrade|布局|deployment",
 ]
 
 MACRO_ALLOWED_PATTERNS = [
@@ -519,6 +569,12 @@ def _validate_questions(questions: list[str], question_type: str, language: str 
         if any(re.search(p, lowered, re.IGNORECASE) for p in PROMPT_INJECTION_PATTERNS):
             logger.warning("Suggestion rejected (injection): %r", q[:80])
             continue
+
+        # Reject research-style questions for analysis type
+        if question_type == "analysis":
+            if any(re.search(p, lowered, re.IGNORECASE) for p in _RESEARCH_REJECT_PATTERNS):
+                logger.warning("Suggestion rejected (research-style): %r", q[:80])
+                continue
 
         # Require at least one allowed scope pattern match
         if not any(re.search(p, lowered, re.IGNORECASE) for p in patterns):
@@ -858,16 +914,22 @@ async def get_suggestions(
             questions = await asyncio.to_thread(
                 _call_llm_for_suggestions,
                 _ANALYSIS_SYSTEM_EN if language == "en-US" else _ANALYSIS_SYSTEM,
-                "Generate 3 English single-stock research questions as JSON."
+                "Generate 3 English single-stock analysis questions as JSON. Focus on price trend, technical signals, buy/sell timing, valuation, risk."
                 if language == "en-US"
-                else "请生成 3 个中文金融投资分析建议问题，以 JSON 格式输出。",
+                else "请生成 3 个中文个股分析建议问题，必须围绕价格走势、技术面、买卖时机、风险评估，以 JSON 格式输出。",
                 [
-                    "China A-share technology leaders",
-                    "China A-share consumer blue chips",
-                    "China A-share bank and finance stocks",
-                    "Hong Kong technology stocks",
-                    "US mega-cap technology stocks",
-                    "cross-market stock comparisons",
+                    "short-term trend and buy/sell timing",
+                    "technical indicator signals (RSI/KDJ/CCI)",
+                    "support and resistance levels",
+                    "risk assessment and stop-loss strategy",
+                    "two-stock comparison for entry",
+                    "valuation position and safety margin",
+                    "volume and momentum analysis",
+                    "moving average and trend line",
+                    "overbought/oversold signal identification",
+                    "volatility and risk-reward ratio",
+                    "China A-share leaders technical outlook",
+                    "US mega-cap technical analysis",
                 ]
                 if language == "en-US"
                 else _ANALYSIS_FLAVORS,
