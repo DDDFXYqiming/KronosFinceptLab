@@ -277,3 +277,183 @@ def open_report(filepath: str) -> None:
             subprocess.run(["xdg-open", abs_path], check=False)
         except FileNotFoundError:
             click.echo(f"Report ready at: {abs_path}")
+
+
+@backtest_group.command("strategy")
+@click.option("--symbols", "-s", type=str, required=True,
+              help="Comma-separated stock symbols")
+@click.option("--start", type=str, required=True, help="Start date YYYYMMDD")
+@click.option("--end", type=str, required=True, help="End date YYYYMMDD")
+@click.option("--strategies", type=str, default=None,
+              help="Comma-separated strategies: equal_weight,momentum,mean_reversion,top_k_ranking")
+@click.option("--top-k", type=int, default=3, help="Top K stocks to hold")
+@click.option("--pred-len", type=int, default=5, help="Prediction length")
+@click.option("--window-size", type=int, default=60, help="Lookback window size")
+@click.option("--step", type=int, default=5, help="Rebalance step (trading days)")
+@click.option("--initial-equity", type=float, default=100000.0, help="Initial portfolio equity")
+@click.option("--fee-bps", type=float, default=0.0, help="One-way trading fee in basis points")
+@click.option("--slippage-bps", type=float, default=0.0, help="One-way slippage in basis points")
+@click.option("--dry-run", is_flag=True, default=True, help="Use mock predictor")
+@click.pass_context
+def backtest_strategy(
+    ctx: click.Context,
+    symbols: str,
+    start: str,
+    end: str,
+    strategies: str | None,
+    top_k: int,
+    pred_len: int,
+    window_size: int,
+    step: int,
+    initial_equity: float,
+    fee_bps: float,
+    slippage_bps: float,
+    dry_run: bool,
+) -> None:
+    """Run and compare multiple portfolio strategies."""
+    import asyncio
+
+    from kronos_fincept.api.routes.backtest import StrategyBacktestRequestIn, backtest_strategy as api_backtest_strategy
+
+    output_format = ctx.obj.get("output_format", "json")
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    strategy_list = [s.strip() for s in strategies.split(",") if s.strip()] if strategies else [
+        "equal_weight", "momentum", "mean_reversion", "top_k_ranking"
+    ]
+
+    if not symbol_list:
+        click.echo("Error: --symbols cannot be empty", err=True)
+        raise SystemExit(1)
+
+    req = StrategyBacktestRequestIn(
+        symbols=symbol_list,
+        start_date=start,
+        end_date=end,
+        strategies=strategy_list,
+        top_k=top_k,
+        pred_len=pred_len,
+        window_size=window_size,
+        step=step,
+        initial_equity=initial_equity,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+        dry_run=dry_run,
+    )
+
+    try:
+        response = asyncio.run(api_backtest_strategy(req))
+        payload = response.model_dump() if hasattr(response, "model_dump") else response.dict()
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1)
+
+    if output_format == "json":
+        output_json(payload)
+    else:
+        click.echo(f"Strategy Comparison — {', '.join(payload.get('symbols', []))}")
+        click.echo(f"Best Strategy: {payload.get('best_strategy')}")
+        click.echo("")
+        for result in payload.get("results", []):
+            metrics = result.get("metrics", {})
+            click.echo(f"  [{result.get('strategy')}]")
+            click.echo(f"    Total Return:    {metrics.get('total_return', 0):.4%}")
+            click.echo(f"    Sharpe Ratio:    {metrics.get('sharpe_ratio', 0):.4f}")
+            click.echo(f"    Max Drawdown:    {metrics.get('max_drawdown', 0):.4%}")
+            click.echo(f"    Win Rate:        {metrics.get('win_rate', 0):.2%}")
+            click.echo(f"    Score:           {result.get('metadata', {}).get('score', 0):.6f}")
+            click.echo("")
+
+
+@backtest_group.command("scan")
+@click.option("--symbols", "-s", type=str, required=True,
+              help="Comma-separated stock symbols")
+@click.option("--start", type=str, required=True, help="Start date YYYYMMDD")
+@click.option("--end", type=str, required=True, help="End date YYYYMMDD")
+@click.option("--strategy", type=str, default="momentum",
+              help="Strategy to scan: equal_weight, momentum, mean_reversion, top_k_ranking")
+@click.option("--top-k-values", type=str, default="1,2,3",
+              help="Comma-separated top_k values to scan")
+@click.option("--step-values", type=str, default="5,10,20",
+              help="Comma-separated step values to scan")
+@click.option("--pred-len", type=int, default=5, help="Prediction length")
+@click.option("--window-size", type=int, default=60, help="Lookback window size")
+@click.option("--initial-equity", type=float, default=100000.0, help="Initial portfolio equity")
+@click.option("--fee-bps", type=float, default=0.0, help="One-way trading fee in basis points")
+@click.option("--slippage-bps", type=float, default=0.0, help="One-way slippage in basis points")
+@click.option("--dry-run", is_flag=True, default=True, help="Use mock predictor")
+@click.pass_context
+def backtest_scan(
+    ctx: click.Context,
+    symbols: str,
+    start: str,
+    end: str,
+    strategy: str,
+    top_k_values: str,
+    step_values: str,
+    pred_len: int,
+    window_size: int,
+    initial_equity: float,
+    fee_bps: float,
+    slippage_bps: float,
+    dry_run: bool,
+) -> None:
+    """Run parameter grid scan for a strategy."""
+    import asyncio
+
+    from kronos_fincept.api.routes.backtest import StrategyScanRequestIn, backtest_strategy_scan as api_backtest_scan
+
+    output_format = ctx.obj.get("output_format", "json")
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    top_k_list = [int(x.strip()) for x in top_k_values.split(",") if x.strip()]
+    step_list = [int(x.strip()) for x in step_values.split(",") if x.strip()]
+
+    if not symbol_list:
+        click.echo("Error: --symbols cannot be empty", err=True)
+        raise SystemExit(1)
+
+    req = StrategyScanRequestIn(
+        symbols=symbol_list,
+        start_date=start,
+        end_date=end,
+        strategy=strategy,
+        top_k_values=top_k_list,
+        step_values=step_list,
+        pred_len=pred_len,
+        window_size=window_size,
+        initial_equity=initial_equity,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+        dry_run=dry_run,
+    )
+
+    try:
+        response = asyncio.run(api_backtest_scan(req))
+        payload = response.model_dump() if hasattr(response, "model_dump") else response.dict()
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1)
+
+    if output_format == "json":
+        output_json(payload)
+    else:
+        best = payload.get("best", {})
+        click.echo(f"Parameter Scan — {strategy}")
+        click.echo(f"Best: rank={best.get('rank')}, params={best.get('params')}, score={best.get('score', 0):.6f}")
+        click.echo("")
+        rows = []
+        for row in payload.get("results", []):
+            metrics = row.get("metrics", {})
+            rows.append([
+                str(row.get("rank", "")),
+                str(row.get("params", {}).get("top_k", "")),
+                str(row.get("params", {}).get("step", "")),
+                f"{metrics.get('total_return', 0):.4%}",
+                f"{metrics.get('sharpe_ratio', 0):.4f}",
+                f"{metrics.get('max_drawdown', 0):.4%}",
+                f"{row.get('score', 0):.6f}",
+            ])
+        output_table(
+            f"Parameter Scan — {strategy}",
+            ["Rank", "Top K", "Step", "Return", "Sharpe", "MaxDD", "Score"],
+            rows,
+        )

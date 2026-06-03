@@ -27,18 +27,18 @@ An integrated quantitative finance analytics platform combining **market data, A
 |------------|-----|-----|-----|-----|
 | Dashboard | Dashboard page | `GET /api/health` | `kronos health` | `health_check` |
 | Forecasting | Forecast page | `POST /api/forecast` | `kronos forecast` | `forecast_ohlcv` |
-| Async forecast/analyze/backtest jobs | Forecast/analysis clients | `POST /api/jobs/forecast`, `/analyze`, `/batch`, `/backtest`, `GET /api/jobs/{job_id}` | API-backed | `submit_backtest_job`, `get_job_status` |
+| Async forecast/analyze/backtest jobs | Forecast/analysis clients | `POST /api/jobs/forecast`, `/analyze`, `/batch`, `/backtest`, `GET /api/jobs/{job_id}`, `POST /api/jobs/{id}/cancel` | `kronos jobs list/show/cancel` | `submit_backtest_job`, `get_job_status`, `list_jobs`, `cancel_job` |
 | Batch ranking | Batch page | `POST /api/batch` | `kronos batch` | `batch_forecast_ohlcv` |
 | Market data | Data page, Watchlist page | `GET /api/data/*` | `kronos data fetch/search/indicator/money-flow/sector-flow/hsgt-flow/source-market` | `fetch_a_stock`, `search_stocks`, `calculate_indicators`, `get_money_flow`, `get_sector_flow`, `get_hsgt_flow`, `get_source_market_artifact` |
-| Backtest | Backtest page | `POST /api/backtest/ranking`, `POST /api/backtest/report` | `kronos backtest ranking/report` | `run_ranking_backtest`, `generate_backtest_report` |
+| Backtest | Backtest page | `POST /api/backtest/ranking`, `/report`, `/strategy`, `/strategy/scan` | `kronos backtest ranking/report/strategy/scan` | `run_ranking_backtest`, `generate_backtest_report`, `run_strategy_backtest`, `run_strategy_scan` |
 | Natural-language agent analysis | Analysis page | `POST /api/v1/analyze/agent` | `kronos analyze agent` | `analyze_agent` |
-| Macro signals | Macro page | `POST /api/v1/analyze/macro` | `kronos analyze macro` | `analyze_macro` |
-| AI stock report | Analysis page | `POST /api/v1/analyze/ai` | `kronos analyze ai-analyze` | Via agent tools |
-| Valuation, risk, portfolio, derivatives | Analysis page | `POST /api/v1/analyze/dcf`, `/risk`, `/portfolio`, `/derivative` | `kronos analyze dcf/risk/portfolio/derivative` | API/CLI only |
+| Macro signals | Macro page | `POST /api/v1/analyze/macro`, `GET /api/v1/analyze/macro/providers/status` | `kronos analyze macro`, `kronos analyze providers` | `analyze_macro`, `macro_provider_status` |
+| AI stock report | Analysis page | `POST /api/v1/analyze/ai` | `kronos analyze ai-analyze` | `analyze_ai` |
+| Valuation, risk, portfolio, derivatives | Analysis page | `POST /api/v1/analyze/dcf`, `/risk`, `/portfolio`, `/derivative` | `kronos analyze dcf/risk/portfolio/derivative` | `analyze_dcf`, `analyze_risk`, `analyze_portfolio`, `analyze_derivative` |
 | Suggestions | Analysis/Macro pages | `GET /api/v1/suggestions` | `kronos suggestions` | `generate_suggestions` |
-| Alerts | Alerts page | `POST/GET/DELETE /api/alert/*` | `kronos alert add/list/remove/check/monitor` | `create_prediction_deviation_alerts` plus API-backed checks |
+| Alerts | Alerts page | `POST/GET/DELETE /api/alert/*`, `POST /api/alert/check` | `kronos alert add/list/remove/check/monitor` | `create_prediction_deviation_alerts`, `list_alert_rules`, `delete_alert_rule`, `check_alert_rules` |
 | News/RSS | News page | `POST /api/news/rss` | `kronos news rss` | `fetch_rss_news` |
-| Watchlist | Watchlist page | `GET/POST/PUT/DELETE /api/watchlist/lists`, `POST /api/watchlist/research` | API-backed | `watchlist_research` |
+| Watchlist | Watchlist page | `GET/POST/PUT/DELETE /api/watchlist/lists`, `POST /api/watchlist/research` | `kronos watchlist list/create/delete/research` | `watchlist_research`, `watchlist_list`, `watchlist_create`, `watchlist_delete` |
 | Model utilities | CLI-only | N/A | `kronos model finetune-csv` | N/A |
 | Admin security summary | Settings/admin clients | `GET /api/admin/security/summary` | API-only | API-only |
 

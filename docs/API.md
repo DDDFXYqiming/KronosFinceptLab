@@ -114,6 +114,7 @@ The batch path ranks assets by predicted return and uses shared model loading/ca
 GET /api/data/a-stock/600036?start_date=20250101&end_date=20260430&adjust=qfq
 GET /api/data/global/AAPL?market=us&start_date=20250101&end_date=20260430
 GET /api/data/indicator/600036?market=cn
+GET /api/data/indicator/600036?market=cn&start_date=20250101&end_date=20260430
 GET /api/data/search?q=China+Merchants+Bank
 GET /api/data/money-flow/600036?limit=60
 GET /api/data/sector-flow?sector_type=industry
