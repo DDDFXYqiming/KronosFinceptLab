@@ -141,7 +141,7 @@ The Web UI contains dashboard, forecast, batch, data, analysis, macro, backtest,
 | `docs/API.md` | REST endpoint inventory, auth, error format, and feature flags |
 | `docs/CLI.md` | CLI command tree and examples |
 | `docs/DEPLOYMENT.md` | Local and Docker deployment notes |
-| `START_GUIDE.md` | Quick startup instructions |
+| `docs/START_GUIDE.md` | Quick startup instructions |
 | `kronos_mcp/README.md` | MCP server tools and client configuration |
 
 ---
