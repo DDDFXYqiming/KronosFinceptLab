@@ -13,6 +13,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Mapping
 
 
 def _load_dotenv(env_path: Path | None = None) -> None:
@@ -126,51 +127,84 @@ class LLMFallbackChainConfig:
         return ordered + remaining
 
     @classmethod
-    def from_env(cls) -> "LLMFallbackChainConfig":
+    def from_env(cls, env: "Mapping[str, str] | None" = None) -> "LLMFallbackChainConfig":
         """Build fallback chain from environment variables.
 
         Supports:
           - LLM_API_KEY / LLM_BASE_URL / LLM_MODEL  (primary)
           - LLM_FALLBACK_{N}_API_KEY / BASE_URL / MODEL  (N = 1,2,3,...)
+            * LLM_FALLBACK_{N}_API_KEY is OPTIONAL: when blank, the shared
+              ``LLM_API_KEY`` is reused — same K, different base/model.
           - LLM_FALLBACK_ORDER  (comma-separated names, e.g. "primary,fallback_1")
           - LLM_ENABLE_FALLBACK_CHAIN  (0/1)
           - LLM_MAX_PROVIDER_ATTEMPTS  (default 3)
+
+        ``env`` is an optional override mapping. When supplied, reads go
+        through it instead of ``os.environ``. This makes the class
+        testable without monkeypatching global env state — important
+        because ``_load_dotenv()`` runs at import time and would
+        otherwise leak the developer-machine ``.env`` into unit tests.
         """
+        def _g(key: str, default: str = "") -> str:
+            if env is not None:
+                return env.get(key, default)
+            return _get(key, default)
+
+        def _gi(key: str, default: int = 0) -> int:
+            raw = _g(key, str(default))
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return default
+
+        def _gb(key: str, default: bool = False) -> bool:
+            return _g(key, str(default)).lower() in ("1", "true", "yes")
+
+        shared_key = _g("LLM_API_KEY")
+        shared_base = _g("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions")
+        shared_model = _g("LLM_MODEL", "gpt-4o-mini")
+
         providers: list[LLMProviderEntry] = []
 
         # Primary provider
         primary = LLMProviderEntry(
             name="primary",
-            api_key=_get("LLM_API_KEY"),
-            base_url=_get("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions"),
-            model=_get("LLM_MODEL", "gpt-4o-mini"),
+            api_key=shared_key,
+            base_url=shared_base,
+            model=shared_model,
             priority=0,
         )
         providers.append(primary)
 
-        # Fallback providers (1-9)
+        # Fallback providers (1-9). A fallback entry only requires a base URL
+        # or model to exist — the API key inherits the shared LLM_API_KEY when
+        # LLM_FALLBACK_{N}_API_KEY is blank, so users can rotate providers
+        # without rotating keys.
         for i in range(1, 10):
-            key = _get(f"LLM_FALLBACK_{i}_API_KEY")
-            if not key:
+            n_key = _g(f"LLM_FALLBACK_{i}_API_KEY")
+            n_base = _g(f"LLM_FALLBACK_{i}_BASE_URL")
+            n_model = _g(f"LLM_FALLBACK_{i}_MODEL")
+            if not (n_base or n_model):
+                # Nothing configured for this slot — skip.
                 continue
             providers.append(
                 LLMProviderEntry(
                     name=f"fallback_{i}",
-                    api_key=key,
-                    base_url=_get(f"LLM_FALLBACK_{i}_BASE_URL", "https://api.openai.com/v1/chat/completions"),
-                    model=_get(f"LLM_FALLBACK_{i}_MODEL", "gpt-4o-mini"),
+                    api_key=(n_key or shared_key),
+                    base_url=(n_base or shared_base),
+                    model=(n_model or shared_model),
                     priority=i,
                 )
             )
 
-        order_raw = _get("LLM_FALLBACK_ORDER", "")
+        order_raw = _g("LLM_FALLBACK_ORDER", "")
         order = tuple(p.strip() for p in order_raw.split(",") if p.strip()) if order_raw else ()
 
         return cls(
             providers=providers,
             order=order,
-            enabled=_get_bool("LLM_ENABLE_FALLBACK_CHAIN", False),
-            max_attempts=_get_int("LLM_MAX_PROVIDER_ATTEMPTS", 3),
+            enabled=_gb("LLM_ENABLE_FALLBACK_CHAIN", False),
+            max_attempts=_gi("LLM_MAX_PROVIDER_ATTEMPTS", 3),
         )
 
 
