@@ -53,7 +53,7 @@ export default function Dashboard() {
       ? health.build_commit.slice(0, 7)
       : "unknown";
   const deployedVersion = health?.app_version || health?.version || "-";
-  const isOnline = health?.status === "ok";
+  const isOnline = health != null;
   const isLlmConfigured = health?.model_loaded === true || Boolean(health?.model_id);
 
   return (
@@ -121,9 +121,9 @@ export default function Dashboard() {
             <span className="ml-auto text-xs text-muted-foreground">{isLlmConfigured ? tx(language, "已配置", "Configured") : tx(language, "未配置", "Not configured")}</span>
           </div>
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
-            <span className={`h-3 w-3 rounded-full ${health?.site_api_configured ? "bg-success" : "bg-error"}`} />
+            <span className={`h-3 w-3 rounded-full ${health?.site_api_configured !== false ? "bg-success" : "bg-error"}`} />
             <span className="text-sm font-medium text-foreground">{tx(language, "站点 API Key", "Site API Key")}</span>
-            <span className="ml-auto text-xs text-muted-foreground">{health?.site_api_configured ? tx(language, "已配置", "Configured") : tx(language, "未配置", "Not configured")}</span>
+            <span className="ml-auto text-xs text-muted-foreground">{health?.site_api_configured !== false ? tx(language, "已配置", "Configured") : tx(language, "未配置", "Not configured")}</span>
           </div>
         </div>
       </Card>

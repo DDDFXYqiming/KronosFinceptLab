@@ -14,7 +14,7 @@ from fastapi import Request
 from kronos_fincept.security_utils import env_bool, env_int, split_env_list
 
 
-PUBLIC_PATHS = {"/api/health", "/api/health/"}
+PUBLIC_PATHS = {"/api/health", "/api/health/", "/api/health/deep", "/api/health/deep/"}
 AUTH_HEADER = "authorization"
 API_KEY_HEADER = "x-kronos-api-key"
 INTERNAL_KEY_HEADER = "x-kronos-internal-key"

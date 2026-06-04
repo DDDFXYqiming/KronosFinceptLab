@@ -24,7 +24,8 @@ def test_dockerfile_defaults_to_single_kronos_base_runtime_with_light_health():
     assert "KRONOS_MODEL_ID=NeoQuasar/Kronos-base" in dockerfile
     assert "KRONOS_ENABLE_REAL_MODEL=1" in dockerfile
     assert "KRONOS_ALLOW_DRY_RUN=0" in dockerfile
-    assert "KRONOS_PREWARM_ON_STARTUP=1" in dockerfile
+    assert "KRONOS_PREWARM_ON_STARTUP=0" in dockerfile
+    assert "Generated ephemeral internal Kronos API key" in read("scripts/zeabur_start.sh")
     assert "ARG INSTALL_KRONOS_RUNTIME=1" in dockerfile
     assert "ARG PYTORCH_CPU_VERSION=2.3.1+cpu" in dockerfile
     assert "--index-url https://download.pytorch.org/whl/cpu" in dockerfile

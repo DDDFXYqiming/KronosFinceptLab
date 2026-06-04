@@ -36,7 +36,7 @@ function maxBodyBytes(): number {
 }
 
 function isPublicPath(path: string[] | undefined): boolean {
-  return (path || []).join("/") === "health";
+  return ["health", "health/deep"].includes((path || []).join("/"));
 }
 
 function requiresAdmin(path: string[] | undefined): boolean {

@@ -66,6 +66,7 @@ def test_security_keeps_health_public_and_docs_closed(monkeypatch):
     client = _secure_client(monkeypatch)
 
     assert client.get("/api/health").status_code == 200
+    assert client.get("/api/health/deep").status_code == 200
     assert client.get("/docs").status_code == 404
     assert client.get("/redoc").status_code == 404
     assert client.get("/openapi.json").status_code == 404

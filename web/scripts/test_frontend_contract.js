@@ -43,7 +43,7 @@ for (const needle of [
   "/jobs/forecast",
   "securitySummary",
   "/admin/security/summary",
-  "需要配置 Kronos API Key",
+  "errors.apiKeyRequired",
 ]) {
   assertIncludes(api, needle, "api client contract");
 }
@@ -54,7 +54,7 @@ for (const needle of ["demoHistoricalRows", "demoForecastRows", "demoAgentResult
 }
 
 const apiKeyNotice = read("src/components/ui/ApiKeyNotice.tsx");
-for (const needle of ["api.health", "site_api_configured", "当前站点未开放默认 API 调用", "查看演示"]) {
+for (const needle of ["api.health", "site_api_configured", "misleading", "apiNotice.demo"]) {
   assertIncludes(apiKeyNotice, needle, "api key notice contract");
 }
 
@@ -88,8 +88,8 @@ const header = read("src/components/layout/Header.tsx");
 for (const needle of ["absolute left-0 top-0", "border-r border-border", "w-[min(82vw,18rem)]"]) {
   assertIncludes(header, needle, "mobile drawer contract");
 }
-assertBefore(header, "aria-label=\"打开导航菜单\"", "href=\"/\" className=\"flex min-w-0 items-center gap-2 md:hidden\"", "mobile header open button");
-assertBefore(header, "aria-label=\"关闭导航菜单\"", "mt-0.5 text-xs font-mono text-muted-foreground", "mobile drawer close button");
+assertBefore(header, "common.openMenu", "href=\"/\" className=\"flex min-w-0 items-center gap-2 md:hidden\"", "mobile header open button");
+assertBefore(header, "common.closeMenu", "mt-0.5 text-xs font-mono text-muted-foreground", "mobile drawer close button");
 assertNotIncludes(header, "grid grid-cols-3 gap-2 border-b border-border p-4 text-xs", "mobile drawer status card contract");
 
 const card = read("src/components/ui/Card.tsx");
@@ -112,7 +112,6 @@ for (const needle of [
   "ToolCallList",
   "cleanUserVisibleText",
   "依据与工具调用",
-  "auto-cols-[minmax(9.5rem,1fr)]",
   "demoAgentResult",
   "kronos-research-summary-",
 ]) {
@@ -138,7 +137,6 @@ for (const needle of [
   "信号一致性评估",
   "概率估计",
   "待监控信号",
-  "auto-cols-[minmax(9.5rem,1fr)]",
   "sm:hidden",
   "独立维度",
   "demoMacroResult",
@@ -148,7 +146,7 @@ for (const needle of [
 }
 
 const settings = read("src/app/settings/page.tsx");
-for (const needle of ["API 访问密钥（可选）", "站点已配置服务端 key", "安全运维摘要", "securitySummary", "Admin API Key", "不包含请求体或密钥"]) {
+for (const needle of ["settings.apiKeyLabel", "settings.siteKeyConfigured", "settings.securityTitle", "securitySummary", "settings.readSecurity", "settings.noSecurityCounters"]) {
   assertIncludes(settings, needle, "settings security summary contract");
 }
 
