@@ -16,6 +16,23 @@ export NUMEXPR_MAX_THREADS="${NUMEXPR_MAX_THREADS:-1}"
 export VECLIB_MAXIMUM_THREADS="${VECLIB_MAXIMUM_THREADS:-1}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 
+# Zeabur exposes only the Next.js port publicly; the FastAPI backend is bound
+# to 127.0.0.1 and is reached through the Next API proxy. If the deployment
+# owner did not configure an explicit API key, create an ephemeral internal key
+# shared by both processes for this container lifetime. This keeps protected
+# API routes callable from the site without disabling backend auth globally or
+# leaking a browser-visible key.
+if [ -z "${KRONOS_INTERNAL_API_KEY:-}" ] \
+  && [ -z "${KRONOS_INTERNAL_API_KEYS:-}" ] \
+  && [ -z "${KRONOS_ADMIN_API_KEYS:-}" ] \
+  && [ -z "${KRONOS_API_KEYS:-}" ] \
+  && [ "$(printf '%s' "${KRONOS_AUTH_DISABLED:-0}" | tr '[:upper:]' '[:lower:]')" != "1" ] \
+  && [ "$(printf '%s' "${KRONOS_AUTH_DISABLED:-0}" | tr '[:upper:]' '[:lower:]')" != "true" ]; then
+  KRONOS_INTERNAL_API_KEY="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+  export KRONOS_INTERNAL_API_KEY
+  echo "Generated ephemeral internal Kronos API key for same-container web proxy."
+fi
+
 cleanup() {
   if [ -n "${api_pid:-}" ] && kill -0 "$api_pid" 2>/dev/null; then
     kill "$api_pid" 2>/dev/null || true

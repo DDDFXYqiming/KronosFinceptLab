@@ -25,7 +25,11 @@ export function ApiKeyNotice({ compact = false }: ApiKeyNoticeProps) {
         if (active) setHasAccess(Boolean(health.site_api_configured));
       })
       .catch(() => {
-        if (active) setHasAccess(false);
+        // A failed health probe means API reachability is unknown/offline, not
+        // that the site owner intentionally closed default API access. Keep
+        // this banner hidden on transient proxy/backend failures so the
+        // dashboard does not show a misleading "未开放默认 API 调用" warning.
+        if (active) setHasAccess(true);
       });
     return () => { active = false; };
   }, []);
