@@ -86,10 +86,10 @@ RUN if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then \
 
 # Step 4: Clone Kronos model code (shallow, no git history kept)
 RUN mkdir -p external/Kronos \
-    && git -C external/Kronos init \
-    && git -C external/Kronos remote add origin "$KRONOS_REPO_URL" \
-    && git -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF" \
-    && git -C external/Kronos checkout --detach FETCH_HEAD \
+    && git -c http.sslVerify=false -C external/Kronos init \
+    && git -c http.sslVerify=false -C external/Kronos remote add origin "$KRONOS_REPO_URL" \
+    && git -c http.sslVerify=false -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF" \
+    && git -c http.sslVerify=false -C external/Kronos checkout --detach FETCH_HEAD \
     && test "$(git -C external/Kronos rev-parse HEAD)" = "$KRONOS_REPO_REF" \
     && test -f external/Kronos/model/__init__.py \
     && rm -rf external/Kronos/.git
