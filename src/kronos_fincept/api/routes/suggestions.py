@@ -355,14 +355,15 @@ _ANALYSIS_SYSTEM = """\
 
 要求：
 - 生成 3 个中文个股分析建议问题
-- **所有问题都必须是针对具体个股的**（分析单只或比较多只股票）
+- **每个问题必须包含至少一个具体的股票名称或股票代码**（如"比亚迪""600036""AAPL"）
+- **绝对禁止**没有股票名称的问题（如"RSI信号怎么样"❌ "最近能买什么"❌）
 - 支持的个股市场：A 股（6 位代码或中文名称）、港股（6 位代码或中文名称）、美股（1-5 位字母代码或中文名称）
-- 每个问题必须包含具体的股票名称或股票代码
 - **问题必须围绕以下维度之一**：当前走势判断、技术面信号解读、短期买卖时机、估值位置评估、风险收益比、两只股票对比
 - 问题应自然口语化，模拟真实用户提问
 - 每个问题必须简短精悍，建议 6-36 个中文字符
 - 禁止：产品管线、商业模式、竞争格局、行业研究、研发进展、技术前景等定性研究问题
 - 禁止：宽泛的板块/行业/指数/宏观经济问题，禁止加密货币/黄金/大宗商品
+- 禁止：没有具体股票名称的泛泛问题
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
 - 必须与先前给出的建议完全不同，刻意探索新角度、新标的、新问法
@@ -500,6 +501,59 @@ _ANALYSIS_STOCK_PATTERNS = [
     r"[\u4e00-\u9fff]{2,6}(?:股份|集团|银行|证券|保险)",  # Company name + suffix (conservative)
 ]
 
+# Technical indicators and common false positives — NOT stock tickers
+_ANALYSIS_SKIP_TICKERS = {
+    "RSI", "KDJ", "CCI", "MACD", "EMA", "SMA", "WMA", "DMI", "ATR", "OBV",
+    "VOL", "BOLL", "SAR", "WR", "VR", "AR", "BR", "CR", "PSY", "BIAS",
+    "DMA", "TRIX", "EXPMA", "MIKE", "ASI", "MFI", "ROC", "MTM", "VMACD",
+    "CDP", "BBI", "DDI", "ADTM", "LWR", "JAX", "JDBC",
+    "AI", "GDP", "CPI", "PMI", "ETF", "IPO", "PE", "PB", "ROE", "EPS",
+    "A股", "港股", "美股", "BTC", "ETH", "VIX", "UV",
+    "OK", "THE", "FOR", "AND", "BUT", "NOT", "HAS", "HAD", "WAS", "ARE",
+    "ITS", "CAN", "GET", "NEW", "TOP", "BUY", "ALL",
+    "USD", "EUR", "GBP", "JPY", "CNY", "HKD",
+}
+
+
+def _analysis_has_stock_name(question: str) -> bool:
+    """Check if an analysis question contains at least one real stock name/ticker."""
+    # Check known Chinese stock names
+    known_cn = [
+        "招商银行", "贵州茅台", "茅台", "宁德时代", "比亚迪", "腾讯", "阿里巴巴",
+        "拼多多", "京东", "百度", "小米", "美团", "快手", "网易", "中国平安", "万科",
+        "美的", "格力", "工商银行", "农业银行", "中国银行", "建设银行", "交通银行",
+        "兴业银行", "浦发银行", "民生银行", "中信银行", "光大银行", "平安银行",
+        "五粮液", "泸州老窖", "汾酒", "洋河", "海天味业", "伊利", "蒙牛",
+        "恒瑞", "迈瑞", "药明", "中芯", "隆基", "中国中免", "长江电力",
+        "紫金矿业", "中国神华", "三一", "万华", "海螺", "上汽", "分众",
+        "东方财富", "牧原", "阳光电源", "汇川", "韦尔", "兆易", "科大讯飞",
+        "用友", "金山", "海尔", "格力电器", "美的集团", "联通", "移动", "电信",
+        "中远海控", "招商轮船", "中国中铁", "中国建筑", "北方华创", "中微公司",
+        "沪硅", "百济", "特斯拉", "苹果", "英伟达", "微软", "谷歌", "亚马逊",
+        "Meta", "台积电", "辉瑞", "强生", "默克", "礼来", "诺和诺德",
+    ]
+    for name in known_cn:
+        if name in question:
+            return True
+
+    # Check Chinese company suffix pattern
+    if re.search(r"[\u4e00-\u9fff]{2,6}(?:股份|集团|银行|证券|保险|电力|矿业|医药|医疗|化学|水泥|重工)", question):
+        return True
+
+    # Check stock code patterns
+    if re.search(r"(?<!\d)\d{6}(?!\d)", question):  # CN 6-digit
+        return True
+    if re.search(r"(?<!\d)0\d{4}(?!\d)", question):  # HK 5-digit
+        return True
+
+    # Check US ticker (must not be a technical indicator)
+    us_tickers = re.findall(r"(?<![a-zA-Z])([A-Z]{2,5})(?![a-zA-Z])", question)
+    for ticker in us_tickers:
+        if ticker not in _ANALYSIS_SKIP_TICKERS:
+            return True
+
+    return False
+
 # Research-style question rejection patterns (these questions the system cannot answer)
 _RESEARCH_REJECT_PATTERNS = [
     r"管线|pipeline|研发进展|R&D|技术前景|technology outlook",
@@ -574,6 +628,10 @@ def _validate_questions(questions: list[str], question_type: str, language: str 
         if question_type == "analysis":
             if any(re.search(p, lowered, re.IGNORECASE) for p in _RESEARCH_REJECT_PATTERNS):
                 logger.warning("Suggestion rejected (research-style): %r", q[:80])
+                continue
+            # Require at least one real stock name/ticker (not just technical indicators)
+            if not _analysis_has_stock_name(q):
+                logger.warning("Suggestion rejected (no stock name): %r", q[:80])
                 continue
 
         # Require at least one allowed scope pattern match
