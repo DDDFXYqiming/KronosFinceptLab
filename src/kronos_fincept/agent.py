@@ -1046,6 +1046,10 @@ def analyze_investment_question(
     search_query_limit = 1 if len(resolved) > 1 else 3
     defer_kronos_predictions = len(resolved) > 1
 
+    # Pre-compute macro provider IDs (independent of asset building)
+    needs_macro = route.needs_macro
+    selected_provider_ids = _select_embedded_macro_provider_ids(clean_question, symbols=resolved) if needs_macro else None
+
     def _build_one_asset(item: ResolvedSymbol) -> tuple[ResolvedSymbol, dict[str, Any], list[AgentToolCall]]:
         asset_context, calls = _build_asset_context(
             item,
@@ -1056,14 +1060,29 @@ def analyze_investment_question(
         )
         return item, asset_context, calls
 
-    if len(resolved) > 1:
-        import concurrent.futures
+    def _build_macro_in_thread() -> tuple[dict[str, Any], AgentToolCall]:
+        return _build_macro_context(
+            clean_question,
+            symbols=[item.symbol for item in resolved],
+            market=resolved[0].market if resolved else None,
+            provider_ids=selected_provider_ids,
+        )
 
-        max_workers = min(5, len(resolved))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="kronos-agent-asset") as executor:
+    # Run asset building and macro building in parallel
+    max_workers = min(5, len(resolved))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="kronos-agent") as executor:
+        if needs_macro:
+            # Submit macro build alongside asset builds for parallelism
+            macro_future = executor.submit(_build_macro_in_thread)
             asset_build_results = list(executor.map(_build_one_asset, resolved))
-    else:
-        asset_build_results = [_build_one_asset(resolved[0])]
+            macro_result = macro_future.result()
+        else:
+            asset_build_results = list(executor.map(_build_one_asset, resolved))
+            macro_result = None
+
+    if needs_macro and macro_result is not None:
+        macro_context, macro_call = macro_result
+        tool_calls.append(macro_call)
 
     for item, asset_context, calls in asset_build_results:
         asset_contexts.append(asset_context)
@@ -1137,14 +1156,9 @@ def analyze_investment_question(
         )
     )
 
-    if route.needs_macro:
-        selected_provider_ids = _select_embedded_macro_provider_ids(clean_question, symbols=resolved)
-        macro_context, macro_call = _build_macro_context(
-            clean_question,
-            symbols=[item.symbol for item in resolved],
-            market=resolved[0].market if resolved else None,
-            provider_ids=selected_provider_ids,
-        )
+    # Collect macro results (started in parallel with asset building)
+    if needs_macro and macro_future is not None:
+        macro_context, macro_call = macro_future.result()
         tool_calls.append(macro_call)
         log_event(
             logger,
