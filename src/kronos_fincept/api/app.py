@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from kronos_fincept.api.security import api_docs_enabled, check_request_security, max_body_bytes, record_security_decision
@@ -95,18 +96,26 @@ def create_app() -> FastAPI:
     )
 
     # CORS — allow Next.js frontend and local dev
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
+    _cors_env = os.environ.get("KRONOS_CORS_ORIGINS", "").strip()
+    if _cors_env:
+        _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+    else:
+        _cors_origins = [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "http://localhost:3001",
             "http://127.0.0.1:3001",
-        ],
+        ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # GZip compression for responses ≥ 1000 bytes
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     # Request logging middleware
     @app.middleware("http")
@@ -330,11 +339,16 @@ def main():
     import uvicorn
 
     reload_enabled = os.environ.get("KRONOS_API_RELOAD", "0").strip().lower() in {"1", "true", "yes", "on"}
+    if reload_enabled:
+        workers = 1  # uvicorn does not support workers+reload together
+    else:
+        workers = int(os.environ.get("KRONOS_WORKERS", "0")) or max(1, os.cpu_count() or 1)
     uvicorn.run(
         "kronos_fincept.api.app:app",
         host=os.environ.get("API_HOST", "0.0.0.0"),
         port=int(os.environ.get("API_PORT", "8000")),
         reload=reload_enabled,
+        workers=workers,
         log_level="info",
     )
 

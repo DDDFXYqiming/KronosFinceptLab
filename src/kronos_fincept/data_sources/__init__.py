@@ -14,10 +14,15 @@ from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from kronos_fincept.logging_config import log_event
 
 logger = logging.getLogger(__name__)
+
+
+# Maximum number of entries allowed in the in-memory LRU cache.
+MAX_MEMORY_CACHE_ENTRIES = 500
 
 
 class DataSourceStatus(Enum):
@@ -130,10 +135,10 @@ class DataSourceManager:
         try:
             self.memory_cache_max_size = max(
                 1,
-                int(os.environ.get("KRONOS_MEMORY_CACHE_MAX_SIZE", "256"))
+                int(os.environ.get("KRONOS_MEMORY_CACHE_MAX_SIZE", str(MAX_MEMORY_CACHE_ENTRIES)))
             )
         except ValueError:
-            self.memory_cache_max_size = 256
+            self.memory_cache_max_size = MAX_MEMORY_CACHE_ENTRIES
 
         # Create cache directory
         os.makedirs(cache_dir, exist_ok=True)
@@ -361,7 +366,34 @@ class DataSourceManager:
             for attempt in range(source.config.max_retries):
                 try:
                     started = time.perf_counter()
-                    result = source.fetch(endpoint, **kwargs)
+                    timeout_sec = source.config.timeout
+                    with ThreadPoolExecutor(max_workers=1) as _pool:
+                        future = _pool.submit(source.fetch, endpoint, **kwargs)
+                        try:
+                            result = future.result(timeout=timeout_sec)
+                        except FuturesTimeoutError:
+                            source.record_failure()
+                            log_event(
+                                logger,
+                                logging.WARNING,
+                                "data_source.timeout",
+                                "Data source attempt timed out",
+                                source=source.config.name,
+                                endpoint=endpoint,
+                                attempt=attempt + 1,
+                                timeout_sec=timeout_sec,
+                            )
+                            last_error = f"Timeout after {timeout_sec}s"
+                            errors_by_source[source.config.name] = last_error
+                            # Wait for retry
+                            if attempt < source.config.max_retries - 1:
+                                delay = source.get_retry_delay(attempt)
+                                logger.debug(
+                                    f" 重试 {attempt + 1}/"
+                                    f"{source.config.max_retries}，等待 {delay} 秒..."
+                                )
+                                time.sleep(delay)
+                            continue
 
                     if result.get("success"):
                         # Success

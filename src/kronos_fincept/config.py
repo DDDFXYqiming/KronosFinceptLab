@@ -10,10 +10,100 @@ Supports three tiers of configuration:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
+
+_logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Hermes gateway model auto-detection
+# ---------------------------------------------------------------------------
+
+def _read_env_value(env_path: Path, key: str) -> str:
+    """Read a single value from a .env file."""
+    if not env_path.is_file():
+        return ""
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and line.startswith(key + "="):
+                    return line.split("=", 1)[1]
+    except Exception:
+        pass
+    return ""
+
+
+def _read_hermes_model_config() -> dict[str, str]:
+    """Read the current model config from the Hermes gateway.
+
+    Looks for HERMES_HOME env var or default path (E:/hermes-agent/.hermes).
+    Returns dict with keys: api_key, base_url, model, or empty dict on failure.
+    """
+    hermes_home = os.environ.get("HERMES_HOME", "")
+    if not hermes_home:
+        candidate = Path("E:/hermes-agent/.hermes/config.yaml")
+        if candidate.is_file():
+            hermes_home = str(candidate.parent)
+        else:
+            return {}
+    hermes_dir = Path(hermes_home)
+    config_path = hermes_dir / "config.yaml"
+    if not config_path.is_file():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        return {}
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+    model_cfg = cfg.get("model", {})
+    model_name = model_cfg.get("default", "")
+    base_url = model_cfg.get("base_url", "")
+    provider_name = model_cfg.get("provider", "")
+
+    if not (model_name and base_url and provider_name):
+        return {}
+
+    # Resolve API key from providers section
+    api_key = ""
+    providers = cfg.get("providers", [])
+    if isinstance(providers, list):
+        for p in providers:
+            if isinstance(p, dict) and p.get("name", "").lower() == provider_name.lower():
+                api_key = p.get("key_env", "")
+                break
+    elif isinstance(providers, dict):
+        for name, p in providers.items():
+            if name.lower() == provider_name.lower():
+                api_key = p.get("key_env", "")
+                break
+
+    # key_env is an env var name — try os.environ first, then Hermes .env
+    if api_key:
+        key_name = api_key  # rename for clarity
+        api_key = os.environ.get(key_name, "")
+        if not api_key:
+            hermes_env = hermes_dir / ".env"
+            api_key = _read_env_value(hermes_env, key_name)
+
+    if not (api_key and base_url and model_name):
+        return {}
+
+    return {
+        "api_key": api_key,
+        "base_url": base_url,
+        "model": model_name,
+    }
+
+
 
 
 def _load_dotenv(env_path: Path | None = None) -> None:
@@ -164,6 +254,14 @@ class LLMFallbackChainConfig:
         shared_base = _g("LLM_BASE_URL", "https://api.openai.com/v1/chat/completions")
         shared_model = _g("LLM_MODEL", "gpt-4o-mini")
 
+        # Auto-detect: if no LLM_API_KEY set, read from Hermes gateway config
+        if not shared_key:
+            hermes_cfg = _read_hermes_model_config()
+            if hermes_cfg:
+                shared_key = hermes_cfg["api_key"]
+                shared_base = hermes_cfg["base_url"]
+                shared_model = hermes_cfg["model"]
+
         providers: list[LLMProviderEntry] = []
 
         # Primary provider
@@ -187,6 +285,17 @@ class LLMFallbackChainConfig:
             if not (n_base or n_model):
                 # Nothing configured for this slot — skip.
                 continue
+            # Warn when a fallback provider inherits the primary API key across
+            # different providers (different base_url), because most LLM
+            # providers reject keys issued by a different vendor.
+            if not n_key and n_base and n_base != shared_base:
+                _logger.warning(
+                    "Fallback %d has no dedicated API key and its base_url (%s) "
+                    "differs from the primary (%s). Inheriting the primary key "
+                    "will likely fail — set LLM_FALLBACK_%d_API_KEY to a key "
+                    "issued by the fallback provider.",
+                    i, n_base, shared_base, i,
+                )
             providers.append(
                 LLMProviderEntry(
                     name=f"fallback_{i}",

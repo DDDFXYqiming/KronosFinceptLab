@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import math
 import time
@@ -132,17 +133,25 @@ def _fetch_and_prepare_data(
 
     Returns (dfs, valid_symbols). Raises HTTPException if no valid data.
     """
+    # Parallel fetch: submit all symbol fetches concurrently
     all_data: dict[str, list[dict[str, Any]]] = {}
-    for sym in symbols:
-        try:
-            rows = fetch_a_stock_ohlcv(sym, start_date, end_date)
-            if len(rows) < window_size + pred_len:
-                logger.warning("Insufficient data for %s: %d rows (need %d)",
-                               sym, len(rows), window_size + pred_len)
-                continue
-            all_data[sym] = rows
-        except Exception as exc:
-            logger.warning("Failed to fetch %s: %s", sym, exc)
+    max_workers = min(8, len(symbols))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="kronos-fetch") as executor:
+        future_to_sym = {
+            executor.submit(fetch_a_stock_ohlcv, sym, start_date, end_date): sym
+            for sym in symbols
+        }
+        for future in concurrent.futures.as_completed(future_to_sym):
+            sym = future_to_sym[future]
+            try:
+                rows = future.result()
+                if len(rows) < window_size + pred_len:
+                    logger.warning("Insufficient data for %s: %d rows (need %d)",
+                                   sym, len(rows), window_size + pred_len)
+                    continue
+                all_data[sym] = rows
+            except Exception as exc:
+                logger.warning("Failed to fetch %s: %s", sym, exc)
 
     if not all_data:
         raise HTTPException(status_code=400, detail="No valid data for any symbol")
@@ -448,13 +457,19 @@ async def backtest_strategy_scan(req: StrategyScanRequestIn) -> StrategyScanResp
 
     def _run() -> list[StrategyScanRowOut]:
         dfs, symbols = _fetch_and_prepare_data(req.symbols, req.start_date, req.end_date, req.window_size, req.pred_len)
-        rows: list[StrategyScanRowOut] = []
-        for top_k in req.top_k_values:
-            for step in req.step_values:
-                candidate = req.model_copy(update={"top_k": top_k, "step": step})
-                result = _build_strategy_result(req.strategy, dfs, symbols, candidate)
-                score = _score_metrics(result.metrics)
-                rows.append(StrategyScanRowOut(rank=0, strategy=req.strategy, params={"top_k": top_k, "step": step}, metrics=result.metrics, score=score))
+        # Build all parameter combinations
+        param_combos = [(top_k, step) for top_k in req.top_k_values for step in req.step_values]
+
+        def _run_one_combo(combo: tuple[int, int]) -> StrategyScanRowOut:
+            top_k, step = combo
+            candidate = req.model_copy(update={"top_k": top_k, "step": step})
+            result = _build_strategy_result(req.strategy, dfs, symbols, candidate)
+            score = _score_metrics(result.metrics)
+            return StrategyScanRowOut(rank=0, strategy=req.strategy, params={"top_k": top_k, "step": step}, metrics=result.metrics, score=score)
+
+        max_workers = min(8, len(param_combos))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="kronos-scan") as executor:
+            rows = list(executor.map(_run_one_combo, param_combos))
         rows.sort(key=lambda row: row.score, reverse=True)
         return [row.model_copy(update={"rank": index + 1}) for index, row in enumerate(rows)]
 
