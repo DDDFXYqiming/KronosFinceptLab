@@ -214,7 +214,9 @@ export function saveConfiguredApiKey(value: string): void {
 function enrichGatewayError(status: number, message: string, path: string): string {
   const language = getStoredLanguage();
   if (status === 401) {
-    return t(language, "errors.apiKeyRequired");
+    // Pass through the backend's actual error message — it already explains
+    // what went wrong (e.g. "API key is required", "Invalid API key").
+    return message;
   }
   if (status === 403) {
     return t(language, "errors.forbidden");
