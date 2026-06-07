@@ -185,22 +185,28 @@ def fetch_multi_stock_ohlcv(
     end_date: str = "20261231",
     adjust: str = "qfq",
 ) -> dict[str, list[dict[str, Any]]]:
-    """Fetch OHLCV data for multiple A-stocks.
+    """Fetch OHLCV data for multiple A-stocks in parallel (P1 #5).
 
     Each symbol is fetched independently with full fallback support.
-
     Returns:
         Dict mapping symbol -> list of OHLCV rows.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     results: dict[str, list[dict[str, Any]]] = {}
     errors: dict[str, str] = {}
 
-    for sym in symbols:
-        try:
-            rows = fetch_a_stock_ohlcv(sym, start_date, end_date, adjust)
-            results[sym] = rows
-        except Exception as exc:
-            errors[sym] = str(exc)
+    with ThreadPoolExecutor(max_workers=min(len(symbols), 8), thread_name_prefix="stock-fetch") as pool:
+        futures = {
+            pool.submit(fetch_a_stock_ohlcv, sym, start_date, end_date, adjust): sym
+            for sym in symbols
+        }
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                results[sym] = future.result()
+            except Exception as exc:
+                errors[sym] = str(exc)
 
     if errors and not results:
         raise RuntimeError(f"All fetches failed: {errors}")
