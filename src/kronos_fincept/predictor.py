@@ -27,7 +27,18 @@ from kronos_fincept.security_utils import validate_kronos_model_id
 _KRONOS_REPO_ENV = "KRONOS_REPO_PATH"
 os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
 _PREDICTOR_CACHE_LOCK = threading.RLock()
-_INFERENCE_LOCK = threading.Lock()
+_INFERENCE_LOCKS: dict[str, threading.Lock] = {}
+_INFERENCE_LOCKS_GUARD = threading.Lock()
+
+
+def _get_inference_lock(cache_key: str) -> threading.Lock:
+    """Return a per-model inference lock, creating one if needed."""
+    with _INFERENCE_LOCKS_GUARD:
+        lock = _INFERENCE_LOCKS.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            _INFERENCE_LOCKS[cache_key] = lock
+        return lock
 _PREDICTOR_CACHE: dict[tuple[str, str, int, str], "_CachedPredictor"] = {}
 logger = logging.getLogger("kronos_fincept.predictor")
 
@@ -449,8 +460,9 @@ class KronosPredictorWrapper:
         started = time.perf_counter()
         predictor = self._load()
         y_timestamp = make_future_timestamps(x_timestamp, pred_len)
+        _inference_lock = _get_inference_lock(self.cache_key)
         wait_started = time.perf_counter()
-        _INFERENCE_LOCK.acquire()
+        _inference_lock.acquire()
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         log_event(
             logger,
@@ -503,7 +515,7 @@ class KronosPredictorWrapper:
             )
             raise
         finally:
-            _INFERENCE_LOCK.release()
+            _inference_lock.release()
         frame = frame.reset_index(drop=False)
         if "timestamp" not in frame.columns:
             frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
@@ -554,8 +566,9 @@ class KronosPredictorWrapper:
         samples: list[pd.DataFrame] = []
         final_closes: list[float] = []
 
+        _inference_lock = _get_inference_lock(self.cache_key)
         wait_started = time.perf_counter()
-        _INFERENCE_LOCK.acquire()
+        _inference_lock.acquire()
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         log_event(
             logger,
@@ -569,21 +582,31 @@ class KronosPredictorWrapper:
             inference_wait_ms=inference_wait_ms,
         )
         try:
-            for i in range(self.sample_count):
-                frame = predictor.predict(
-                    df=df,
-                    x_timestamp=x_timestamp,
-                    y_timestamp=y_timestamp,
-                    pred_len=pred_len,
-                    T=self.temperature,
-                    top_k=self.top_k,
-                    top_p=self.top_p,
-                    sample_count=1,  # Run one sample at a time for diversity
-                    verbose=False,
-                )
-                frame = frame.reset_index(drop=False)
-                if "timestamp" not in frame.columns:
-                    frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
+            # P1 #7: Use batched sample_count instead of sequential loop
+            # The predictor handles batching internally for GPU efficiency.
+            frame = predictor.predict(
+                df=df,
+                x_timestamp=x_timestamp,
+                y_timestamp=y_timestamp,
+                pred_len=pred_len,
+                T=self.temperature,
+                top_k=self.top_k,
+                top_p=self.top_p,
+                sample_count=self.sample_count,
+                verbose=False,
+            )
+            frame = frame.reset_index(drop=False)
+            if "timestamp" not in frame.columns:
+                frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
+
+            # Extract individual samples from the batched result
+            if self.sample_count > 1 and "sample_id" in frame.columns:
+                for sid in range(self.sample_count):
+                    sample_df = frame[frame["sample_id"] == sid].copy()
+                    samples.append(sample_df)
+                    final_closes.append(float(sample_df.iloc[-1]["close"]))
+            else:
+                # Fallback: treat single result as one sample
                 samples.append(frame)
                 final_closes.append(float(frame.iloc[-1]["close"]))
             log_event(
@@ -614,7 +637,7 @@ class KronosPredictorWrapper:
             )
             raise
         finally:
-            _INFERENCE_LOCK.release()
+            _inference_lock.release()
 
         # Compute statistics
         current_close = float(df.iloc[-1]["close"])
@@ -689,8 +712,9 @@ class KronosPredictorWrapper:
         # Prepare batch inputs
         y_timestamps = [make_future_timestamps(ts, pred_len) for ts in x_timestamps]
 
+        _inference_lock = _get_inference_lock(self.cache_key)
         wait_started = time.perf_counter()
-        _INFERENCE_LOCK.acquire()
+        _inference_lock.acquire()
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         log_event(
             logger,
@@ -765,7 +789,7 @@ class KronosPredictorWrapper:
             )
             raise
         finally:
-            _INFERENCE_LOCK.release()
+            _inference_lock.release()
 
         results: list[ForecastResult] = []
         for i, frame in enumerate(frames):

@@ -14,11 +14,14 @@ from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
 import hashlib
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 
 from kronos_fincept.logging_config import log_event
 
 logger = logging.getLogger(__name__)
+
+# Shared thread pool for data source fetches (P2 #4)
+_SHARED_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ds-fetch")
 
 
 # Maximum number of entries allowed in the in-memory LRU cache.
@@ -328,161 +331,89 @@ class DataSourceManager:
                 cached_data["from_stale_cache"] = False
                 return cached_data
 
-        # Try data sources by priority
-        last_error = None
-        errors_by_source: Dict[str, str] = {}
-        for source in self.get_sorted_sources():
-            if not source.supports_endpoint(endpoint):
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "data_source.skip_unsupported",
-                    "Skipping source that does not support endpoint",
-                    source=source.config.name,
-                    endpoint=endpoint,
-                )
-                continue
+        # Try data sources in parallel (P1 #3) — race all available sources
+        # and return the first successful result.
+        candidates = [
+            src for src in self.get_sorted_sources()
+            if src.supports_endpoint(endpoint) and src.is_available()
+        ]
 
-            if not source.is_available():
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "data_source.skip_unavailable",
-                    "Skipping unavailable data source",
-                    source=source.config.name,
-                )
-                continue
+        if not candidates:
+            error_detail = f"endpoint unsupported by registered sources: {endpoint}"
+            if use_cache and cache_key:
+                stale_data = self._get_stale_from_cache(cache_key)
+                if stale_data is not None:
+                    stale_data["stale_reason"] = error_detail
+                    return stale_data
+            return {
+                "success": False,
+                "data": None,
+                "error": f"所有数据源都失败: {error_detail}",
+                "source": "none",
+                "timestamp": int(datetime.now().timestamp()),
+                "from_cache": False
+            }
 
-            log_event(
-                logger,
-                logging.DEBUG,
-                "data_source.try",
-                "Trying data source",
-                source=source.config.name,
-                endpoint=endpoint,
+        # For single source, use the original sequential path (avoids overhead)
+        if len(candidates) == 1:
+            result = self._fetch_from_single_source(
+                candidates[0], endpoint, False, "", cache_ttl, **kwargs
             )
+            if result.get("success"):
+                result["from_cache"] = False
+                if use_cache:
+                    self._save_to_cache(cache_key, result, cache_ttl)
+                return result
+            # Single source failed — try stale cache
+            if use_cache and cache_key:
+                stale_data = self._get_stale_from_cache(cache_key)
+                if stale_data is not None:
+                    stale_data["stale_reason"] = result.get("error", "source failed")
+                    return stale_data
+            return result
 
-            # Request with retry
-            for attempt in range(source.config.max_retries):
+        # Parallel race: submit all sources, return first success
+        errors_by_source: Dict[str, str] = {}
+        futures = {}
+        for src in candidates:
+            timeout_sec = src.config.timeout * src.config.max_retries
+            future = _SHARED_POOL.submit(
+                self._fetch_from_single_source,
+                src, endpoint, False, "", cache_ttl, **kwargs
+            )
+            futures[future] = (src, timeout_sec)
+
+        try:
+            for future in as_completed(futures, timeout=max(t for _, t in futures.values())):
+                src, _ = futures[future]
                 try:
-                    started = time.perf_counter()
-                    timeout_sec = source.config.timeout
-                    with ThreadPoolExecutor(max_workers=1) as _pool:
-                        future = _pool.submit(source.fetch, endpoint, **kwargs)
-                        try:
-                            result = future.result(timeout=timeout_sec)
-                        except FuturesTimeoutError:
-                            source.record_failure()
-                            log_event(
-                                logger,
-                                logging.WARNING,
-                                "data_source.timeout",
-                                "Data source attempt timed out",
-                                source=source.config.name,
-                                endpoint=endpoint,
-                                attempt=attempt + 1,
-                                timeout_sec=timeout_sec,
-                            )
-                            last_error = f"Timeout after {timeout_sec}s"
-                            errors_by_source[source.config.name] = last_error
-                            # Wait for retry
-                            if attempt < source.config.max_retries - 1:
-                                delay = source.get_retry_delay(attempt)
-                                logger.debug(
-                                    f" 重试 {attempt + 1}/"
-                                    f"{source.config.max_retries}，等待 {delay} 秒..."
-                                )
-                                time.sleep(delay)
-                            continue
-
+                    result = future.result(timeout=0.1)
                     if result.get("success"):
-                        # Success
-                        source.record_success()
                         result["from_cache"] = False
-
-                        # Save to cache
                         if use_cache:
                             self._save_to_cache(cache_key, result, cache_ttl)
-
-                        log_event(
-                            logger,
-                            logging.INFO,
-                            "data_source.success",
-                            "Data source returned data",
-                            source=source.config.name,
-                            endpoint=endpoint,
-                            duration_ms=int((time.perf_counter() - started) * 1000),
-                        )
+                        # Cancel remaining futures
+                        for f in futures:
+                            f.cancel()
                         return result
                     else:
-                        # Failure
-                        last_error = result.get("error", "Unknown error")
-                        errors_by_source[source.config.name] = str(last_error)
-                        source.record_failure()
-                        log_event(
-                            logger,
-                            logging.WARNING,
-                            "data_source.failure",
-                            "Data source returned failure",
-                            source=source.config.name,
-                            endpoint=endpoint,
-                            attempt=attempt + 1,
-                            error=last_error,
-                        )
+                        errors_by_source[src.config.name] = result.get("error", "unknown")
+                except Exception as exc:
+                    errors_by_source[src.config.name] = str(exc)
+        except TimeoutError:
+            for f in futures:
+                f.cancel()
 
-                        # Wait for retry
-                        if attempt < source.config.max_retries - 1:
-                            delay = source.get_retry_delay(attempt)
-                            logger.debug(f" 重试 {attempt + 1}/"
-                                  f"{source.config.max_retries}，等待 {delay} 秒...")
-                            time.sleep(delay)
-
-                except Exception as e:
-                    last_error = str(e)
-                    errors_by_source[source.config.name] = last_error
-                    source.record_failure()
-                    log_event(
-                        logger,
-                        logging.WARNING,
-                        "data_source.failure",
-                        "Data source request failed",
-                        source=source.config.name,
-                        endpoint=endpoint,
-                        attempt=attempt + 1,
-                        error_type=type(e).__name__,
-                        error=str(e),
-                    )
-
-                    # Wait for retry
-                    if attempt < source.config.max_retries - 1:
-                        delay = source.get_retry_delay(attempt)
-                        logger.debug(f" 重试 {attempt + 1}/"
-                              f"{source.config.max_retries}，等待 {delay} 秒...")
-                        time.sleep(delay)
-
-            logger.debug(f" 数据源 {source.config.name} 失败，"
-                  f"尝试下一个...")
-
-        # All sources supporting this endpoint failed
+        # All sources failed
         if errors_by_source:
-            error_detail = "; ".join(
-                f"{source}={error}" for source, error in errors_by_source.items()
-            )
+            error_detail = "; ".join(f"{s}={e}" for s, e in errors_by_source.items())
         else:
-            error_detail = f"endpoint unsupported by registered sources: {endpoint}"
+            error_detail = "all sources timed out"
 
         if use_cache and cache_key:
             stale_data = self._get_stale_from_cache(cache_key)
             if stale_data is not None:
                 stale_data["stale_reason"] = error_detail
-                log_event(
-                    logger,
-                    logging.WARNING,
-                    "data_source.stale_cache_fallback",
-                    "Returning stale cache after all data sources failed",
-                    endpoint=endpoint,
-                    error=error_detail,
-                )
                 return stale_data
 
         return {
@@ -490,6 +421,50 @@ class DataSourceManager:
             "data": None,
             "error": f"所有数据源都失败: {error_detail}",
             "source": "none",
+            "timestamp": int(datetime.now().timestamp()),
+            "from_cache": False
+        }
+
+    def _fetch_from_single_source(
+        self, source, endpoint: str,
+        use_cache: bool, cache_key: str, cache_ttl: int, **kwargs
+    ) -> Dict[str, Any]:
+        """Fetch from a single source with retry logic."""
+        last_error = None
+        for attempt in range(source.config.max_retries):
+            try:
+                started = time.perf_counter()
+                timeout_sec = source.config.timeout
+                future = _SHARED_POOL.submit(source.fetch, endpoint, **kwargs)
+                try:
+                    result = future.result(timeout=timeout_sec)
+                except FuturesTimeoutError:
+                    source.record_failure()
+                    last_error = f"Timeout after {timeout_sec}s"
+                    if attempt < source.config.max_retries - 1:
+                        time.sleep(source.get_retry_delay(attempt))
+                    continue
+
+                if result.get("success"):
+                    source.record_success()
+                    result["from_cache"] = False
+                    return result
+                else:
+                    source.record_failure()
+                    last_error = result.get("error", "Unknown error")
+                    if attempt < source.config.max_retries - 1:
+                        time.sleep(source.get_retry_delay(attempt))
+            except Exception as exc:
+                source.record_failure()
+                last_error = str(exc)
+                if attempt < source.config.max_retries - 1:
+                    time.sleep(source.get_retry_delay(attempt))
+
+        return {
+            "success": False,
+            "data": None,
+            "error": last_error or f"source {source.config.name} failed after {source.config.max_retries} retries",
+            "source": source.config.name,
             "timestamp": int(datetime.now().timestamp()),
             "from_cache": False
         }

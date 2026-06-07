@@ -1,10 +1,15 @@
 import type { Market } from "@/lib/markets";
 import { normalizeSymbol, normalizeSymbols } from "@/lib/symbols";
 
+/** Normalize a query string for use as a cache key (P2 #12). */
+function normalizeQuery(q: string): string {
+  return q.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 export const queryKeys = {
   all: ["kronos"] as const,
   health: () => [...queryKeys.all, "health"] as const,
-  search: (query: string) => [...queryKeys.all, "search", query.trim()] as const,
+  search: (query: string) => [...queryKeys.all, "search", normalizeQuery(query)] as const,
   data: (params: { symbol: string; market: Market | string; startDate: string; endDate: string; adjust?: string }) =>
     [
       ...queryKeys.all,
@@ -75,7 +80,7 @@ export const queryKeys = {
     [
       ...queryKeys.all,
       "agent",
-      params.question.trim(),
+      normalizeQuery(params.question),
       params.symbol ? normalizeSymbol(params.symbol) : "",
       params.market || "",
       params.language || "",
@@ -84,7 +89,7 @@ export const queryKeys = {
     [
       ...queryKeys.all,
       "macro",
-      params.question.trim(),
+      normalizeQuery(params.question),
       params.market || "",
       (params.providers || []).join(","),
       (params.rssFeeds || []).join(","),

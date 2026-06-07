@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 _LAST_REPORT_LLM_METADATA: ContextVar[dict[str, Any]] = ContextVar("last_report_llm_metadata", default={})
 _LAST_REPORT_LLM_FAILURES: ContextVar[list[dict[str, Any]]] = ContextVar("last_report_llm_failures", default=[])
+
+# P2 #10: LLM response cache — avoid duplicate LLM calls for same inputs
+_LLM_CACHE: dict[str, tuple] = {}  # key → (result, provider, timestamp)
+_LLM_CACHE_TTL = 300  # 5 minutes
 _LLM_FAILURES: dict[str, tuple[int, float]] = {}
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
@@ -520,6 +524,16 @@ def _call_structured_llm_json(
     provider_timeouts: dict[str, int] | None = None,
     provider_order: tuple[str, ...] | None = None,
 ) -> tuple[dict[str, Any], LLMChatProvider] | None:
+    # P2 #10: LLM response cache — skip duplicate calls with same inputs
+    import hashlib as _hashlib
+    _cache_key_raw = json.dumps(messages, sort_keys=True, ensure_ascii=False) + f"|{temperature}|{purpose}"
+    _cache_key = _hashlib.md5(_cache_key_raw.encode()).hexdigest()
+    _cached = _LLM_CACHE.get(_cache_key)
+    if _cached is not None:
+        result, provider, ts = _cached
+        if time.time() - ts < _LLM_CACHE_TTL:
+            return result, provider
+
     providers = _ordered_llm_providers(_llm_provider_chain(), provider_order)
     if not providers:
         return None
@@ -645,6 +659,8 @@ def _call_structured_llm_json(
                 )
                 continue
             _record_llm_provider_success(provider)
+            # P2 #10: Cache successful LLM response
+            _LLM_CACHE[_cache_key] = (parsed, provider, time.time())
             return parsed, provider
         except Exception as exc:
             _record_llm_provider_failure(provider)

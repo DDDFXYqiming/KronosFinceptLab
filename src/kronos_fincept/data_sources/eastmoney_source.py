@@ -13,11 +13,61 @@ import json
 import socket
 import ssl
 import time
+import threading
 from datetime import datetime
+from functools import lru_cache
 from typing import Any
 from urllib.parse import urlencode
 
 from . import DataSource, DataSourceConfig
+
+
+# ── DNS cache (P0 #2) ──────────────────────────────────────────────
+# Cache DNS resolution results to avoid repeated getaddrinfo calls.
+@lru_cache(maxsize=16)
+def _cached_resolve_ipv4(host: str) -> str:
+    """Resolve host to IPv4 with LRU cache (process-lifetime)."""
+    for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM):
+        family, _, _, _, address = item
+        if family == socket.AF_INET:
+            return str(address[0])
+    return "101.226.30.206"
+
+
+# ── Connection pool (P0 #1) ────────────────────────────────────────
+# Reuse HTTPS connections per host to avoid repeated TCP+SSL handshake.
+_conn_pool_lock = threading.Lock()
+_conn_pool: dict[str, http.client.HTTPSConnection] = {}
+
+
+def _get_pooled_conn(host: str, timeout: float) -> http.client.HTTPSConnection:
+    """Get or create a pooled HTTPS connection for *host*."""
+    with _conn_pool_lock:
+        conn = _conn_pool.pop(host, None)
+    if conn is not None:
+        try:
+            # Probe whether the connection is still alive
+            conn.request("HEAD", "/", headers={"Connection": "close"})
+            conn.getresponse()
+        except Exception:
+            conn = None
+    if conn is None:
+        ip = _cached_resolve_ipv4(host)
+        context = ssl.create_default_context()
+        sock = socket.create_connection((ip, 443), timeout=timeout)
+        wrapped = context.wrap_socket(sock, server_hostname=host)
+        conn = http.client.HTTPSConnection(host, 443, timeout=timeout)
+        conn.sock = wrapped
+    return conn
+
+
+def _release_pooled_conn(host: str, conn: http.client.HTTPSConnection) -> None:
+    """Return a healthy connection to the pool, discard if broken."""
+    try:
+        with _conn_pool_lock:
+            _conn_pool[host] = conn
+    except Exception:
+        pass
 
 
 PUSH2_HOST = "push2.eastmoney.com"
@@ -221,35 +271,31 @@ class EastMoneySource(DataSource):
             "Referer": "https://data.eastmoney.com/",
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Connection": "close",
+            "Connection": "keep-alive",
         }
-        ip = self._resolve_ipv4(host)
-        context = ssl.create_default_context()
-        sock = socket.create_connection((ip, 443), timeout=self.config.timeout)
+        conn = _get_pooled_conn(host, self.config.timeout)
         try:
-            wrapped = context.wrap_socket(sock, server_hostname=host)
-            conn = http.client.HTTPSConnection(host, 443, timeout=self.config.timeout)
-            conn.sock = wrapped
             conn.request("GET", full_path, headers=headers)
             response = conn.getresponse()
             body = response.read().decode("utf-8", errors="replace")
-            conn.close()
-        finally:
+        except Exception:
+            # Connection broken — create a fresh one
             try:
-                sock.close()
-            except OSError:
+                conn.close()
+            except Exception:
                 pass
+            conn = _get_pooled_conn(host, self.config.timeout)
+            conn.request("GET", full_path, headers=headers)
+            response = conn.getresponse()
+            body = response.read().decode("utf-8", errors="replace")
+        _release_pooled_conn(host, conn)
         if response.status != 200:
             raise RuntimeError(f"EastMoney HTTP {response.status}")
         return json.loads(body)
 
     @staticmethod
     def _resolve_ipv4(host: str) -> str:
-        for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM):
-            family, _, _, _, address = item
-            if family == socket.AF_INET:
-                return str(address[0])
-        return "101.226.30.206"
+        return _cached_resolve_ipv4(host)
 
     @staticmethod
     def _secid(symbol: str) -> str:
