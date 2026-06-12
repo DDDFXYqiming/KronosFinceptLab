@@ -228,6 +228,58 @@ def test_v102_existing_stock_agent_does_not_auto_call_macro(monkeypatch):
     assert "macro_signal" not in {call.name for call in result.tool_calls}
 
 
+def test_embedded_macro_result_is_collected_once(monkeypatch):
+    from kronos_fincept import agent
+
+    monkeypatch.setattr(
+        agent,
+        "_call_llm_router",
+        lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
+            allowed=True,
+            symbols=[agent.ResolvedSymbol("600036", "cn", "招商银行")],
+            needs_macro=True,
+            source="llm_router",
+        ),
+    )
+    monkeypatch.setattr(agent, "_select_embedded_macro_provider_ids", lambda *args, **kwargs: ["test_macro"])
+    monkeypatch.setattr(agent, "_fetch_price_data", lambda symbol, market: _rows())
+    monkeypatch.setattr(agent, "_fetch_financial_summary", lambda symbol, market: {"symbol": symbol})
+    monkeypatch.setattr(agent, "_build_technical_indicators", lambda rows: {"rsi": {"current": 52.0}})
+    monkeypatch.setattr(agent, "_build_risk_metrics", lambda symbol, rows: {"volatility": 0.2})
+    monkeypatch.setattr(
+        agent,
+        "_build_prediction",
+        lambda symbol, rows, dry_run: {"model": "Kronos", "prediction_days": 5, "forecast": [{"close": 35.0}]},
+    )
+    monkeypatch.setattr(
+        agent,
+        "_build_macro_context",
+        lambda *args, **kwargs: (
+            {"signals": [], "provider_results": {}, "dimension_coverage": {"sufficient_evidence": True}},
+            agent.AgentToolCall(
+                name="macro_signal",
+                status="completed",
+                summary="macro ok",
+                elapsed_ms=1,
+                metadata={},
+            ),
+        ),
+    )
+    monkeypatch.setattr(agent, "_call_llm_report", lambda question, context: None)
+
+    class DisabledSearchClient:
+        provider = ""
+        is_configured = False
+
+    monkeypatch.setattr(agent, "_create_web_search_client", lambda: DisabledSearchClient())
+    monkeypatch.setattr(agent, "_create_cninfo_client", lambda: DisabledSearchClient())
+
+    result = agent.analyze_investment_question("招商银行受宏观流动性影响怎么看")
+
+    assert result.ok is True
+    assert [call.name for call in result.tool_calls].count("macro_signal") == 1
+
+
 def test_v102_macro_api_endpoint(monkeypatch):
     _patch_macro_tools(monkeypatch)
     client = TestClient(create_app())

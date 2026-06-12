@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import smtplib
+import threading
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -122,6 +123,7 @@ class AlertEngine:
         storage_path: str | Path | None = None,
     ) -> None:
         self._rules: dict[str, AlertRule] = {}
+        self._rules_lock = threading.RLock()
         self._data_manager = data_manager
         self._indicators: Any = None
         self._storage_path = Path(storage_path) if storage_path else (
@@ -135,29 +137,33 @@ class AlertEngine:
         """Register an alert rule."""
         self._validate_rule(rule)
         max_rules = max(1, env_int("KRONOS_ALERT_MAX_RULES", 100))
-        if rule.id not in self._rules and len(self._rules) >= max_rules:
-            raise ValueError(f"alert rule limit exceeded ({max_rules})")
-        self._rules[rule.id] = rule
-        self._save_rules()
+        with self._rules_lock:
+            if rule.id not in self._rules and len(self._rules) >= max_rules:
+                raise ValueError(f"alert rule limit exceeded ({max_rules})")
+            self._rules[rule.id] = rule
+            self._save_rules_locked()
         logger.info("Alert rule registered: %s (%s)", rule.id, rule.name)
 
     def unregister_rule(self, rule_id: str) -> bool:
         """Remove an alert rule. Returns True if removed."""
-        if rule_id in self._rules:
-            del self._rules[rule_id]
-            self._save_rules()
-            logger.info("Alert rule removed: %s", rule_id)
-            return True
+        with self._rules_lock:
+            if rule_id in self._rules:
+                del self._rules[rule_id]
+                self._save_rules_locked()
+                logger.info("Alert rule removed: %s", rule_id)
+                return True
         logger.warning("Alert rule not found: %s", rule_id)
         return False
 
     def get_rule(self, rule_id: str) -> AlertRule | None:
         """Get a single rule by ID."""
-        return self._rules.get(rule_id)
+        with self._rules_lock:
+            return self._rules.get(rule_id)
 
     def list_rules(self) -> list[AlertRule]:
         """Return all registered rules."""
-        return list(self._rules.values())
+        with self._rules_lock:
+            return list(self._rules.values())
 
     # ---- Checking -------------------------------------------------------
 
@@ -180,7 +186,9 @@ class AlertEngine:
     def check_all(self) -> list[AlertEvent]:
         """Check all registered rules. Returns list of triggered events."""
         events: list[AlertEvent] = []
-        for rule in self._rules.values():
+        with self._rules_lock:
+            rules = list(self._rules.values())
+        for rule in rules:
             if not rule.enabled:
                 continue
             event = self.check_rule(rule)
@@ -192,7 +200,8 @@ class AlertEngine:
 
     def notify(self, event: AlertEvent) -> bool:
         """Send notification for an event. Returns True on success."""
-        rule = self._rules.get(event.rule_id)
+        with self._rules_lock:
+            rule = self._rules.get(event.rule_id)
         if rule is None:
             logger.warning("Cannot notify — rule %s not found", event.rule_id)
             return False
@@ -232,6 +241,8 @@ class AlertEngine:
 
         if alert_type == AlertType.PRICE_CHANGE:
             threshold_pct = params.get("threshold_pct", 5.0)
+            if prev_price == 0:
+                return None
             change_pct = abs((current_price - prev_price) / prev_price) * 100
             if change_pct >= threshold_pct:
                 direction = "up" if current_price > prev_price else "down"
@@ -316,7 +327,7 @@ class AlertEngine:
                 )
 
         elif alert_type == AlertType.VOLUME_SPIKE:
-            if volumes is None or len(volumes) < 20:
+            if volumes is None or len(volumes) < 2:
                 return None
             multiplier = params.get("multiplier", 3.0)
             avg_volume = sum(volumes[:-1]) / (len(volumes) - 1)
@@ -474,6 +485,7 @@ class AlertEngine:
             losses = [-d if d < 0 else 0 for d in deltas]
             avg_gain = sum(gains[:period]) / period
             avg_loss = sum(losses[:period]) / period
+            rsi_val = 100.0  # default when avg_loss == 0
             for i in range(period, len(deltas)):
                 if avg_loss == 0:
                     return 100.0
@@ -504,11 +516,14 @@ class AlertEngine:
         """Get the latest predicted close for a symbol from the predictor."""
         try:
             from kronos_fincept.predictor import DryRunPredictor
+            import pandas as pd
             predictor = DryRunPredictor()
-            # Use a minimal predicted value to check deviation
-            result = predictor.predict(symbol=symbol, rows=[], pred_len=1)
-            if result and "forecast" in result and result["forecast"]:
-                return float(result["forecast"][0].get("close", 0))
+            # Build minimal DataFrame for DryRunPredictor.predict(df, x_timestamp, pred_len)
+            df = pd.DataFrame({"close": [0.0], "volume": [0.0]})
+            x_timestamp = pd.Series([pd.Timestamp.now()])
+            result = predictor.predict(df=df, x_timestamp=x_timestamp, pred_len=1)
+            if result and hasattr(result, "frame") and not result.frame.empty:
+                return float(result.frame.iloc[0].get("close", 0))
             return None
         except Exception as exc:
             logger.debug("Could not get prediction for %s: %s", symbol, exc)
@@ -669,7 +684,7 @@ class AlertEngine:
 
     # ---- Persistence ----------------------------------------------------
 
-    def _storage_path(self) -> Path:
+    def _get_storage_path(self) -> Path:
         """Get path to JSON rules file."""
         if not hasattr(self, "_storage_path_internal"):
             self._storage_path_internal = Path.cwd() / ".hermes" / "alerts.json"
@@ -683,19 +698,26 @@ class AlertEngine:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            for item in data:
-                try:
-                    rule = AlertRule.from_dict(item)
-                    self._validate_rule(rule)
-                    self._rules[rule.id] = rule
-                except Exception as exc:
-                    logger.warning("Skipping invalid rule entry: %s", exc)
-            logger.info("Loaded %d alert rules from %s", len(self._rules), path)
+            with self._rules_lock:
+                for item in data:
+                    try:
+                        rule = AlertRule.from_dict(item)
+                        self._validate_rule(rule)
+                        self._rules[rule.id] = rule
+                    except Exception as exc:
+                        logger.warning("Skipping invalid rule entry: %s", exc)
+                loaded_count = len(self._rules)
+            logger.info("Loaded %d alert rules from %s", loaded_count, path)
         except Exception as exc:
             logger.warning("Failed to load alert rules: %s", exc)
 
     def _save_rules(self) -> None:
         """Save rules to JSON file."""
+        with self._rules_lock:
+            self._save_rules_locked()
+
+    def _save_rules_locked(self) -> None:
+        """Save rules while the caller holds ``_rules_lock``."""
         path = self._storage_path
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -897,11 +919,14 @@ def volume_spike_rule(
 # ---------------------------------------------------------------------------
 
 _engine: AlertEngine | None = None
+_engine_lock = threading.Lock()
 
 
 def get_engine(storage_path: str | Path | None = None) -> AlertEngine:
     """Get the global AlertEngine singleton."""
     global _engine
     if _engine is None:
-        _engine = AlertEngine(storage_path=storage_path)
+        with _engine_lock:
+            if _engine is None:
+                _engine = AlertEngine(storage_path=storage_path)
     return _engine

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -245,10 +246,41 @@ class TestAlertEngineManagement:
         assert len(rules) == 1
         assert rules[0].symbol == "600036"
 
+    def test_rule_mutations_are_thread_safe(self, tmp_path):
+        storage = tmp_path / "alerts.json"
+        eng = AlertEngine(storage_path=str(storage))
+
+        def register_and_remove(i: int) -> None:
+            rule = price_change_rule(f"600{i:03d}")
+            rule.id = f"rule_{i}"
+            eng.register_rule(rule)
+            assert eng.get_rule(rule.id) is not None
+            if i % 2 == 0:
+                eng.unregister_rule(rule.id)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(register_and_remove, range(40)))
+
+        rules = eng.list_rules()
+        assert all(rule.id.startswith("rule_") for rule in rules)
+        assert len(rules) == 20
+
+    def test_get_engine_singleton_is_thread_safe(self, tmp_path):
+        import kronos_fincept.alert_engine as alert_engine
+
+        alert_engine._engine = None
+        storage = tmp_path / "singleton_alerts.json"
+        try:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                engines = list(pool.map(lambda _: get_engine(str(storage)), range(40)))
+            assert len({id(engine) for engine in engines}) == 1
+        finally:
+            alert_engine._engine = None
+
 
 # ===================================================================
 # AlertEngine check tests (mocked data)
-# ===================================================================
+
 
 class TestAlertEngineChecks:
     def test_check_price_change_no_trigger(self, engine):
@@ -416,6 +448,58 @@ class TestAlertEngineChecks:
             events = engine.check_all()
         assert len(events) == 1
         assert events[0].alert_type == AlertType.RSI_OVERSOLD
+
+    def test_price_change_with_zero_previous_price_does_not_crash(self, engine):
+        rule = price_change_rule("600036", threshold_pct=1.0)
+
+        event = engine._evaluate_alert_conditions(
+            rule=rule,
+            closes=[0.0, 10.0],
+            current_price=10.0,
+            prev_price=0.0,
+        )
+
+        assert event is None
+
+    def test_volume_spike_single_volume_does_not_crash(self, engine):
+        rule = volume_spike_rule("600036", multiplier=2.0)
+
+        event = engine._evaluate_alert_conditions(
+            rule=rule,
+            closes=[10.0, 10.5],
+            current_price=10.5,
+            prev_price=10.0,
+            volumes=[1000.0],
+        )
+
+        assert event is None
+
+    def test_calc_rsi_manual_fallback_handles_exact_period(self, engine):
+        with patch(
+            "kronos_fincept.financial.indicators.TechnicalIndicators",
+            side_effect=RuntimeError("force fallback"),
+        ):
+            rsi = engine._calc_rsi([float(i) for i in range(15)], period=14)
+
+        assert rsi == 100.0
+
+    def test_get_latest_prediction_uses_dry_run_signature(self, engine):
+        import pandas as pd
+
+        result = MagicMock()
+        result.frame = pd.DataFrame({"close": [123.45]})
+
+        with patch("kronos_fincept.predictor.DryRunPredictor") as predictor_cls:
+            predictor = predictor_cls.return_value
+            predictor.predict.return_value = result
+
+            prediction = engine._get_latest_prediction("600036")
+
+        assert prediction == 123.45
+        predictor.predict.assert_called_once()
+        _, kwargs = predictor.predict.call_args
+        assert set(kwargs) == {"df", "x_timestamp", "pred_len"}
+        assert kwargs["pred_len"] == 1
 
     def test_data_fetch_failure_graceful(self, engine, rule_price_change):
         """Should handle data fetch errors gracefully."""

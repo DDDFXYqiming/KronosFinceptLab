@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json as jsonlib
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
@@ -162,3 +164,28 @@ def test_call_structured_llm_json_returns_none_when_all_fail(monkeypatch: pytest
         f"expected all three providers in _last_report_llm_failures, "
         f"got {failed_providers}"
     )
+
+
+def test_llm_shared_state_is_bounded_and_thread_safe() -> None:
+    from kronos_fincept import agent as _agent
+
+    provider = _agent.LLMChatProvider("llm", "LLM", "sk-test", "https://llm.example/v1", "model")
+    with _agent._LLM_STATE_LOCK:
+        _agent._LLM_CACHE.clear()
+        _agent._LLM_FAILURES.clear()
+
+    def record_failure(_: int) -> None:
+        _agent._record_llm_provider_failure(provider)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(record_failure, range(40)))
+
+    assert _agent._LLM_FAILURES["llm"][0] == 40
+
+    with _agent._LLM_STATE_LOCK:
+        for index in range(_agent._LLM_CACHE_MAX_ENTRIES + 10):
+            _agent._LLM_CACHE[f"key-{index}"] = ({"answer": index}, provider, time.time())
+            while len(_agent._LLM_CACHE) > _agent._LLM_CACHE_MAX_ENTRIES:
+                _agent._LLM_CACHE.pop(next(iter(_agent._LLM_CACHE)))
+
+    assert len(_agent._LLM_CACHE) == _agent._LLM_CACHE_MAX_ENTRIES

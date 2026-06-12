@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import re
 
 import pandas as pd
+import pytest
 
 from kronos_fincept.schemas import ForecastRequest, ForecastRow
 
@@ -195,6 +197,64 @@ def test_real_inference_calls_are_serialized(monkeypatch):
     assert active["max"] == 1
     assert all(result.inference_wait_ms >= 0 for result in results)
     assert any(result.model_cached for result in results)
+
+
+def test_predictor_lock_acquire_times_out(monkeypatch):
+    from kronos_fincept import predictor
+
+    lock = threading.Lock()
+    lock.acquire()
+    monkeypatch.setattr(predictor, "_LOCK_ACQUIRE_TIMEOUT_SECONDS", 0.01)
+    try:
+        with pytest.raises(TimeoutError):
+            predictor._acquire_lock_or_timeout(lock, name="test lock", cache_key="test-cache")
+    finally:
+        lock.release()
+
+
+def test_dry_run_predictor_rejects_empty_input():
+    from kronos_fincept.predictor import DryRunPredictor
+
+    timestamps = pd.Series(pd.date_range("2026-01-01", periods=1, freq="D"))
+    with pytest.raises(ValueError, match="at least one row"):
+        DryRunPredictor().predict(pd.DataFrame(columns=["close"]), timestamps, pred_len=1)
+
+
+def test_predict_batch_rejects_mismatched_inputs_before_loading_model():
+    from kronos_fincept import predictor
+
+    wrapper = predictor.KronosPredictorWrapper(model_id="NeoQuasar/Kronos-small")
+    timestamps = pd.Series(pd.date_range("2026-01-01", periods=3, freq="D"))
+
+    with pytest.raises(ValueError, match="same length"):
+        wrapper.predict_batch([_frame()], [timestamps, timestamps], pred_len=1)
+
+
+def test_probabilistic_prediction_handles_zero_mean_close_denominator(monkeypatch):
+    from kronos_fincept import predictor
+
+    class ZeroClosePredictor:
+        def predict(self, **kwargs):
+            return pd.DataFrame(
+                [
+                    {"timestamp": "D1", "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0},
+                    {"timestamp": "D2", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0},
+                ]
+            )
+
+    wrapper = predictor.KronosPredictorWrapper(model_id="NeoQuasar/Kronos-small")
+    wrapper._resolved_device = "cpu"
+    monkeypatch.setattr(wrapper, "_load", lambda: ZeroClosePredictor())
+    timestamps = pd.Series(pd.date_range("2026-01-01", periods=3, freq="D"))
+
+    result = wrapper.predict_probabilistic(
+        df=_frame(),
+        x_timestamp=timestamps,
+        pred_len=2,
+        historical_volatility=0.1,
+    )
+
+    assert result.volatility_amplification >= 0.0
 
 
 def test_service_metadata_exposes_cache_and_lock_diagnostics(monkeypatch):

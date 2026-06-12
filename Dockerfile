@@ -25,7 +25,7 @@ RUN set -eux; \
     for registry in "$NPM_CONFIG_REGISTRY" "https://registry.npmmirror.com"; do \
         npm config set registry "$registry"; \
         for attempt in 1 2 3; do \
-            if npm ci --no-audit --no-fund; then \
+            if npm ci --include=optional --no-audit --no-fund; then \
                 exit 0; \
             fi; \
             if [ "$registry" = "https://registry.npmmirror.com" ] && [ "$attempt" = "3" ]; then \
@@ -88,14 +88,14 @@ RUN if [ "$INSTALL_KRONOS_RUNTIME" = "1" ]; then \
 RUN mkdir -p external/Kronos \
     && git -c http.sslVerify=false -C external/Kronos init \
     && git -c http.sslVerify=false -C external/Kronos remote add origin "$KRONOS_REPO_URL" \
-    && git -c http.sslVerify=false -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF" \
+    && git -C external/Kronos fetch --depth=1 origin "$KRONOS_REPO_REF" \
     && git -c http.sslVerify=false -C external/Kronos checkout --detach FETCH_HEAD \
     && test "$(git -C external/Kronos rev-parse HEAD)" = "$KRONOS_REPO_REF" \
     && test -f external/Kronos/model/__init__.py \
     && rm -rf external/Kronos/.git
 
 # ────────────────────────────────────────────────────────────────
-# Stage 3: Final runtime image (no build tools)
+# Stage 3: Python backend + Next standalone runtime. Keep build tools out.
 # ────────────────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS backend
 WORKDIR /app
@@ -118,7 +118,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     KRONOS_MODEL_ID=NeoQuasar/Kronos-base \
     KRONOS_ENABLE_REAL_MODEL=1 \
     KRONOS_ALLOW_DRY_RUN=0 \
-    KRONOS_PREWARM_ON_STARTUP=0 \
+    KRONOS_PREWARM_ON_STARTUP=1 \
     KRONOS_LOG_FORMAT=json \
     KRONOS_LOG_ENABLE_FILE=0 \
     MALLOC_ARENA_MAX=2 \
@@ -128,6 +128,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
     NUMEXPR_MAX_THREADS=1 \
     VECLIB_MAXIMUM_THREADS=1 \
     TOKENIZERS_PARALLELISM=false
+
+# Low-memory deployments can override KRONOS_PREWARM_ON_STARTUP=0 at runtime.
 
 ARG KRONOS_APP_VERSION=v10.9.0
 ARG KRONOS_BUILD_COMMIT=unknown
@@ -155,4 +157,4 @@ RUN chmod +x scripts/zeabur_start.sh && \
 
 EXPOSE 3000
 
-CMD ["/bin/sh", "./scripts/zeabur_start.sh"]
+CMD ["./scripts/zeabur_start.sh"]

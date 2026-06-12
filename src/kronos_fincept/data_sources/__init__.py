@@ -370,6 +370,8 @@ class DataSourceManager:
                 if stale_data is not None:
                     stale_data["stale_reason"] = result.get("error", "source failed")
                     return stale_data
+            result["error"] = f"所有数据源都失败: {candidates[0].config.name}={result.get('error', 'unknown')}"
+            result["source"] = "none"
             return result
 
         # Parallel race: submit all sources, return first success

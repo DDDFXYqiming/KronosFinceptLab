@@ -29,6 +29,13 @@ os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
 _PREDICTOR_CACHE_LOCK = threading.RLock()
 _INFERENCE_LOCKS: dict[str, threading.Lock] = {}
 _INFERENCE_LOCKS_GUARD = threading.Lock()
+_LOCK_ACQUIRE_TIMEOUT_SECONDS = 60.0
+
+
+def _acquire_lock_or_timeout(lock: threading.Lock | threading.RLock, *, name: str, cache_key: str) -> None:
+    """Acquire a lock with a finite timeout so deadlocks surface as errors."""
+    if not lock.acquire(timeout=_LOCK_ACQUIRE_TIMEOUT_SECONDS):
+        raise TimeoutError(f"timed out acquiring {name} for {cache_key}")
 
 
 def _get_inference_lock(cache_key: str) -> threading.Lock:
@@ -39,6 +46,20 @@ def _get_inference_lock(cache_key: str) -> threading.Lock:
             lock = threading.Lock()
             _INFERENCE_LOCKS[cache_key] = lock
         return lock
+
+
+def _validate_prediction_inputs(df: pd.DataFrame, x_timestamp: pd.Series, pred_len: int) -> None:
+    """Validate forecast inputs before model or dry-run prediction."""
+    if pred_len <= 0:
+        raise ValueError("pred_len must be positive")
+    if df is None or df.empty:
+        raise ValueError("df must contain at least one row")
+    if "close" not in df.columns:
+        raise ValueError("df must include a close column")
+    if x_timestamp is None or len(x_timestamp) == 0:
+        raise ValueError("x_timestamp must contain at least one timestamp")
+
+
 _PREDICTOR_CACHE: dict[tuple[str, str, int, str], "_CachedPredictor"] = {}
 logger = logging.getLogger("kronos_fincept.predictor")
 
@@ -243,6 +264,7 @@ class DryRunPredictor:
     """Deterministic predictor used before real Kronos dependencies are available."""
 
     def predict(self, df: pd.DataFrame, x_timestamp: pd.Series, pred_len: int) -> ForecastResult:
+        _validate_prediction_inputs(df, x_timestamp, pred_len)
         started = time.perf_counter()
         y_timestamp = make_future_timestamps(x_timestamp, pred_len)
         last = df.iloc[-1]
@@ -329,7 +351,7 @@ class KronosPredictorWrapper:
             tokenizer_id=self.tokenizer_id,
             cache_key=self.cache_key,
         )
-        _PREDICTOR_CACHE_LOCK.acquire()
+        _acquire_lock_or_timeout(_PREDICTOR_CACHE_LOCK, name="predictor cache lock", cache_key=self.cache_key)
         self._load_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         if self._load_wait_ms:
             log_event(
@@ -457,12 +479,13 @@ class KronosPredictorWrapper:
         return predictor, device
 
     def predict(self, df: pd.DataFrame, x_timestamp: pd.Series, pred_len: int) -> ForecastResult:
+        _validate_prediction_inputs(df, x_timestamp, pred_len)
         started = time.perf_counter()
         predictor = self._load()
         y_timestamp = make_future_timestamps(x_timestamp, pred_len)
         _inference_lock = _get_inference_lock(self.cache_key)
         wait_started = time.perf_counter()
-        _inference_lock.acquire()
+        _acquire_lock_or_timeout(_inference_lock, name="inference lock", cache_key=self.cache_key)
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         log_event(
             logger,
@@ -550,6 +573,7 @@ class KronosPredictorWrapper:
         Returns:
             ProbabilisticForecastResult with statistics from multiple sample paths.
         """
+        _validate_prediction_inputs(df, x_timestamp, pred_len)
         started = time.perf_counter()
         predictor = self._load()
         y_timestamp = make_future_timestamps(x_timestamp, pred_len)
@@ -568,7 +592,7 @@ class KronosPredictorWrapper:
 
         _inference_lock = _get_inference_lock(self.cache_key)
         wait_started = time.perf_counter()
-        _inference_lock.acquire()
+        _acquire_lock_or_timeout(_inference_lock, name="inference lock", cache_key=self.cache_key)
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         log_event(
             logger,
@@ -656,7 +680,13 @@ class KronosPredictorWrapper:
         if historical_volatility > 0:
             # Use returns from mean path
             mean_closes = np.mean([s["close"].values for s in samples], axis=0)
-            mean_returns = np.diff(mean_closes) / mean_closes[:-1]
+            previous_closes = mean_closes[:-1]
+            mean_returns = np.divide(
+                np.diff(mean_closes),
+                previous_closes,
+                out=np.zeros_like(previous_closes, dtype=float),
+                where=previous_closes != 0,
+            )
             predicted_volatility = float(np.std(mean_returns) * np.sqrt(252))
             volatility_amplification = predicted_volatility / historical_volatility
         else:
@@ -706,6 +736,12 @@ class KronosPredictorWrapper:
         Returns:
             List of ForecastResult in same order as input.
         """
+        if len(dfs) != len(x_timestamps):
+            raise ValueError("dfs and x_timestamps must have the same length")
+        if not dfs:
+            raise ValueError("dfs must contain at least one DataFrame")
+        for df, x_timestamp in zip(dfs, x_timestamps):
+            _validate_prediction_inputs(df, x_timestamp, pred_len)
         started = time.perf_counter()
         predictor = self._load()
 
@@ -714,7 +750,7 @@ class KronosPredictorWrapper:
 
         _inference_lock = _get_inference_lock(self.cache_key)
         wait_started = time.perf_counter()
-        _inference_lock.acquire()
+        _acquire_lock_or_timeout(_inference_lock, name="inference lock", cache_key=self.cache_key)
         inference_wait_ms = int((time.perf_counter() - wait_started) * 1000)
         log_event(
             logger,
