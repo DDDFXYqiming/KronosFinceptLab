@@ -339,14 +339,15 @@ class JsonFormatter(logging.Formatter):
     """JSON Lines: dense, machine-readable."""
 
     def format(self, record: logging.LogRecord) -> str:
+        message = _record_message(record)
         payload: dict[str, Any] = {
             "t": _iso(record.created),
             "lv": record.levelname,
             "level": record.levelname,
             "lg": record.name,
             "logger": record.name,
-            "event": getattr(record, "event", None) or record.getMessage(),
-            "ev": getattr(record, "event", None) or record.getMessage(),
+            "event": getattr(record, "event", None) or message,
+            "ev": getattr(record, "event", None) or message,
             "request_id": getattr(record, "request_id", None) or get_request_id(),
             "rid": getattr(record, "request_id", None) or get_request_id(),
             "test_run_id": getattr(record, "test_run_id", None) or get_test_run_id(),
@@ -363,8 +364,8 @@ class JsonFormatter(logging.Formatter):
             "ms": getattr(record, "duration_ms", None),
             "error_type": getattr(record, "error_type", None),
             "et": getattr(record, "error_type", None),
-            "message": redact(record.getMessage()),
-            "msg": redact(record.getMessage()),
+            "message": redact(message),
+            "msg": redact(message),
         }
         # Compact: drop None values
         payload = {k: v for k, v in payload.items() if v is not None}
@@ -388,7 +389,8 @@ class TextFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         t = _iso(record.created)
-        ev = getattr(record, "event", None) or record.getMessage()
+        message = _record_message(record)
+        ev = getattr(record, "event", None) or message
         rid = getattr(record, "request_id", None) or get_request_id() or "-"
         parts = [t, record.levelname, record.name.split(".")[-1], ev]
         # Add condensed context
@@ -408,13 +410,31 @@ class TextFormatter(logging.Formatter):
             ctx = _sys_ctx()
             if "mem_mb" in ctx:
                 parts.append(f"mem={ctx['mem_mb']}M")
-        msg = redact(record.getMessage())
+        msg = redact(message)
         if msg and msg != ev:
             parts.append(msg)
         out = " ".join(str(p) for p in parts)
         if record.exc_info:
             out += "\n" + redact(self.formatException(record.exc_info))
         return out
+
+
+def _record_message(record: logging.LogRecord) -> str:
+    """Return a safe message without forcing a second %-interpolation failure."""
+    if record.args:
+        return str(record.msg)
+    try:
+        return record.getMessage()
+    except Exception:
+        return str(record.msg)
+
+
+def _resolve_log_directory(log_dir: str | os.PathLike[str] | None) -> Path:
+    """Resolve log directory while rejecting relative parent traversal."""
+    raw = Path(log_dir or settings.logging.directory).expanduser()
+    if ".." in raw.parts:
+        raise ValueError("log_dir must not contain parent-directory traversal")
+    return raw.resolve(strict=False) if raw.is_absolute() else (Path.cwd() / raw).resolve(strict=False)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -459,14 +479,14 @@ def configure_logging(
 
     file_on = settings.logging.enable_file if enable_file is None else enable_file
     if file_on:
-        directory = Path(log_dir or settings.logging.directory)
+        directory = _resolve_log_directory(log_dir)
         directory.mkdir(parents=True, exist_ok=True)
         cleanup_old_logs(directory, settings.logging.retention_days)
         lf = directory / f"kronos-{datetime.now().strftime('%Y%m%d')}.log"
         fh = RotatingFileHandler(
             lf,
             maxBytes=max(1024, int(settings.logging.max_bytes)),
-            backupCount=max(1, int(settings.logging.retention_days)),
+            backupCount=max(1, int(os.environ.get("KRONOS_LOG_BACKUP_COUNT", "5"))),
             encoding="utf-8",
         )
         fh.setLevel(numeric)
@@ -661,7 +681,7 @@ def query_logs(
     end_time: datetime | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    directory = Path(log_dir or settings.logging.directory)
+    directory = _resolve_log_directory(log_dir)
     if not directory.exists():
         return []
 

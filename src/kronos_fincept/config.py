@@ -13,6 +13,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Mapping
 
@@ -37,31 +38,55 @@ def _read_env_value(env_path: Path, key: str) -> str:
     return ""
 
 
-def _read_hermes_model_config() -> dict[str, str]:
-    """Read the current model config from the Hermes gateway.
+def _safe_hermes_home(raw_home: str) -> Path | None:
+    """Return a safe absolute Hermes home path, rejecting relative traversal."""
+    if not raw_home:
+        return None
+    candidate = Path(raw_home).expanduser()
+    if not candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    try:
+        return candidate.resolve(strict=False)
+    except OSError:
+        return None
 
-    Looks for HERMES_HOME env var or default path (E:/hermes-agent/.hermes).
-    Returns dict with keys: api_key, base_url, model, or empty dict on failure.
-    """
-    hermes_home = os.environ.get("HERMES_HOME", "")
-    if not hermes_home:
-        candidate = Path("E:/hermes-agent/.hermes/config.yaml")
-        if candidate.is_file():
-            hermes_home = str(candidate.parent)
-        else:
-            return {}
-    hermes_dir = Path(hermes_home)
-    config_path = hermes_dir / "config.yaml"
-    if not config_path.is_file():
-        return {}
+
+@lru_cache(maxsize=8)
+def _load_hermes_yaml(config_path: str, mtime_ns: int) -> dict:
+    """Load Hermes YAML config, cached by path and mtime."""
+    del mtime_ns  # included in the cache key
     try:
         import yaml
     except ImportError:
         return {}
     try:
         with open(config_path, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+            return yaml.safe_load(f) or {}
     except Exception:
+        return {}
+
+
+def _read_hermes_model_config() -> dict[str, str]:
+    """Read the current model config from the Hermes gateway.
+
+    Looks for HERMES_HOME env var or default path (E:/hermes-agent/.hermes).
+    Returns dict with keys: api_key, base_url, model, or empty dict on failure.
+    """
+    hermes_home_raw = os.environ.get("HERMES_HOME", "")
+    hermes_dir = _safe_hermes_home(hermes_home_raw)
+    if hermes_home_raw and hermes_dir is None:
+        return {}
+    if hermes_dir is None:
+        candidate = Path("E:/hermes-agent/.hermes/config.yaml")
+        if candidate.is_file():
+            hermes_dir = candidate.parent.resolve(strict=False)
+        else:
+            return {}
+    config_path = hermes_dir / "config.yaml"
+    if not config_path.is_file():
+        return {}
+    cfg = _load_hermes_yaml(str(config_path), config_path.stat().st_mtime_ns)
+    if not cfg:
         return {}
 
     model_cfg = cfg.get("model", {})
@@ -351,7 +376,7 @@ class AnySearchConfig:
 @dataclass(frozen=True)
 class ServerConfig:
     """API server config."""
-    host: str = field(default_factory=lambda: _get("API_HOST", "0.0.0.0"))
+    host: str = field(default_factory=lambda: _get("API_HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: _get_int("API_PORT", 8000))
     log_level: str = field(default_factory=lambda: _get("LOG_LEVEL", "INFO"))
 

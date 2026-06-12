@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import concurrent.futures
-import ast
 import inspect
 import json
 import logging
 import math
 import os
 import re
+import threading
 import time
 from contextlib import redirect_stdout
 from contextvars import ContextVar
@@ -42,7 +42,9 @@ _LAST_REPORT_LLM_FAILURES: ContextVar[list[dict[str, Any]]] = ContextVar("last_r
 # P2 #10: LLM response cache — avoid duplicate LLM calls for same inputs
 _LLM_CACHE: dict[str, tuple] = {}  # key → (result, provider, timestamp)
 _LLM_CACHE_TTL = 300  # 5 minutes
+_LLM_CACHE_MAX_ENTRIES = 128
 _LLM_FAILURES: dict[str, tuple[int, float]] = {}
+_LLM_STATE_LOCK = threading.RLock()
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
 ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"llm": 20}
@@ -528,11 +530,14 @@ def _call_structured_llm_json(
     import hashlib as _hashlib
     _cache_key_raw = json.dumps(messages, sort_keys=True, ensure_ascii=False) + f"|{temperature}|{purpose}"
     _cache_key = _hashlib.md5(_cache_key_raw.encode()).hexdigest()
-    _cached = _LLM_CACHE.get(_cache_key)
-    if _cached is not None:
-        result, provider, ts = _cached
-        if time.time() - ts < _LLM_CACHE_TTL:
-            return result, provider
+    now = time.time()
+    with _LLM_STATE_LOCK:
+        _cached = _LLM_CACHE.get(_cache_key)
+        if _cached is not None:
+            result, provider, ts = _cached
+            if now - ts < _LLM_CACHE_TTL:
+                return result, provider
+            _LLM_CACHE.pop(_cache_key, None)
 
     providers = _ordered_llm_providers(_llm_provider_chain(), provider_order)
     if not providers:
@@ -660,7 +665,10 @@ def _call_structured_llm_json(
                 continue
             _record_llm_provider_success(provider)
             # P2 #10: Cache successful LLM response
-            _LLM_CACHE[_cache_key] = (parsed, provider, time.time())
+            with _LLM_STATE_LOCK:
+                _LLM_CACHE[_cache_key] = (parsed, provider, time.time())
+                while len(_LLM_CACHE) > _LLM_CACHE_MAX_ENTRIES:
+                    _LLM_CACHE.pop(next(iter(_LLM_CACHE)))
             return parsed, provider
         except Exception as exc:
             _record_llm_provider_failure(provider)
@@ -697,17 +705,20 @@ def _strip_think_blocks(content: str) -> str:
 def _llm_provider_circuit_open(provider: LLMChatProvider) -> bool:
     threshold = max(1, env_int("KRONOS_LLM_CIRCUIT_FAILURES", 5))
     cooldown = max(1, env_int("KRONOS_LLM_CIRCUIT_COOLDOWN_SECONDS", 300))
-    count, last_failure = _LLM_FAILURES.get(provider.name, (0, 0.0))
+    with _LLM_STATE_LOCK:
+        count, last_failure = _LLM_FAILURES.get(provider.name, (0, 0.0))
     return count >= threshold and (time.time() - last_failure) < cooldown
 
 
 def _record_llm_provider_success(provider: LLMChatProvider) -> None:
-    _LLM_FAILURES.pop(provider.name, None)
+    with _LLM_STATE_LOCK:
+        _LLM_FAILURES.pop(provider.name, None)
 
 
 def _record_llm_provider_failure(provider: LLMChatProvider) -> None:
-    count, _ = _LLM_FAILURES.get(provider.name, (0, 0.0))
-    _LLM_FAILURES[provider.name] = (count + 1, time.time())
+    with _LLM_STATE_LOCK:
+        count, _ = _LLM_FAILURES.get(provider.name, (0, 0.0))
+        _LLM_FAILURES[provider.name] = (count + 1, time.time())
 
 
 def _llm_request_payload(
@@ -1098,7 +1109,6 @@ def analyze_investment_question(
 
     if needs_macro and macro_result is not None:
         macro_context, macro_call = macro_result
-        tool_calls.append(macro_call)
 
     for item, asset_context, calls in asset_build_results:
         asset_contexts.append(asset_context)
@@ -1173,8 +1183,8 @@ def analyze_investment_question(
     )
 
     # Collect macro results (started in parallel with asset building)
-    if needs_macro and macro_future is not None:
-        macro_context, macro_call = macro_future.result()
+    if needs_macro and macro_result is not None:
+        macro_context, macro_call = macro_result
         tool_calls.append(macro_call)
         log_event(
             logger,
@@ -1674,7 +1684,8 @@ market 只能是 cn, hk, us, commodity。港股小米通常是 1810.hk；诺基�
             decision,
             metadata={**decision.metadata, "provider": provider.name, "model": provider.model},
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug("LLM router failed: %s", _short_error(exc))
         return None
 
 
@@ -1752,7 +1763,8 @@ JSON schema:
             decision,
             metadata={**decision.metadata, "provider": provider.name, "model": provider.model},
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug("LLM router failed: %s", _short_error(exc))
         return None
 
 
@@ -3193,7 +3205,8 @@ def _fetch_financial_summary(symbol: str, market: str) -> dict[str, Any] | None:
                 "gross_profit": getattr(latest_income, "gross_profit", None) if latest_income else None,
                 "period": getattr(latest_income, "period", None) if latest_income else None,
             }
-        except Exception:
+        except Exception as exc:
+            logger.debug("CN financial summary unavailable for %s: %s", symbol, _short_error(exc))
             return None
     elif market == "us":
         try:
@@ -3232,7 +3245,8 @@ def _fetch_financial_summary(symbol: str, market: str) -> dict[str, Any] | None:
                 "gross_profit": info.get("grossProfits"),
                 "period": None,
             }
-        except Exception:
+        except Exception as exc:
+            logger.debug("US financial summary unavailable for %s: %s", symbol, _short_error(exc))
             return None
     else:
         return None
@@ -3282,7 +3296,8 @@ def _build_technical_indicators(rows: list[dict[str, Any]]) -> dict[str, Any] | 
             else:
                 normalized[key] = str(value)
         return normalized
-    except Exception:
+    except Exception as exc:
+        logger.debug("Technical indicator calculation failed: %s", _short_error(exc))
         return None
 
 
@@ -3301,7 +3316,8 @@ def _build_risk_metrics(symbol: str, rows: list[dict[str, Any]]) -> dict[str, An
             "max_drawdown": metrics.max_drawdown,
             "volatility": metrics.volatility,
         }
-    except Exception:
+    except Exception as exc:
+        logger.debug("Risk metric calculation failed for %s: %s", symbol, _short_error(exc))
         return None
 
 
@@ -4625,10 +4641,7 @@ def _report_text(value: Any) -> str:
             try:
                 return _report_text(json.loads(text))
             except Exception:
-                try:
-                    return _report_text(ast.literal_eval(text))
-                except Exception:
-                    return text
+                return text
         return text
     if isinstance(value, dict):
         parts: list[str] = []

@@ -50,6 +50,7 @@ docs/RUST_REFACTORING_ASSESSMENT.md
 uv.lock
 
 # Temporary / ad-hoc scripts
+temp/
 scripts/*_analysis.py
 
 # OS / editor

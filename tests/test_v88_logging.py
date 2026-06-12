@@ -1,9 +1,14 @@
 import json
+import logging
+import os
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from io import StringIO
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -118,6 +123,62 @@ def test_logging_config_reads_kronos_env_vars(monkeypatch):
     assert cfg.enable_async is True
     assert cfg.retention_days == 3
     assert cfg.max_bytes == 4096
+
+
+def test_configure_logging_rejects_parent_traversal_log_dir(tmp_path):
+    stream = StringIO()
+    bad_dir = tmp_path / "logs" / ".." / "outside"
+
+    try:
+        configure_logging(
+            level="INFO",
+            log_format="json",
+            log_dir=bad_dir,
+            stream=stream,
+            enable_file=True,
+            force=True,
+        )
+    except ValueError as exc:
+        assert "parent-directory" in str(exc)
+    else:
+        raise AssertionError("configure_logging should reject parent traversal in log_dir")
+
+
+def test_formatters_do_not_reinterpolate_malformed_log_args():
+    stream = StringIO()
+    configure_logging(
+        level="INFO",
+        log_format="json",
+        stream=stream,
+        enable_file=False,
+        force=True,
+    )
+    logger = get_logger("kronos_fincept.tests.malformed")
+
+    logger.info("bad %s %s", "only-one")
+
+    payload = json.loads(stream.getvalue().strip().splitlines()[-1])
+    assert payload["message"] == "bad %s %s"
+
+
+def test_retention_days_does_not_drive_rotating_backup_count(monkeypatch, tmp_path):
+    import kronos_fincept.logging_config as logging_config
+
+    patched_logging = replace(logging_config.settings.logging, retention_days=99)
+    monkeypatch.setattr(logging_config, "settings", SimpleNamespace(logging=patched_logging))
+    monkeypatch.setenv("KRONOS_LOG_BACKUP_COUNT", "2")
+    configure_logging(
+        level="INFO",
+        log_format="json",
+        log_dir=tmp_path,
+        stream=StringIO(),
+        enable_file=True,
+        force=True,
+    )
+
+    file_handlers = [h for h in logging.getLogger().handlers if isinstance(h, RotatingFileHandler)]
+    assert file_handlers
+    assert file_handlers[-1].backupCount == 2
 
 
 def test_api_request_logging_propagates_request_id(tmp_path):

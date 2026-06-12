@@ -190,7 +190,7 @@ def test_v971_report_normalization_formats_per_asset_mapping_as_prose():
                 "招商银行": "RSI 中性，MACD 收敛。",
                 "兴业银行": "RSI 偏高，短期有回调风险。",
             },
-            "fundamentals": "{'招商银行': '资产质量较优。', '兴业银行': '息差承压。'}",
+            "fundamentals": '{"招商银行": "资产质量较优。", "兴业银行": "息差承压。"}',
             "risk": ["招商银行：零售业务受经济影响。", "兴业银行：同业监管风险。"],
         }
     )
@@ -199,3 +199,12 @@ def test_v971_report_normalization_formats_per_asset_mapping_as_prose():
     assert report["fundamentals"] == "招商银行：资产质量较优。；兴业银行：息差承压。"
     assert report["risk"] == "招商银行：零售业务受经济影响。；兴业银行：同业监管风险。"
     assert "{" not in report["technical"]
+
+
+def test_report_normalization_rejects_python_literals_from_text():
+    from kronos_fincept.agent import _normalize_report
+
+    payload = "{'招商银行': '资产质量较优。'}"
+    report = _normalize_report({"conclusion": payload})
+
+    assert report["conclusion"] == payload
