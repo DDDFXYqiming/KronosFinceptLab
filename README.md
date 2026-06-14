@@ -1,221 +1,184 @@
 # KronosFinceptLab
 
-> Your local-first quantitative finance cockpit.
-
-An integrated quantitative finance analytics platform combining **market data, AI-powered forecasting, technical analysis, macroeconomic signals, AI investment research, news monitoring, alerts, and MCP integration** — all running locally on your machine with automatic data source fallback. Accessible via CLI, API, Web UI, and MCP.
-
----
-
-## Core Capabilities
-
-| Capability | Description |
-|------------|-------------|
-| Market Data | OHLCV, search, A-share money flow, sector flow, Stock Connect flow, market-review cache artifacts, HK/US/crypto/commodity data, and auto-fallback providers |
-| AI K-line Forecasting | Future K-line prediction powered by the Kronos foundation model, supporting single-asset, batch, probabilistic sampling, and async jobs |
-| Technical Analysis | SMA, EMA, RSI, MACD, Bollinger, KDJ, CCI, ATR, OBV and other common indicators |
-| AI Investment Advisor | Natural-language stock Q&A, investment analysis reports, risk assessment, DCF, portfolio optimization, derivatives pricing, and conversational context |
-| Macroeconomic Signals | Digital Oracle style aggregation of 17+ signal types plus China macro, source-project macro cache, optional FRED, NBS live, ChinaDataLive, and web-enriched research |
-| Strategy Backtest | Multi-symbol ranking backtest with HTML report generation |
-| Watchlist & News | Watchlist research workspace, CSV import/export, quote summaries, risk tags, and HTTPS RSS/Atom news aggregation |
-| Smart Alerts | Rule-based monitoring for price changes, indicator triggers, prediction deviation, volume spikes, webhook/email delivery, and continuous monitoring |
-| Security & Deployment | API key roles, rate limits, request-size budgets, API docs gating, SSRF-safe URL handling, and combined Web/API Docker runtime |
-| MCP Integration | MCP server exposing forecast, data, money-flow, source-cache, indicator, backtest, agent, macro, jobs, alerts, watchlist, suggestions, and health tools |
-
-## Capabilities Matrix
-
-| Capability | Web | API | CLI | MCP |
-|------------|-----|-----|-----|-----|
-| Dashboard | Dashboard page | `GET /api/health` | `kronos health` | `health_check` |
-| Forecasting | Forecast page | `POST /api/forecast` | `kronos forecast` | `forecast_ohlcv` |
-| Async forecast/analyze/backtest jobs | Forecast/analysis clients | `POST /api/jobs/forecast`, `/analyze`, `/batch`, `/backtest`, `GET /api/jobs/{job_id}`, `POST /api/jobs/{id}/cancel` | `kronos jobs list/show/cancel` | `submit_backtest_job`, `get_job_status`, `list_jobs`, `cancel_job` |
-| Batch ranking | Batch page | `POST /api/batch` | `kronos batch` | `batch_forecast_ohlcv` |
-| Market data | Data page, Watchlist page | `GET /api/data/*` | `kronos data fetch/search/indicator/money-flow/sector-flow/hsgt-flow/source-market` | `fetch_a_stock`, `search_stocks`, `calculate_indicators`, `get_money_flow`, `get_sector_flow`, `get_hsgt_flow`, `get_source_market_artifact` |
-| Backtest | Backtest page | `POST /api/backtest/ranking`, `/report`, `/strategy`, `/strategy/scan` | `kronos backtest ranking/report/strategy/scan` | `run_ranking_backtest`, `generate_backtest_report`, `run_strategy_backtest`, `run_strategy_scan` |
-| Natural-language agent analysis | Analysis page | `POST /api/v1/analyze/agent` | `kronos analyze agent` | `analyze_agent` |
-| Macro signals | Macro page | `POST /api/v1/analyze/macro`, `GET /api/v1/analyze/macro/providers/status` | `kronos analyze macro`, `kronos analyze providers` | `analyze_macro`, `macro_provider_status` |
-| AI stock report | Analysis page | `POST /api/v1/analyze/ai` | `kronos analyze ai-analyze` | `analyze_ai` |
-| Valuation, risk, portfolio, derivatives | Analysis page | `POST /api/v1/analyze/dcf`, `/risk`, `/portfolio`, `/derivative` | `kronos analyze dcf/risk/portfolio/derivative` | `analyze_dcf`, `analyze_risk`, `analyze_portfolio`, `analyze_derivative` |
-| Suggestions | Analysis/Macro pages | `GET /api/v1/suggestions` | `kronos suggestions` | `generate_suggestions` |
-| Alerts | Alerts page | `POST/GET/DELETE /api/alert/*`, `POST /api/alert/check` | `kronos alert add/list/remove/check/monitor` | `create_prediction_deviation_alerts`, `list_alert_rules`, `delete_alert_rule`, `check_alert_rules` |
-| News/RSS | News page | `POST /api/news/rss` | `kronos news rss` | `fetch_rss_news` |
-| Watchlist | Watchlist page | `GET/POST/PUT/DELETE /api/watchlist/lists`, `POST /api/watchlist/research` | `kronos watchlist list/create/delete/research` | `watchlist_research`, `watchlist_list`, `watchlist_create`, `watchlist_delete` |
-| Model utilities | CLI-only | N/A | `kronos model finetune-csv` | N/A |
-| Admin security summary | Settings/admin clients | `GET /api/admin/security/summary` | API-only | API-only |
-
-## What Makes It Unique
-
-- **Local-first** — Core capabilities can run locally with no cloud lock-in; external data/LLM/search providers are optional and degrade gracefully.
-- **Unified multi-entry** — CLI (`kronos`), REST API (`kronos serve`), Web UI, and MCP server share the same analysis and forecasting engines.
-- **Data source circuit breaking** — EastMoney, Tushare, TDX local, AkShare, BaoStock, Yahoo/Stooq, Binance/OKX, source-project caches, Treasury, BIS, SEC/EDGAR, CFTC, and web-search enrichment are used with fallback, caching, timeout handling, and stale-cache fallback.
-- **AI-native** — Built-in Kronos K-line model inference plus unified OpenAI-compatible LLM synthesis for routing, macro analysis, and report generation.
-- **Observable and deployable** — JSON Lines structured logging with `request_id`, build fingerprints, API key roles, rate limits, request budgets, and Docker-friendly startup.
+> 本地优先的量化金融分析驾驶舱  
+> 版本：10.9.0 | Python >= 3.11 | Node >= 18
 
 ---
 
-## Quick Start
+## 简介
 
-### Installation
+KronosFinceptLab 是一个**本地优先的量化金融分析平台**，完全在本地运行。集市场行情数据获取、AI K线预测、技术分析、宏观经济信号聚合、投研分析、策略回测于一体，支持 CLI、REST API、Web UI 和 MCP 四种入口。
 
-```bash
-cd KronosFinceptLab
+所有核心能力无需云端锁定即可工作。外部数据源（东方财富、Tushare、Yahoo、Binance）和 LLM 服务均为可选，失败时自动降级。
 
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # Linux/Mac
+---
 
-# Install with optional extras
-pip install -e .[api,cli,astock,kronos]
-```
-
-### CLI Usage
+## 快速开始
 
 ```bash
-# Single-asset forecast
+# 安装
+pip install -e ".[api,cli,astock,kronos]"
+
+# CLI 预测
 kronos forecast --symbol 600036 --pred-len 5
 
-# Probabilistic forecast (Monte Carlo sampling)
-kronos forecast --symbol 600036 --pred-len 5 --sample-count 10
-
-# Batch forecast
-kronos batch --symbols 600036,000858,000001 --pred-len 5
-
-# Fetch market data and indicators
-kronos data fetch --symbol 600036 --start 20240101 --end 20260429
-kronos data indicator --symbol 600036
-kronos data money-flow --symbol 600036 --limit 60
-kronos data sector-flow --sector-type industry
-kronos data source-market --artifact summary
-
-# Strategy backtest
-kronos backtest ranking --symbols 600036,000858 --start 20240101 --end 20260429
-
-# AI analysis (A-shares)
-kronos analyze ai-analyze --symbol 600036 --market cn
-
-# Natural-language agent and macro analysis
-kronos analyze agent --question "Is China Merchants Bank a good buy right now?"
-kronos analyze macro --question "How do US yields and the dollar affect gold?" --symbols GC=F,DXY
-
-# Suggested analysis prompts
-kronos suggestions --type analysis
-
-# Fetch RSS/Atom news
-kronos news rss --feed "fed|Federal Reserve|https://www.federalreserve.gov/feeds/press_all.xml" --limit 5
-
-# Add alert rule and start continuous monitoring
-kronos alert add --type price_change --symbol 600036 --threshold 3.0
-kronos alert monitor --interval 5
-
-# Wrap upstream Kronos finetune_csv scripts (dry run by default)
-kronos model finetune-csv --config configs/finetune.yaml --stage sequential
-```
-
-### API Service
-
-```bash
+# 启动 API + Web
 kronos serve --host 0.0.0.0 --port 8000
-# Swagger docs: http://localhost:8000/docs (requires KRONOS_ENABLE_API_DOCS=1)
+cd web && npm install && npm run dev
 ```
 
-Most `/api/*` endpoints require an API key unless `KRONOS_AUTH_DISABLED=1` is set for local development. Send the key as `X-Kronos-Api-Key` or `Authorization: Bearer <key>`.
+- Web UI：http://localhost:3000
+- API：http://localhost:8000
+- API 文档：http://localhost:8000/docs（需设置 `KRONOS_ENABLE_API_DOCS=1`）
 
-### Web Frontend
+---
 
-```bash
-cd web
-npm install
-npm run dev
-# Open http://localhost:3000
+## 能力矩阵
+
+| 能力 | CLI | API | Web | MCP |
+|---|---|---|---|---|
+| K线预测 | `kronos forecast` | `POST /api/forecast` | 预测页面 | `forecast_ohlcv` |
+| 批量排名 | `kronos batch` | `POST /api/batch` | 批量页面 | `batch_forecast_ohlcv` |
+| 行情数据 | `kronos data fetch` | `GET /api/data/*` | 数据页面 | `fetch_a_stock` |
+| 技术指标 | `kronos data indicator` | `GET /api/data/indicator/*` | 数据页面 | `calculate_indicators` |
+| AI 智能体分析 | `kronos analyze agent` | `POST /api/v1/analyze/agent` | 分析页面 | `analyze_agent` |
+| 宏观分析 | `kronos analyze macro` | `POST /api/v1/analyze/macro` | 宏观页面 | `analyze_macro` |
+| AI 个股报告 | `kronos analyze ai-analyze` | `POST /api/v1/analyze/ai` | 分析页面 | `analyze_ai` |
+| DCF/风险/组合 | `kronos analyze dcf` | `POST /api/v1/analyze/dcf` | 分析页面 | `analyze_dcf` 等 |
+| 策略回测 | `kronos backtest ranking` | `POST /api/backtest/ranking` | 回测页面 | `run_ranking_backtest` |
+| 策略实验室 | `kronos backtest strategy` | `POST /api/backtest/strategy` | 回测页面 | `run_strategy_backtest` |
+| 智能预警 | `kronos alert add` | `POST /api/alert/rules` | 预警页面 | `create_prediction_deviation_alerts` |
+| 新闻/RSS | `kronos news rss` | `POST /api/news/rss` | 新闻页面 | `fetch_rss_news` |
+| 自选研究 | `kronos watchlist` | `GET/POST /api/watchlist/*` | 自选页面 | `watchlist_research` |
+| 异步任务 | `kronos jobs` | `POST/GET /api/jobs/*` | 任务面板 | `submit_backtest_job` |
+| 健康检查 | `kronos health` | `GET /api/health` | 仪表盘 | `health_check` |
+
+---
+
+## 架构概览
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e8f4f8', 'primaryTextColor': '#1a1a2e', 'primaryBorderColor': '#2c3e50', 'lineColor': '#5d6d7e', 'secondaryColor': '#f0f3f4', 'tertiaryColor': '#ffffff', 'fontFamily': 'monospace'}}}%%
+graph TB
+    subgraph entry["[ 入口层 ]"]
+        CLI["kronos CLI"]
+        API["FastAPI REST"]
+        Web["Next.js Web UI"]
+        MCP["MCP Server"]
+    end
+
+    subgraph core["[ 核心引擎 ]"]
+        SVC["service.py<br/>共享预测服务"]
+        AGENT["agent.py<br/>AI 智能体编排"]
+        PRED["predictor.py<br/>Kronos 模型推理"]
+    end
+
+    subgraph data["[ 数据与分析 ]"]
+        DS["data_sources/<br/>东方财富/Yahoo/AkShare/Binance"]
+        IND["financial/indicators.py<br/>SMA/EMA/RSI/MACD/BB/KDJ/CCI/ATR/OBV"]
+        FIN["financial/<br/>BaoStock/Yahoo 财务"]
+        MACRO["macro/<br/>17+ 信号提供方"]
+        BT["backtest.py<br/>回测引擎"]
+    end
+
+    subgraph ai["[ AI 层 ]"]
+        LLM["LLM 路由<br/>OpenAI 兼容"]
+        WS["web_search.py<br/>网络搜索增强"]
+    end
+
+    CLI --> SVC
+    API --> SVC
+    Web --> API
+    MCP --> SVC
+    SVC --> PRED
+    SVC --> DS
+    SVC --> IND
+    SVC --> BT
+    AGENT --> LLM
+    AGENT --> DS
+    AGENT --> FIN
+    AGENT --> MACRO
+    LLM --> WS
 ```
 
-The Web UI contains dashboard, forecast, batch, data, analysis, macro, backtest, alerts, news, watchlist, and settings pages. API keys are read from `localStorage` (`kronos_api_key`) or `NEXT_PUBLIC_KRONOS_API_KEY`.
+> 完整架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ---
 
-## Documentation
+## 项目结构
 
-| Document | Purpose |
-|----------|---------|
-| `docs/ARCHITECTURE.md` | Current architecture, module boundaries, data/LLM flows, and security/deployment notes |
-| `docs/API.md` | REST endpoint inventory, auth, error format, and feature flags |
-| `docs/CLI.md` | CLI command tree and examples |
-| `docs/DEPLOYMENT.md` | Local and Docker deployment notes |
-| `docs/START_GUIDE.md` | Quick startup instructions |
-| `kronos_mcp/README.md` | MCP server tools and client configuration |
+```
+KronosFinceptLab/
+├── src/kronos_fincept/          # Python 后端
+│   ├── api/                     # FastAPI 路由、安全、中间件
+│   ├── cli/                     # Click CLI 命令
+│   ├── data_sources/            # 行情数据适配器（东方财富、Yahoo 等）
+│   ├── financial/               # 财务报表（BaoStock、Yahoo）
+│   ├── macro/                   # 宏观数据提供方（17+ 信号类型）
+│   ├── agent.py                 # AI 智能体编排
+│   ├── service.py               # 共享预测服务
+│   ├── predictor.py             # Kronos 模型推理
+│   ├── alert_engine.py          # 规则预警引擎
+│   ├── backtest_report.py       # HTML 报告生成
+│   ├── config.py                # 配置管理
+│   ├── logging_config.py        # 结构化 JSON 日志
+│   └── security_utils.py        # SSRF 安全 URL 校验
+├── web/                         # Next.js 前端
+│   ├── src/app/                 # 页面（仪表盘、预测、分析等）
+│   ├── src/components/          # React 组件
+│   ├── src/lib/                 # API 客户端、Query Key、工具
+│   └── src/stores/              # 状态管理
+├── kronos_mcp/                  # MCP 服务实现
+├── tests/                       # 70+ 测试模块
+├── docs/                        # 文档
+│   ├── ARCHITECTURE.md          # 系统架构与数据流
+│   ├── API.md                   # REST 接口参考
+│   ├── CLI.md                   # CLI 命令参考
+│   ├── DEPLOYMENT.md            # 本地与 Docker 部署
+│   ├── START_GUIDE.md           # 快速启动指南
+│   └── FINCEPT_INTEGRATION.md   # FinceptTerminal 集成
+├── examples/                    # 使用示例
+├── integrations/                # 外部集成（FinceptTerminal）
+└── scripts/                     # 工具脚本
+```
 
 ---
 
-## CLI Parameters
+## 文档导航
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `symbol` | string | required | Asset symbol |
-| `timeframe` | string | `"1d"` | K-line timeframe |
-| `pred_len` | int | required | Number of predicted K-lines |
-| `dry_run` | bool | false | Use dry-run predictor when allowed |
-| `model_id` | string | `NeoQuasar/Kronos-base` | Model ID; supported families include mini, small, and base |
-| `temperature` | float | 1.0 | Sampling temperature |
-| `sample_count` | int | 1 | Number of parallel forecast samples |
+| 文档 | 内容 |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、模块边界、数据流、安全模型 |
+| [docs/API.md](docs/API.md) | REST 接口清单、认证、请求/响应结构 |
+| [docs/CLI.md](docs/CLI.md) | CLI 命令树、参数、示例 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 本地、Docker、Zeabur 部署 |
+| [docs/START_GUIDE.md](docs/START_GUIDE.md) | 逐步首次运行指南 |
+| [docs/FINCEPT_INTEGRATION.md](docs/FINCEPT_INTEGRATION.md) | FinceptTerminal C++/Python 桥接 |
+| [kronos_mcp/README.md](kronos_mcp/README.md) | MCP 服务工具与客户端配置 |
 
 ---
 
-## Quality Gates
+## 质量门禁
 
 ```bash
-# Backend tests
+# 后端
 python -m pytest tests -q
 
-# Frontend quality gates
-cd web && npm run typecheck
-cd web && npm run lint
-cd web && npm run test:frontend
-cd web && npm run build
-cd web && npm run check:bundle
-cd web && npm run smoke:pages
+# 前端
+cd web && npm run typecheck && npm run lint && npm run test:frontend
 ```
 
 ---
 
-## Configuration
+## 环境要求
 
-Key environment variables (see `.env.example` for full reference):
-
-| Variable | Purpose |
-|----------|---------|
-| `KRONOS_MODEL_ID` | Kronos model ID, default `NeoQuasar/Kronos-base` |
-| `KRONOS_REPO_PATH` | Upstream Kronos repo path |
-| `HF_HOME` / `HF_HUB_CACHE` | HuggingFace cache/model weights directory |
-| `KRONOS_ENABLE_REAL_MODEL` | Enable real Kronos inference backend |
-| `KRONOS_PREWARM_ON_STARTUP` | Preload model during API startup |
-| `KRONOS_API_KEYS` | User API authentication keys |
-| `KRONOS_ADMIN_API_KEYS` / `KRONOS_INTERNAL_API_KEY` | Admin/internal API keys for alert/admin operations |
-| `KRONOS_AUTH_DISABLED` | Disable API auth for local development only |
-| `KRONOS_ENABLE_API_DOCS` | Enable `/docs`, `/redoc`, and `/openapi.json` |
-| `KRONOS_RATE_LIMIT_*` | Per-category rate limiting |
-| `LLM_API_KEY` | Unified OpenAI-compatible LLM provider key |
-| `LLM_BASE_URL` | OpenAI-compatible chat completions endpoint or base URL |
-| `LLM_MODEL` | LLM model id used by routing, macro analysis, and report synthesis |
-| `TUSHARE_TOKEN` | Optional Tushare Pro token for A-share and Stock Connect fallback data |
-| `FRED_API_KEY` | Optional FRED API key for U.S. macro indicators |
-| `KRONOS_SOURCE_PROJECT_ROOT` | Optional path to the verified source project for market/macro cache reuse |
-| `KRONOS_ENABLE_TDX_NETWORK` | Optional TDX network source; off by default for container/Linux safety |
-| `KRONOS_ENABLE_TICKFLOW` | Optional TickFlow source; skipped when dependency is unavailable |
-| `KRONOS_ENABLE_NBS_LIVE` | Optional NBS live client; off by default and cache/public sources are preferred |
-| `KRONOS_LOW_MEMORY_DEFAULTS` | Enables conservative thread/import defaults for local and container startup |
-| `WEB_SEARCH_PROVIDER` / `WEB_SEARCH_API_KEY` | Generic web search configuration |
-| `ANYSEARCH_ENABLED` | Optional anonymous AnySearch enrichment toggle |
-| `PORT` / `API_PORT` | Web/API ports |
+- **Python**：>= 3.11
+- **Node.js**：>= 18（本地前端）；Docker 使用 Node 22
 
 ---
 
-## Requirements
+> 所有预测和分析仅供研究用途，不构成投资建议。
 
-| Component | Requirement |
-|-----------|-------------|
-| Python | >= 3.11 |
-| Node.js | >= 18 for local frontend; Docker build uses Node 22 |
+---
 
-**Upstream projects**: [Kronos](https://github.com/shiyu-coder/Kronos) · [FinceptTerminal](https://github.com/Fincept-Corporation/FinceptTerminal) · [Digital Oracle](https://github.com/komako-workshop/digital-oracle)
-
-> All forecasts and analysis are for research purposes only and do not constitute investment advice.
+**上游项目**：[Kronos](https://github.com/shiyu-coder/Kronos) · [FinceptTerminal](https://github.com/Fincept-Corporation/FinceptTerminal) · [Digital Oracle](https://github.com/komako-workshop/digital-oracle)

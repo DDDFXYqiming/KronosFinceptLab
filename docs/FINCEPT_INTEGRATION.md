@@ -1,40 +1,89 @@
-# FinceptTerminal Integration Guide
+# FinceptTerminal 集成指南
 
-## End-to-End Integration Status
-
-The current KronosFinceptLab service exposes forecast, batch, market data, money-flow, source-market cache, backtest, AI agent, macro, alert, watchlist, and health operations through REST, CLI, Web, and MCP where practical. FinceptTerminal can keep using the Python bridge for forecast/batch and can use MCP for richer analysis/data tools.
-
-### Verified
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Bridge script | Deployed | `kronos_forecast.py` is in `fincept-qt/scripts/` |
-| PythonWorker protocol | Compatible | 4-byte length-prefixed framing tested |
-| Forecast (dry-run) | Passed | Single-asset forecast returns correctly |
-| Batch forecast | Passed | Multi-asset ranking returns correctly |
-| Shutdown | Passed | Clean exit |
-| Error handling | Passed | Errors return without crash |
-| C++ service layer | Written | `KronosForecastService.h/.cpp` |
-
-### Pending (requires FinceptTerminal compilation)
-
-- [ ] Add C++ files to FinceptTerminal CMakeLists.txt
-- [ ] Register KronosForecastService in ServiceManager
-- [ ] Add Kronos forecast panel to UI
-- [ ] Install kronos_fincept package in Python venv
+> 本文档描述 KronosFinceptLab 与 FinceptTerminal 的集成方式。
 
 ---
 
-## Quick Integration Steps
+## 导航
 
-### 1. Copy Files to FinceptTerminal
+- [← 返回 README](../README.md)
+- [← 架构文档](ARCHITECTURE.md)
+- [← 快速启动](START_GUIDE.md)
+
+---
+
+## 集成架构
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e8f4f8', 'primaryTextColor': '#1a1a2e', 'primaryBorderColor': '#2c3e50', 'lineColor': '#5d6d7e', 'secondaryColor': '#f0f3f4', 'tertiaryColor': '#ffffff', 'fontFamily': 'monospace'}}}%%
+graph TB
+    subgraph fincept["[ FinceptTerminal ]"]
+        UI["Qt UI"]
+        ServiceManager["ServiceManager"]
+        KronosService["KronosForecastService\nC++ 服务层"]
+        PythonWorker["PythonWorker\n4字节长度前缀协议"]
+    end
+
+    subgraph kronos["[ KronosFinceptLab ]"]
+        BridgeScript["kronos_forecast.py\n桥接脚本"]
+        API["FastAPI"]
+        Service["service.py"]
+        Predictor["predictor.py"]
+    end
+
+    subgraph data_src["[ 数据源 ]"]
+        EastMoney["东方财富"]
+        Yahoo["Yahoo Finance"]
+    end
+
+    UI --> ServiceManager
+    ServiceManager --> KronosService
+    KronosService --> PythonWorker
+    PythonWorker --> BridgeScript
+    BridgeScript --> API
+    API --> Service
+    Service --> Predictor
+    Service --> EastMoney
+    Service --> Yahoo
+```
+
+---
+
+## 端到端集成状态
+
+当前 KronosFinceptLab 服务通过 REST、CLI、Web 和 MCP 暴露预测、批量、行情数据、资金流、源市场缓存、回测、AI 智能体、宏观、预警、自选和健康操作。FinceptTerminal 可继续使用 Python 桥接进行预测/批量，也可使用 MCP 获取更丰富的分析/数据工具。
+
+### 已验证
+
+| 组件 | 状态 | 说明 |
+|------|------|------|
+| 桥接脚本 | 已部署 | kronos_forecast.py 位于 fincept-qt/scripts/ |
+| PythonWorker 协议 | 兼容 | 4字节长度前缀帧已测试 |
+| 预测（干运行） | 通过 | 单资产预测正确返回 |
+| 批量预测 | 通过 | 多资产排名正确返回 |
+| 关闭 | 通过 | 干净退出 |
+| 错误处理 | 通过 | 错误返回不崩溃 |
+| C++ 服务层 | 已编写 | KronosForecastService.h/.cpp |
+
+### 待完成（需 FinceptTerminal 编译）
+
+- [ ] 将 C++ 文件添加到 FinceptTerminal CMakeLists.txt
+- [ ] 在 ServiceManager 中注册 KronosForecastService
+- [ ] 向 UI 添加 Kronos 预测面板
+- [ ] 在 Python 虚拟环境中安装 kronos_fincept 包
+
+---
+
+## 快速集成步骤
+
+### 1. 复制文件到 FinceptTerminal
 
 ```bash
-# Bridge script (already done)
+# 桥接脚本（已完成）
 cp integrations/fincept_terminal/scripts/kronos_forecast.py \
    /path/to/FinceptTerminal/fincept-qt/scripts/
 
-# C++ service layer
+# C++ 服务层
 cp integrations/fincept_terminal/src/KronosForecastService.h \
    /path/to/FinceptTerminal/fincept-qt/src/services/kronos/
 
@@ -42,49 +91,49 @@ cp integrations/fincept_terminal/src/KronosForecastService.cpp \
    /path/to/FinceptTerminal/fincept-qt/src/services/kronos/
 ```
 
-### 2. Modify CMakeLists.txt
+### 2. 修改 CMakeLists.txt
 
-Add to `fincept-qt/CMakeLists.txt` `SOURCES` list:
+添加到 `fincept-qt/CMakeLists.txt` 的 `SOURCES` 列表：
 
 ```cmake
 src/services/kronos/KronosForecastService.cpp
 ```
 
-Add to `HEADERS` list:
+添加到 `HEADERS` 列表：
 
 ```cmake
 src/services/kronos/KronosForecastService.h
 ```
 
-### 3. Register Service
+### 3. 注册服务
 
-In `ServiceManager.cpp` or relevant initialization file:
+在 `ServiceManager.cpp` 或相关初始化文件中：
 
 ```cpp
 #include "services/kronos/KronosForecastService.h"
 
-// In initialization function:
+// 在初始化函数中：
 auto& kronos = fincept::kronos::KronosForecastService::instance();
-Q_UNUSED(kronos); // Trigger singleton initialization
+Q_UNUSED(kronos); // 触发单例初始化
 ```
 
-### 4. Install Python Dependencies
+### 4. 安装 Python 依赖
 
-Inside FinceptTerminal's Python venv:
+在 FinceptTerminal 的 Python 虚拟环境中：
 
 ```bash
-# Activate venv
+# 激活虚拟环境
 source /path/to/FinceptTerminal/fincept-qt/venv-numpy2/bin/activate
 
-# Install kronos_fincept
+# 安装 kronos_fincept
 cd /path/to/KronosFinceptLab
 pip install -e ".[kronos,astock]"
 ```
 
-### 5. Download Models
+### 5. 下载模型
 
 ```bash
-# Download via HuggingFace mirror (faster in China)
+# 通过 HuggingFace 镜像（国内更快）
 python -c "
 from huggingface_hub import snapshot_download
 import os
@@ -96,16 +145,16 @@ snapshot_download('NeoQuasar/Kronos-Tokenizer-base', local_dir='external/Kronos-
 
 ---
 
-## C++ Usage Examples
+## C++ 使用示例
 
-### Single-Asset Forecast
+### 单资产预测
 
 ```cpp
 #include "services/kronos/KronosForecastService.h"
 
 auto& kronos = fincept::kronos::KronosForecastService::instance();
 
-// Build OHLCV data
+// 构建 OHLCV 数据
 QJsonArray rows;
 QJsonObject row1;
 row1["timestamp"] = "2026-04-01";
@@ -114,19 +163,19 @@ row1["high"] = 1420;
 row1["low"] = 1390;
 row1["close"] = 1410;
 rows.append(row1);
-// ... add more rows
+// ... 添加更多行
 
 kronos.forecast("600036", "1d", 5, rows,
     [](fincept::kronos::ForecastResult result) {
         if (result.ok) {
-            qDebug() << "Forecast:" << result.data;
+            qDebug() << "预测:" << result.data;
         } else {
-            qDebug() << "Error:" << result.error;
+            qDebug() << "错误:" << result.error;
         }
     });
 ```
 
-### Batch Ranking
+### 批量排名
 
 ```cpp
 QJsonArray assets;
@@ -134,7 +183,7 @@ QJsonObject asset1;
 asset1["symbol"] = "600036";
 asset1["rows"] = rows1;
 assets.append(asset1);
-// ... more assets
+// ... 更多资产
 
 kronos.batch_forecast(assets, 5,
     [](bool ok, QVector<fincept::kronos::RankedSignal> signals, QString error) {
@@ -147,34 +196,42 @@ kronos.batch_forecast(assets, 5,
     });
 ```
 
-### Fetching A-Share Data
+### 获取 A股数据
 
 ```cpp
 kronos.fetch_a_stock("600036", "20250101", "20260429",
     [](fincept::kronos::ForecastResult result) {
         if (result.ok) {
             int count = result.data.value("count").toInt();
-            qDebug() << "Got" << count << "rows of A-share data";
+            qDebug() << "获取" << count << "行 A股数据";
         }
     });
 ```
 
 ---
 
-## File Inventory
+## 文件清单
 
 ```
 KronosFinceptLab/
 ├── integrations/fincept_terminal/
 │   ├── scripts/
-│   │   └── kronos_forecast.py          # Bridge script (deployed to FinceptTerminal)
+│   │   └── kronos_forecast.py          # 桥接脚本（已部署到 FinceptTerminal）
 │   ├── src/
-│   │   ├── KronosForecastService.h     # C++ service layer header
-│   │   └── KronosForecastService.cpp   # C++ service layer implementation
+│   │   ├── KronosForecastService.h     # C++ 服务层头文件
+│   │   └── KronosForecastService.cpp   # C++ 服务层实现
 │   └── qlib_adapter/
-│       └── kronos_model_adapter.py     # Qlib/AI Quant Lab adapter
+│       └── kronos_model_adapter.py     # Qlib/AI Quant Lab 适配器
 ├── tests/
-│   └── test_fincept_integration.py     # End-to-end integration test (PythonWorker protocol)
+│   └── test_fincept_integration.py     # 端到端集成测试（PythonWorker 协议）
 └── docs/
-    └── FINCEPT_INTEGRATION.md          # This document
+    └── FINCEPT_INTEGRATION.md          # 本文档
 ```
+
+---
+
+## 导航
+
+- [← 返回 README](../README.md)
+- [← 架构文档](ARCHITECTURE.md)
+- [← 快速启动](START_GUIDE.md)
