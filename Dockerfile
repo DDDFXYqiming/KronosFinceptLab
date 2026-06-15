@@ -94,6 +94,18 @@ RUN mkdir -p external/Kronos \
     && test -f external/Kronos/model/__init__.py \
     && rm -rf external/Kronos/.git
 
+# Step 5: Clone GenericAgent (shallow, for runtime AI agent capabilities)
+ARG GENERICAGENT_REPO_URL=https://github.com/lsdefine/GenericAgent.git
+ARG GENERICAGENT_REPO_REF=main
+RUN mkdir -p external/genericagent \
+    && git -c http.sslVerify=false -C external/genericagent init \
+    && git -c http.sslVerify=false -C external/genericagent remote add origin "$GENERICAGENT_REPO_URL" \
+    && git -C external/genericagent fetch --depth=1 origin "$GENERICAGENT_REPO_REF" \
+    && git -c http.sslVerify=false -C external/genericagent checkout --detach FETCH_HEAD \
+    && test -f external/genericagent/ga.py \
+    && rm -rf external/genericagent/.git \
+    && pip install --no-cache-dir openai requests pydantic
+
 # ────────────────────────────────────────────────────────────────
 # Stage 3: Python backend + Next standalone runtime. Keep build tools out.
 # ────────────────────────────────────────────────────────────────
@@ -108,7 +120,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENTRYPOINT []
 
 ENV PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH=/app/src \
+    PYTHONPATH=/app/src:/app/external/genericagent \
+    GENERICAGENT_HOME=/app/external/genericagent \
     NEXT_TELEMETRY_DISABLED=1 \
     INTERNAL_API_URL=http://127.0.0.1:8000 \
     API_HOST=127.0.0.1 \
@@ -144,6 +157,7 @@ ENV KRONOS_APP_VERSION=$KRONOS_APP_VERSION \
 COPY --from=backend-builder /opt/venv /opt/venv
 COPY --from=backend-builder /app/src src/
 COPY --from=backend-builder /app/external/Kronos external/Kronos
+COPY --from=backend-builder /app/external/genericagent external/genericagent
 
 # Copy frontend build
 COPY --from=frontend-builder /app/web/.next/standalone web/
