@@ -165,9 +165,9 @@ COPY --from=frontend-builder /app/web/.next/static web/.next/static
 COPY --from=frontend-builder /app/web/public web/public
 
 COPY scripts/zeabur_start.sh scripts/zeabur_start.sh
-RUN chmod +x scripts/zeabur_start.sh && \
-    tr -d "\r" < scripts/zeabur_start.sh > scripts/_tmp.sh && \
-    mv scripts/_tmp.sh scripts/zeabur_start.sh
+RUN tr -d "\r" < scripts/zeabur_start.sh > scripts/_tmp.sh && \
+    mv scripts/_tmp.sh scripts/zeabur_start.sh && \
+    chmod +x scripts/zeabur_start.sh
 
 EXPOSE 3000
 
