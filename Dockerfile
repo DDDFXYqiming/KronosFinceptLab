@@ -104,7 +104,42 @@ RUN mkdir -p external/genericagent \
     && git -c http.sslVerify=false -C external/genericagent checkout --detach FETCH_HEAD \
     && test -f external/genericagent/ga.py \
     && rm -rf external/genericagent/.git \
-    && pip install --no-cache-dir openai requests pydantic
+    && pip install --no-cache-dir openai requests pydantic prompt_toolkit rich
+
+# Step 6: Generate GA mykey.py — reads from Kronos env vars at runtime (no secrets baked into image!)
+RUN printf '%s\n' \
+    'import os' \
+    '' \
+    'native_oai_config = {' \
+    "    'name': 'minimax'," \
+    "    'apikey': os.getenv('LLM_API_KEY', '')," \
+    "    'apibase': os.getenv('LLM_BASE_URL', 'https://api.minimaxi.com/v1')," \
+    "    'model': os.getenv('LLM_MODEL', 'MiniMax-M3')," \
+    "    'api_mode': 'chat_completions'," \
+    '}' \
+    '' \
+    'native_oai_backup_1 = {' \
+    "    'name': 'kimi'," \
+    "    'apikey': os.getenv('LLM_FALLBACK_1_API_KEY', '')," \
+    "    'apibase': os.getenv('LLM_FALLBACK_1_BASE_URL', 'https://api.moonshot.cn/v1')," \
+    "    'model': os.getenv('LLM_FALLBACK_1_MODEL', 'kimi-for-coding')," \
+    "    'api_mode': 'chat_completions'," \
+    '}' \
+    '' \
+    'native_oai_backup_2 = {' \
+    "    'name': 'mimo'," \
+    "    'apikey': os.getenv('LLM_FALLBACK_2_API_KEY', '')," \
+    "    'apibase': os.getenv('LLM_FALLBACK_2_BASE_URL', '')," \
+    "    'model': os.getenv('LLM_FALLBACK_2_MODEL', '')," \
+    "    'api_mode': 'chat_completions'," \
+    '}' \
+    '' \
+    'mixin_config = {' \
+    "    'llm_nos': ['minimax', 'kimi', 'mimo']," \
+    "    'max_retries': 3," \
+    "    'base_delay': 0.5," \
+    '}' \
+    > external/genericagent/mykey.py
 
 # ────────────────────────────────────────────────────────────────
 # Stage 3: Python backend + Next standalone runtime. Keep build tools out.
@@ -165,9 +200,13 @@ COPY --from=frontend-builder /app/web/.next/static web/.next/static
 COPY --from=frontend-builder /app/web/public web/public
 
 COPY scripts/zeabur_start.sh scripts/zeabur_start.sh
+COPY scripts/ga scripts/ga
 RUN tr -d "\r" < scripts/zeabur_start.sh > scripts/_tmp.sh && \
     mv scripts/_tmp.sh scripts/zeabur_start.sh && \
-    chmod +x scripts/zeabur_start.sh
+    chmod +x scripts/zeabur_start.sh && \
+    tr -d "\r" < scripts/ga > scripts/_tmp_ga.sh && \
+    mv scripts/_tmp_ga.sh scripts/ga && \
+    chmod +x scripts/ga
 
 EXPOSE 3000
 

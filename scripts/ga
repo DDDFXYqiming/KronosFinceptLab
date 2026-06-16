@@ -1,0 +1,7 @@
+#!/bin/bash
+# GenericAgent quick launcher for KronosFinceptLab container
+cd /app/external/genericagent || {
+    echo "GenericAgent not found at /app/external/genericagent"
+    exit 1
+}
+exec python3 agentmain.py
