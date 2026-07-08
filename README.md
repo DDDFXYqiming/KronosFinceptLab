@@ -58,48 +58,68 @@ cd web && npm install && npm run dev
 ## 架构概览
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e8f4f8', 'primaryTextColor': '#1a1a2e', 'primaryBorderColor': '#2c3e50', 'lineColor': '#5d6d7e', 'secondaryColor': '#f0f3f4', 'tertiaryColor': '#ffffff', 'fontFamily': 'monospace'}}}%%
-graph TB
-    subgraph entry["[ 入口层 ]"]
-        CLI["kronos CLI"]
-        API["FastAPI REST"]
-        Web["Next.js Web UI"]
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    subgraph entry["入口层"]
+        CLI["CLI"]
+        API["REST API"]
+        Web["Web UI"]
         MCP["MCP Server"]
     end
 
-    subgraph core["[ 核心引擎 ]"]
-        SVC["service.py<br/>共享预测服务"]
-        AGENT["agent.py<br/>AI 智能体编排"]
-        PRED["predictor.py<br/>Kronos 模型推理"]
+    subgraph core["核心引擎"]
+        SVC["预测服务 / Service"]
+        AGENT["AI 智能体 / Agent"]
+        PRED["模型推理 / Predictor"]
+        ALERT["预警引擎 / AlertEngine"]
     end
 
-    subgraph data["[ 数据与分析 ]"]
-        DS["data_sources/<br/>东方财富/Yahoo/AkShare/Binance"]
-        IND["financial/indicators.py<br/>SMA/EMA/RSI/MACD/BB/KDJ/CCI/ATR/OBV"]
-        FIN["financial/<br/>BaoStock/Yahoo 财务"]
-        MACRO["macro/<br/>17+ 信号提供方"]
-        BT["backtest.py<br/>回测引擎"]
+    subgraph data["数据与分析"]
+        DS["13+ 数据源 / DataSources"]
+        FIN["财务分析 / Financial"]
+        MACRO["17+ 宏观信号 / Macro"]
+        BT["回测引擎 / Backtest"]
     end
 
-    subgraph ai["[ AI 层 ]"]
-        LLM["LLM 路由<br/>OpenAI 兼容"]
-        WS["web_search.py<br/>网络搜索增强"]
+    subgraph ai["AI 能力"]
+        LLM["LLM 路由 / Router"]
+        WS["网络搜索 / WebSearch"]
+    end
+
+    subgraph store["存储"]
+        CACHE["缓存 / Cache"]
+        RUNTIME["运行时存储 / RuntimeStore"]
+        DB["PostgreSQL"]
     end
 
     CLI --> SVC
     API --> SVC
     Web --> API
     MCP --> SVC
+    MCP --> AGENT
+
     SVC --> PRED
     SVC --> DS
-    SVC --> IND
+    SVC --> FIN
     SVC --> BT
+    SVC --> ALERT
+
     AGENT --> LLM
     AGENT --> DS
     AGENT --> FIN
     AGENT --> MACRO
+    AGENT --> WS
+
+    PRED --> CACHE
+    DS --> CACHE
+    FIN --> CACHE
+    MACRO --> CACHE
+    ALERT --> RUNTIME
     LLM --> WS
+    SVC --> DB
+    AGENT --> DB
 ```
+
 
 > 完整架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
