@@ -48,9 +48,6 @@
 | `check_alert_rules` | 检查预警规则 |
 | `macro_provider_status` | 返回宏观提供方状态 |
 | `watchlist_research` | 构建加权自选研究摘要 |
-| `watchlist_list` | 列出自选 |
-| `watchlist_create` | 创建自选 |
-| `watchlist_delete` | 删除自选 |
 | `health_check` | 返回 API/模型/运行时健康信息 |
 
 ---

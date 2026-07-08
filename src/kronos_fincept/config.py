@@ -69,7 +69,7 @@ def _load_hermes_yaml(config_path: str, mtime_ns: int) -> dict:
 def _read_hermes_model_config() -> dict[str, str]:
     """Read the current model config from the Hermes gateway.
 
-    Looks for HERMES_HOME env var or default path (E:/hermes-agent/.hermes).
+    Looks for HERMES_HOME env var, then falls back to ~/.hermes/config.yaml.
     Returns dict with keys: api_key, base_url, model, or empty dict on failure.
     """
     hermes_home_raw = os.environ.get("HERMES_HOME", "")
@@ -77,7 +77,7 @@ def _read_hermes_model_config() -> dict[str, str]:
     if hermes_home_raw and hermes_dir is None:
         return {}
     if hermes_dir is None:
-        candidate = Path("E:/hermes-agent/.hermes/config.yaml")
+        candidate = Path.home() / ".hermes" / "config.yaml"
         if candidate.is_file():
             hermes_dir = candidate.parent.resolve(strict=False)
         else:
