@@ -684,9 +684,10 @@ src/kronos_fincept/
 │       ├── health.py            # 健康命令
 │       ├── suggestions.py       # 建议命令
 │       ├── model.py             # 模型工具
-│       └── jobs.py              # 任务命令
+│       ├── jobs.py              # 任务命令
+│       └── watchlist.py         # 自选命令
 ├── data_sources/
-│   ├── init.py                  # 数据源管理器初始化
+│   ├── __init__.py              # 数据源管理器初始化
 │   ├── eastmoney_source.py      # 东方财富（A股资金流/板块）
 │   ├── akshare_source.py        # AkShare
 │   ├── tushare_source.py        # Tushare Pro
@@ -708,21 +709,22 @@ src/kronos_fincept/
 │   ├── portfolio.py             # 组合优化
 │   ├── derivatives.py           # 衍生品定价
 │   ├── schemas.py               # 财务数据结构
+│   ├── financial_source.py      # 财务数据源基类/统一接口
+│   ├── global_market.py         # 全球市场数据
 │   ├── baostock_financial.py    # BaoStock 财务源
 │   └── yahoo_financial.py       # Yahoo 财务源
 ├── macro/
 │   ├── manager.py               # 宏观数据管理器
 │   ├── schemas.py               # 宏观信号结构
-│   └── providers/               # 17+ 宏观信号提供方
+│   └── providers/               # 宏观信号提供方
 │       ├── base.py              # 提供方基类
 │       ├── fred.py              # FRED 美国宏观
-│       ├── nbs.py               # 中国统计局
-│       ├── china_data_live.py   # ChinaDataLive
-│       ├── treasury.py          # 美债
-│       ├── bis.py               # BIS
-│       ├── sec_edgar.py         # SEC/EDGAR
-│       ├── cftc.py              # CFTC
+│       ├── nbs_live.py          # 中国统计局实时
+│       ├── chinalive.py         # ChinaDataLive
+│       ├── china_macro.py       # 中国宏观聚合
 │       ├── dbnomics.py          # DBNomics
+│       ├── digital_oracle.py    # Digital Oracle
+│       ├── source_project_cache.py # 源项目宏观缓存
 │       └── ...
 ├── agent.py                     # AI 智能体编排（路由/工具调用/报告生成）
 ├── service.py                   # 共享预测服务
