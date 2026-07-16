@@ -14,7 +14,7 @@ from kronos_fincept.web_search import WebSearchResponse, WebSearchResult
 
 _CNINFO_BASE_URL = "https://www.cninfo.com.cn/new"
 _CNINFO_STATIC_BASE_URL = "https://static.cninfo.com.cn"
-_DEFAULT_USER_AGENT = "KronosFinceptLab/10.2.4 (+https://github.com/DDDFXYqiming/KronosFinceptLab)"
+_DEFAULT_USER_AGENT = "KronosFinceptLab/10.9 (+https://github.com/DDDFXYqiming/KronosFinceptLab)"
 
 
 class CninfoDisclosureClient:

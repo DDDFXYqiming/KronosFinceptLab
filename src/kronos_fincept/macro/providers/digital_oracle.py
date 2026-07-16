@@ -89,7 +89,7 @@ STOOQ_SYMBOL_MAP = {
 }
 
 
-_HTTP_USER_AGENT = "Mozilla/5.0 (compatible; KronosFinceptLab/10.5; +https://github.com/DDDFXYqiming/KronosFinceptLab)"
+_HTTP_USER_AGENT = "Mozilla/5.0 (compatible; KronosFinceptLab/10.9; +https://github.com/DDDFXYqiming/KronosFinceptLab)"
 
 
 def _encode_params(url: str, params: dict[str, Any] | None) -> str:

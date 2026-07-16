@@ -60,7 +60,7 @@ def test_cninfo_client_parses_official_disclosures():
     assert response.results[0].published_at is not None
     assert response.results[0].published_at.endswith("Z")
     assert requester.calls[0]["params"]["searchkey"] == "600036"
-    assert requester.calls[0]["headers"]["User-Agent"].startswith("KronosFinceptLab/10.2.4")
+    assert requester.calls[0]["headers"]["User-Agent"].startswith("KronosFinceptLab/")
 
 
 def test_agent_uses_cninfo_official_disclosure_when_web_search_is_disabled(monkeypatch):
