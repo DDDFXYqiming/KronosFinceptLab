@@ -75,7 +75,7 @@ flowchart LR
     end
 
     subgraph data["数据与分析"]
-        DS["13+ 数据源 / DataSources"]
+        DS["11+ 数据源 / DataSources"]
         FIN["财务分析 / Financial"]
         MACRO["17+ 宏观信号 / Macro"]
         BT["回测引擎 / Backtest"]
@@ -89,7 +89,7 @@ flowchart LR
     subgraph store["存储"]
         CACHE["缓存 / Cache"]
         RUNTIME["运行时存储 / RuntimeStore"]
-        DB["PostgreSQL"]
+        DB["SQLite"]
     end
 
     CLI --> SVC

@@ -24,7 +24,7 @@ from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
 
 BASE_URL = "https://api.db.nomics.world/v22"
 _USER_AGENT = (
-    "Mozilla/5.0 (compatible; KronosFinceptLab/10.5; "
+    "Mozilla/5.0 (compatible; KronosFinceptLab/10.9; "
     "+https://github.com/DDDFXYqiming/KronosFinceptLab)"
 )
 _REQUEST_TIMEOUT = 12  # seconds
