@@ -420,6 +420,55 @@ class USTreasuryProvider(MacroProvider):
                 errors[curve_type] = str(exc)
         return rows["nominal"], rows["real"], errors
 
+    def _fetch_curve_rows_fred(self) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Fetch US treasury yields via FRED API (accessible from China).
+
+        Fallback for home.treasury.gov which is frequently unreachable from
+        China. Uses FRED_API_KEY (DGS10/DGS2 nominal, DFII10 real/TIPS).
+        """
+        api_key = os.environ.get("FRED_API_KEY", "").strip()
+        if not api_key:
+            return None, None
+        base = "https://api.stlouisfed.org/fred/series/observations"
+
+        def _latest(series_id: str) -> dict[str, Any] | None:
+            params = {
+                "series_id": series_id,
+                "api_key": api_key,
+                "file_type": "json",
+                "sort_order": "desc",
+                "limit": 5,
+            }
+            url = f"{base}?{urllib.parse.urlencode(params)}"
+            request = urllib.request.Request(
+                url,
+                headers={"Accept": "application/json", "User-Agent": "KronosFinceptLab/10.9"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                observations = (json.loads(response.read()) or {}).get("observations") or []
+            for item in observations:
+                try:
+                    value = float(item.get("value"))
+                except (TypeError, ValueError):
+                    continue
+                return {"Date": str(item.get("date", "")), "value": value}
+            return None
+
+        nominal: dict[str, Any] = {}
+        d10 = _latest("DGS10")
+        d2 = _latest("DGS2")
+        if d10:
+            nominal["Date"] = d10["Date"]
+            nominal["10 Yr"] = d10["value"]
+        if d2:
+            nominal["2 Yr"] = d2["value"]
+        real_row = None
+        r10 = _latest("DFII10")
+        if r10:
+            real_row = {"Date": r10["Date"], "10 Yr": r10["value"]}
+        nominal_row = nominal if "10 Yr" in nominal else None
+        return nominal_row, real_row
+
     def _fetch_exchange_rate_rows(self, query: MacroQuery) -> list[dict[str, Any]]:
         desc = _infer_treasury_fx_desc(query)
         payload = _get_json(
@@ -436,8 +485,16 @@ class USTreasuryProvider(MacroProvider):
         return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
-        year = date.today().year
-        nominal_row, real_row, errors = self._fetch_curve_rows(year, timeout_seconds=30.0)
+        errors: dict[str, str] = {}
+        # Prefer FRED API (accessible from China) over home.treasury.gov (geo-blocked).
+        # home.treasury.gov times out from China; fetching it first wastes the
+        # entire 12s provider budget before the FRED fallback can run.
+        nominal_row, real_row = self._fetch_curve_rows_fred()
+        if nominal_row is not None:
+            errors["source"] = "fred_fallback"
+        else:
+            year = date.today().year
+            nominal_row, real_row, errors = self._fetch_curve_rows(year, timeout_seconds=8.0)
 
         signals: list[MacroSignal] = []
         nominal_10y = _row_number(nominal_row or {}, "10 Yr", "10 YR", "10Y")

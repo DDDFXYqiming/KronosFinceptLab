@@ -250,7 +250,9 @@ class AnySearchClient(WebSearchClient):
                 timeout=self._timeout(),
             )
             data = self._checked_json(response)
-            results = self._parse_results(data.get("results") or [], provider="anysearch")
+            # v1/search wraps results under a "data" key: {code, message, data:{results:[...]}}
+            payload = data.get("data") if isinstance(data.get("data"), dict) else data
+            results = self._parse_results(payload.get("results") or [], provider="anysearch")
         except Exception as exc:
             return self._response(True, "failed", clean_query, started, [], _short_error(exc))
         status = "completed" if results else "skipped"
