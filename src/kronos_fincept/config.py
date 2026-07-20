@@ -160,6 +160,26 @@ def _load_dotenv(env_path: Path | None = None) -> None:
 _load_dotenv()
 
 
+def _ensure_ssl_trust_store() -> None:
+    """Auto-set SSL trust store (certifi) when not explicitly configured.
+
+    Keeps HTTPS working across Python environments (e.g. venv311 vs system
+    Python) without hard-coding a certifi path in .env. An explicit
+    SSL_CERT_FILE / REQUESTS_CA_BUNDLE in .env or the environment wins.
+    """
+    try:
+        import certifi
+        ca = certifi.where()
+    except Exception:
+        return
+    for _k in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+        if not os.environ.get(_k):
+            os.environ[_k] = ca
+
+
+_ensure_ssl_trust_store()
+
+
 def _get(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
 

@@ -1363,6 +1363,16 @@ def analyze_macro_question(
             question=clean_question,
             symbols=effective_symbols,
         )
+        # Ensure AnySearch (anonymous public-web search) is always available when
+        # configured, providing public web evidence that geo-blocked providers
+        # (us_treasury/cftc_cot) cannot deliver from China.
+        try:
+            from kronos_fincept.config import settings as _settings
+
+            if _settings.anysearch.is_configured and "anysearch" not in selected_provider_ids:
+                selected_provider_ids = [*selected_provider_ids, "anysearch"]
+        except Exception:
+            pass
 
     steps.append(
         AgentStep(
@@ -2762,6 +2772,17 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
                 selected.append(provider_id)
             if len(selected) >= 3:
                 break
+    # Ensure AnySearch (anonymous public-web search) is included whenever it is
+    # configured, regardless of route, so macro context always has access to
+    # public web evidence (mitigates gaps from geo-blocked providers such as
+    # us_treasury/cftc_cot when accessed from China).
+    try:
+        from kronos_fincept.config import settings as _settings
+
+        if _settings.anysearch.is_configured and "anysearch" not in selected:
+            selected.append("anysearch")
+    except Exception:
+        pass
     return selected
 
 
@@ -3894,6 +3915,9 @@ def _llm_structured_json_options(
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
+    # deepseek-v4 系列默认开启思考(reasoning_content)，显式关闭以符合"不开思考"要求
+    if model and "deepseek-v4" in model.lower():
+        options["thinking"] = {"type": "disabled"}
     return options
 
 

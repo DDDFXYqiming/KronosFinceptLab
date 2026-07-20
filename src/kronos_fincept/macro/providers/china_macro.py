@@ -23,18 +23,30 @@ class ChinaMacroAkshareProvider(MacroProvider):
         except ImportError as exc:
             raise MacroProviderUnavailable("akshare is not installed") from exc
 
+        indicators = _select_indicators(query)
         signals: list[MacroSignal] = []
-        for indicator in _select_indicators(query):
+        # 并发调用各指标 fetcher，避免串行累积超过 provider timeout
+        # (单个接口约 1-6s，5 个串行可达 20s+ 触发 12s 超时；并发后总耗时 ≈ 最慢单个)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _run_one(indicator: str):
             fetcher = getattr(self, f"_fetch_{indicator}", None)
             if fetcher is None:
-                continue
+                return indicator, None
             try:
-                frame = _with_timeout(fetcher, 12, ak)
+                return indicator, _with_timeout(fetcher, 10, ak)
             except Exception:
-                continue
-            signal = _frame_to_signal(indicator, frame)
-            if signal is not None:
-                signals.append(signal)
+                return indicator, None
+
+        with ThreadPoolExecutor(max_workers=min(len(indicators), 5)) as executor:
+            futures = [executor.submit(_run_one, ind) for ind in indicators]
+            for future in as_completed(futures):
+                indicator, frame = future.result()
+                if frame is None:
+                    continue
+                signal = _frame_to_signal(indicator, frame)
+                if signal is not None:
+                    signals.append(signal)
         return signals
 
     def _fetch_pmi(self, ak: Any) -> Any:

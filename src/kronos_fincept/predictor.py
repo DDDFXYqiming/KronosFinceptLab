@@ -451,7 +451,18 @@ class KronosPredictorWrapper:
         except ImportError:
             pass  # will fail at from_pretrained time with a clear error
 
-        device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        device = self.device or os.environ.get("KRONOS_DEVICE") or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        # DirectML backend for AMD/Intel GPUs on Windows (e.g. Radeon 7800 XT).
+        # torch_directml.device() returns an opaque device object (not a str),
+        # so keep a string label for metadata while using the object for tensors.
+        device_obj = device
+        if isinstance(device, str) and device.lower() in ("dml", "directml"):
+            try:
+                import torch_directml
+                device_obj = torch_directml.device()
+            except ImportError:
+                device_obj = "cpu"
+                device = "cpu"
         tokenizer_path, tokenizer_source = _resolve_pretrained_source(self.tokenizer_id)
         model_path, model_source = _resolve_pretrained_source(self.model_id)
         self._tokenizer_source = tokenizer_source
@@ -473,9 +484,9 @@ class KronosPredictorWrapper:
         except Exception as exc:
             raise RuntimeError(_hf_cache_hint(self.model_id)) from exc
 
-        model.to(device)
+        model.to(device_obj)
         model.eval()
-        predictor = KronosPredictor(model, tokenizer, max_context=self.max_context, device=device)
+        predictor = KronosPredictor(model, tokenizer, max_context=self.max_context, device=device_obj)
         return predictor, device
 
     def predict(self, df: pd.DataFrame, x_timestamp: pd.Series, pred_len: int) -> ForecastResult:
