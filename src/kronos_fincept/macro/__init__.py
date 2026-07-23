@@ -28,6 +28,7 @@ from kronos_fincept.macro.providers import (
     WorldBankProvider,
     YFinanceProvider,
     YahooPriceProvider,
+    create_all_providers,
     create_default_providers,
 )
 from kronos_fincept.macro.schemas import MacroGatherResult, MacroProviderResult, MacroQuery, MacroSignal
@@ -64,5 +65,6 @@ __all__ = [
     "WorldBankProvider",
     "YFinanceProvider",
     "YahooPriceProvider",
+    "create_all_providers",
     "create_default_providers",
 ]

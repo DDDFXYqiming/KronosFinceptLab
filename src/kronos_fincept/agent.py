@@ -20,7 +20,8 @@ from typing import Any
 
 from kronos_fincept.config import settings
 from kronos_fincept.cninfo import CninfoDisclosureClient
-from kronos_fincept.logging_config import get_request_id, log_event, log_perf
+from kronos_fincept.logging_config import get_request_id, log_event, log_perf, redact
+
 from kronos_fincept.macro import MacroDataManager, MacroGatherResult, MacroQuery
 from kronos_fincept.schemas import (
     DEFAULT_MODEL_ID,
@@ -52,8 +53,8 @@ WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 30}
 WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 30
 WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 35}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 35
-WEB_MACRO_TIMEOUT_SECONDS = 16.0
-WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 12.0
+WEB_MACRO_TIMEOUT_SECONDS = 40.0
+WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 25.0
 DEFAULT_LLM_PROVIDER_ORDER = ("llm",)
 LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
 LLM_CONTEXT_MAX_TEXT_CHARS = 600
@@ -207,10 +208,10 @@ MACRO_ALLOWED_PATTERNS = [
 MACRO_ROUTE_PROVIDER_IDS: dict[str, tuple[str, ...]] = {
     "geopolitical": ("polymarket", "kalshi", "yahoo_price", "cftc_cot", "bis"),
     "recession": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "bis", "cme_fedwatch"),
-    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "cftc_cot", "fear_greed", "rss_news", "us_treasury", "anysearch"),
+    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "cftc_cot", "fear_greed", "altme_fng", "rss_news", "us_treasury", "anysearch"),
     "stock_options": ("source_project_macro_cache", "yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
-    "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "anysearch", "web_search"),
-    "default": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "rss_news", "anysearch", "web_search"),
+    "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "altme_fng", "cftc_cot", "us_treasury", "anysearch"),
+    "default": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "rss_news", "anysearch"),
 }
 
 ALLOWED_MACRO_PROVIDER_IDS = frozenset(
@@ -225,9 +226,9 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "worldbank",
         "yfinance_options",
         "fear_greed",
+        "altme_fng",
         "rss_news",
         "cme_fedwatch",
-        "web_search",
         "anysearch",
         "yahoo_price",
         "deribit",
@@ -271,6 +272,7 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "worldbank": "official_macro",
     "yfinance_options": "equity_options",
     "fear_greed": "sentiment_news",
+    "altme_fng": "sentiment_news",
     "rss_news": "sentiment_news",
     "cme_fedwatch": "rates",
     "web_search": "sentiment_news",
@@ -515,7 +517,7 @@ def _report_llm_fallback_summary(failures: list[dict[str, Any]]) -> str:
     return f"{detail}，已使用本地结构化报告模板。"
 
 
-@log_perf(event="agent.llm_structured", level=20)
+@log_perf(event="agent.llm_structured", level=20, log_args=True, log_result=True, max_result_len=500)
 def _call_structured_llm_json(
     messages: list[dict[str, str]],
     *,
@@ -568,6 +570,7 @@ def _call_structured_llm_json(
         if fb is not None and fb.enabled and fb.max_attempts > max_attempts:
             max_attempts = fb.max_attempts
 
+    t_start = time.perf_counter()  # LLM IO logging
     for attempt_idx, provider in enumerate(providers[:max_attempts]):
         if _llm_provider_circuit_open(provider):
             if purpose == "report":
@@ -664,6 +667,33 @@ def _call_structured_llm_json(
                 )
                 continue
             _record_llm_provider_success(provider)
+            # LLM IO logging: record prompt, response, token usage on success
+            _tokens = None
+            _usage = getattr(response_payload, "usage", None) or response_payload.get("usage") if isinstance(response_payload, dict) else None
+            if _usage:
+                _tokens = {
+                    "prompt": _usage.get("prompt_tokens"),
+                    "completion": _usage.get("completion_tokens"),
+                    "total": _usage.get("total_tokens"),
+                }
+            log_event(
+                logger,
+                logging.DEBUG,
+                "agent.llm.io",
+                f"{provider.display_name} LLM call succeeded",
+                provider=provider.name,
+                model=provider.model,
+                purpose=purpose,
+                attempt=attempt_idx + 1,
+                messages_count=len(messages),
+                messages_preview=redact(str(messages))[:500],
+                messages_hash=_cache_key,
+                response_type=type(parsed).__name__,
+                response_keys=list(parsed.keys()) if isinstance(parsed, dict) else None,
+                tokens=_tokens,
+                duration_ms=int((time.perf_counter() - t_start) * 1000),
+                timeout_seconds=provider_timeout,
+            )
             # P2 #10: Cache successful LLM response
             with _LLM_STATE_LOCK:
                 _LLM_CACHE[_cache_key] = (parsed, provider, time.time())
@@ -936,7 +966,7 @@ class AgentAnalysisResult:
         return payload
 
 
-@log_perf(event="agent.analyze", level=20)
+@log_perf(event="agent.analyze", level=20, log_args=True, log_result=True, max_result_len=2000)
 def analyze_investment_question(
     question: str,
     *,
@@ -1280,7 +1310,7 @@ def analyze_investment_question(
     )
 
 
-@log_perf(event="agent.macro", level=20)
+@log_perf(event="agent.macro", level=20, log_args=True, log_result=True, max_result_len=2000)
 def analyze_macro_question(
     question: str,
     *,
@@ -1352,27 +1382,38 @@ def analyze_macro_question(
             elapsed_ms=_elapsed_ms(started_at),
         ),
     ]
+    # Always use select_macro_provider_ids as the base to ensure dimension
+    # coverage (rates/positioning/sentiment), then merge LLM suggestions on top.
+    selected_provider_ids = list(select_macro_provider_ids(clean_question, symbols=effective_symbols))
+    if provider_ids:
+        for _pid in provider_ids:
+            if _pid not in selected_provider_ids:
+                selected_provider_ids.append(_pid)
     selected_provider_ids = _sanitize_macro_provider_ids(
-        provider_ids or route.provider_ids,
+        selected_provider_ids,
         question=clean_question,
         symbols=effective_symbols,
     )
-    if provider_ids is None:
-        selected_provider_ids = _ensure_macro_provider_dimension_floor(
-            selected_provider_ids,
-            question=clean_question,
-            symbols=effective_symbols,
-        )
-        # Ensure AnySearch (anonymous public-web search) is always available when
-        # configured, providing public web evidence that geo-blocked providers
-        # (us_treasury/cftc_cot) cannot deliver from China.
-        try:
-            from kronos_fincept.config import settings as _settings
+    selected_provider_ids = _ensure_macro_provider_dimension_floor(
+        selected_provider_ids,
+        question=clean_question,
+        symbols=effective_symbols,
+    )
+    # Ensure AnySearch (anonymous public-web search) is always available when
+    # configured, providing public web evidence that geo-blocked providers
+    # (us_treasury/cftc_cot) cannot deliver from China.
+    try:
+        from kronos_fincept.config import settings as _settings
 
-            if _settings.anysearch.is_configured and "anysearch" not in selected_provider_ids:
-                selected_provider_ids = [*selected_provider_ids, "anysearch"]
-        except Exception:
-            pass
+        if _settings.anysearch.is_configured and "anysearch" not in selected_provider_ids:
+            selected_provider_ids = [*selected_provider_ids, "anysearch"]
+    except Exception:
+        pass
+
+    # Ensure altme_fng (alternative.me crypto F&G) is included alongside fear_greed
+    # for additional sentiment signal, regardless of LLM routing decision.
+    if "fear_greed" in selected_provider_ids and "altme_fng" not in selected_provider_ids and "altme_fng" in ALLOWED_MACRO_PROVIDER_IDS:
+        selected_provider_ids = [*selected_provider_ids, "altme_fng"]
 
     steps.append(
         AgentStep(
@@ -1484,7 +1525,7 @@ def _hard_security_rejection(text: str) -> str | None:
     return None
 
 
-@log_perf(event="agent.classify", level=20)
+@log_perf(event="agent.classify", level=20, log_args=True, log_result=True, max_result_len=2000)
 def classify_agent_request(
     text: str,
     *,
@@ -1522,7 +1563,7 @@ def evaluate_agent_safety(text: str) -> dict[str, Any]:
     }
 
 
-@log_perf(event="agent.classify_macro", level=20)
+@log_perf(event="agent.classify_macro", level=20, log_args=True, log_result=True, max_result_len=500)
 def classify_macro_request(
     text: str,
     *,
@@ -1740,7 +1781,7 @@ JSON schema:
   "clarifying_question": null,
   "symbols": ["A股"],
   "market": "cn",
-  "provider_ids": ["fear_greed", "us_treasury", "web_search"],
+  "provider_ids": ["fear_greed", "altme_fng", "us_treasury", "anysearch"],
   "macro_topics": ["market_position", "risk_appetite"],
   "time_horizon": "mixed"
 }}
@@ -1907,7 +1948,7 @@ def _with_explicit_symbol(
     )
 
 
-@log_perf(event="agent.resolve_symbols", level=20)
+@log_perf(event="agent.resolve_symbols", level=20, log_args=True, log_result=True, max_result_len=500)
 def resolve_symbols(
     question: str,
     *,
@@ -2159,7 +2200,7 @@ def _filter_market_review_rows(rows: Any, symbol: str) -> list[dict[str, Any]]:
     return hits
 
 
-@log_perf(event="agent.asset_ctx", level=20)
+@log_perf(event="agent.asset_ctx", level=20, log_args=True, log_result=True, max_result_len=1000)
 def _build_asset_context(
     item: ResolvedSymbol,
     *,
@@ -2346,7 +2387,7 @@ def _build_asset_context(
     return asset, calls
 
 
-@log_perf(event="agent.research", level=20)
+@log_perf(event="agent.research", level=20, log_args=True, log_result=True, max_result_len=1000)
 def _build_online_research(
     item: ResolvedSymbol,
     *,
@@ -2589,7 +2630,7 @@ def _create_macro_data_manager(*, fast_mode: bool = False) -> MacroDataManager:
         per_provider_timeout_seconds=per_provider_timeout_seconds,
         failure_threshold=3,
         failure_cooldown_seconds=300,
-        max_workers=5,
+        max_workers=8,
     )
 
 
@@ -2652,7 +2693,7 @@ def _sanitize_macro_provider_ids(
     if filtered:
         return filtered
     fallback = select_macro_provider_ids(question, symbols=symbols)
-    return _filter_macro_provider_ids(fallback) or ["web_search", "fear_greed", "us_treasury"]
+    return _filter_macro_provider_ids(fallback) or ["fear_greed", "altme_fng", "us_treasury"]
 
 
 def _provider_dimension_count(provider_ids: list[str]) -> int:
@@ -2764,7 +2805,7 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
     for provider_id in MACRO_ROUTE_PROVIDER_IDS[route]:
         if provider_id not in selected:
             selected.append(provider_id)
-        if len(selected) >= 6:
+        if len(selected) >= 8:
             break
     if len(selected) < 3:
         for provider_id in MACRO_ROUTE_PROVIDER_IDS["default"]:
@@ -2786,7 +2827,7 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
     return selected
 
 
-@log_perf(event="agent.macro_ctx", level=20)
+@log_perf(event="agent.macro_ctx", level=20, log_args=True, log_result=True, max_result_len=1000)
 def _build_macro_context(
     question: str,
     *,
@@ -3391,7 +3432,7 @@ def _build_prediction(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool)
     }
 
 
-@log_perf(event="agent.batch_pred", level=20)
+@log_perf(event="agent.batch_pred", level=20, log_args=True, log_result=True, max_result_len=2000)
 def _build_batch_predictions(
     items: list[ResolvedSymbol],
     asset_contexts: list[dict[str, Any]],
@@ -3411,7 +3452,7 @@ def _build_batch_predictions(
     eligible: list[tuple[ResolvedSymbol, dict[str, Any], ForecastRequest]] = []
     calls: list[AgentToolCall] = []
     for item, asset in zip(items, asset_contexts):
-        rows = asset.get("market_data", {}).get("rows") or []
+        rows = (asset.get("market_data") or {}).get("rows") or []
         if not rows:
             continue
         try:
@@ -3442,7 +3483,7 @@ def _build_batch_predictions(
     if len(eligible) == 1:
         item, asset, _ = eligible[0]
         try:
-            prediction = _build_prediction(item.symbol, asset.get("market_data", {}).get("rows") or [], dry_run=dry_run)
+            prediction = _build_prediction(item.symbol, (asset.get("market_data") or {}).get("rows") or [], dry_run=dry_run)
             asset["kronos_prediction"] = prediction
             return [
                 AgentToolCall(
@@ -3478,7 +3519,7 @@ def _build_batch_predictions(
 
     for item, asset, _ in eligible:
         try:
-            prediction = _build_prediction(item.symbol, asset.get("market_data", {}).get("rows") or [], dry_run=dry_run)
+            prediction = _build_prediction(item.symbol, (asset.get("market_data") or {}).get("rows") or [], dry_run=dry_run)
         except Exception as exc:
             error_summary = _short_error(exc)
             asset["kronos_prediction_error"] = error_summary
@@ -3658,7 +3699,7 @@ def _risk_level_from_metrics(risk_metrics: dict[str, Any]) -> str:
     return "中"
 
 
-@log_perf(event="agent.generate_report", level=20)
+@log_perf(event="agent.generate_report", level=20, log_args=True, log_result=True, max_result_len=3000)
 def _generate_report(question: str, context: dict[str, Any]) -> tuple[dict[str, Any], AgentToolCall]:
     started = time.perf_counter()
     _clear_last_report_llm_metadata()
@@ -3961,7 +4002,7 @@ def _report_provider_timeouts(context: dict[str, Any]) -> dict[str, int]:
     return {"llm": _llm_report_timeout_seconds(context)}
 
 
-@log_perf(event="agent.llm_report", level=20)
+@log_perf(event="agent.llm_report", level=20, log_args=True, log_result=True, max_result_len=2000)
 def _call_llm_report(question: str, context: dict[str, Any]) -> dict[str, Any] | None:
     if not _llm_provider_chain():
         log_event(

@@ -25,6 +25,29 @@ _KRONOS_MODEL_VARIANTS: dict[str, dict[str, str | int]] = {
 
 SUPPORTED_MODEL_IDS = tuple(_KRONOS_MODEL_VARIANTS)
 
+# ── Convenience: model size alias → full model ID ──
+# Usage: KRONOS_MODEL_SIZE=base  (or "small", "mini")
+MODEL_SIZE_MAP: dict[str, str] = {
+    "mini": "NeoQuasar/Kronos-mini",
+    "small": "NeoQuasar/Kronos-small",
+    "base": "NeoQuasar/Kronos-base",
+    # "large" reserved — closed model
+}
+"""Map short size names to full HuggingFace model IDs."""
+
+
+def resolve_model_size(size: str) -> str:
+    """Convert a model size alias ('base'/'small'/'mini') to full model ID.
+
+    Also accepts full model IDs directly (pass-through).
+    Raises ValueError for unknown sizes.
+    """
+    if size in MODEL_SIZE_MAP:
+        return MODEL_SIZE_MAP[size]
+    # Pass-through: treat as full model ID
+    validate_kronos_model_id(size)
+    return size
+
 RESEARCH_WARNING = "Research forecast only; not trading advice."
 
 

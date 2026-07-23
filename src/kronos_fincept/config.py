@@ -199,12 +199,30 @@ def _get_bool(key: str, default: bool = False) -> bool:
 # Config dataclasses
 # ---------------------------------------------------------------------------
 
+def _resolve_kronos_model_id() -> str:
+    """Resolve Kronos model ID from env vars.
+
+    Priority: KRONOS_MODEL_SIZE > KRONOS_MODEL_ID > default (base).
+    """
+    from kronos_fincept.schemas import MODEL_SIZE_MAP  # noqa: PLC0415
+
+    size = _get("KRONOS_MODEL_SIZE")
+    if size:
+        if size in MODEL_SIZE_MAP:
+            return MODEL_SIZE_MAP[size]
+        _logger.warning("Unknown KRONOS_MODEL_SIZE=%s, falling back to base", size)
+    model_id = _get("KRONOS_MODEL_ID")
+    if model_id:
+        return model_id
+    return "NeoQuasar/Kronos-base"
+
+
 @dataclass(frozen=True)
 class KronosConfig:
     """Kronos model configuration."""
     repo_path: str = field(default_factory=lambda: _get("KRONOS_REPO_PATH"))
     hf_home: str = field(default_factory=lambda: _get("HF_HOME"))
-    model_id: str = field(default_factory=lambda: _get("KRONOS_MODEL_ID", "NeoQuasar/Kronos-base"))
+    model_id: str = field(default_factory=lambda: _resolve_kronos_model_id())
     tokenizer_id: str = "NeoQuasar/Kronos-Tokenizer-base"
     enable_real_model: bool = field(default_factory=lambda: _get_bool("KRONOS_ENABLE_REAL_MODEL", True))
     allow_dry_run: bool = field(default_factory=lambda: _get_bool("KRONOS_ALLOW_DRY_RUN", True))
@@ -382,9 +400,10 @@ class WebSearchConfig:
 
 @dataclass(frozen=True)
 class AnySearchConfig:
-    """Anonymous AnySearch REST API config."""
+    """AnySearch REST API config (API key optional; enables higher rate quota)."""
     enabled: bool = field(default_factory=lambda: _get_bool("ANYSEARCH_ENABLED", False))
     endpoint: str = field(default_factory=lambda: _get("ANYSEARCH_ENDPOINT", "https://api.anysearch.com/v1/search"))
+    api_key: str = field(default_factory=lambda: _get("ANYSEARCH_API_KEY", ""))
     timeout_seconds: int = field(default_factory=lambda: _get_int("ANYSEARCH_TIMEOUT_SECONDS", 8))
     max_results: int = field(default_factory=lambda: _get_int("ANYSEARCH_MAX_RESULTS", 4))
 

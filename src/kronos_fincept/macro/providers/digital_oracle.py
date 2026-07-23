@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import os
 import re
 import time
@@ -30,6 +31,8 @@ from kronos_fincept.macro.providers.fred import FredProvider
 from kronos_fincept.macro.providers.nbs_live import ChinaNBSLiveProvider
 from kronos_fincept.macro.providers.source_project_cache import SourceProjectMacroCacheProvider
 from kronos_fincept.web_search import AnySearchClient, WebSearchClient
+
+logger = logging.getLogger(__name__)
 
 
 CFTC_SODA_URL = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
@@ -68,6 +71,7 @@ CFTC_COMMODITY_PATTERNS = (
     (r"白银|silver|xag|si=/?f", "SILVER"),
     (r"原油|石油|wti|crude|oil|cl=/?f|brent|布伦特|bz=/?f", "CRUDE"),
     (r"铜|copper|hg=/?f", "COPPER"),
+    (r"比特币|bitcoin|btc", "BITCOIN"),
 )
 STOOQ_SYMBOL_MAP = {
     "BZ=F": "cb.c",
@@ -151,6 +155,38 @@ def _get_zip_csv_rows(url: str, *, timeout: int = 10) -> list[dict[str, Any]]:
             return []
         text = archive.read(csv_name).decode("utf-8-sig", errors="replace")
     return [dict(row) for row in csv.DictReader(io.StringIO(text)) if row]
+
+
+def _get_dbnomics_rows(provider: str, dataset: str, freq: str, *, timeout: int = 10) -> list[dict[str, Any]]:
+    """Fetch BIS data via DBnomics JSON API, returning dicts compatible with _select_latest_us_row.
+
+    DBnomics series URLs are free, no key required.
+    Example: /v22/series/BIS/WS_CBPOL/M.US?observations=true&limit=200
+    """
+    url = f"https://api.db.nomics.world/v22/series/{provider}/{dataset}/{freq}.US?observations=true&limit=200"
+    try:
+        with urllib.request.urlopen(
+            urllib.request.Request(url, headers={"Accept": "application/json"}),
+            timeout=timeout,
+        ) as response:
+            payload: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return []
+    docs = (payload.get("series") or {}).get("docs") or []
+    rows: list[dict[str, Any]] = []
+    for doc in docs:
+        series_name = doc.get("series_name", "")
+        periods = doc.get("period") or []
+        values = doc.get("value") or []
+        for period, value in zip(periods, values):
+            rows.append(
+                {
+                    "TIME_PERIOD": period,
+                    "OBS_VALUE": value,
+                    "series_name": series_name,
+                }
+            )
+    return rows
 
 
 def _number(value: Any) -> float | None:
@@ -440,12 +476,13 @@ class USTreasuryProvider(MacroProvider):
                 "limit": 5,
             }
             url = f"{base}?{urllib.parse.urlencode(params)}"
-            request = urllib.request.Request(
-                url,
-                headers={"Accept": "application/json", "User-Agent": "KronosFinceptLab/10.9"},
-            )
-            with urllib.request.urlopen(request, timeout=10) as response:
-                observations = (json.loads(response.read()) or {}).get("observations") or []
+            try:
+                import requests as _rq
+                _resp = _rq.get(url, headers={"Accept": "application/json", "User-Agent": "KronosFinceptLab/10.9"}, timeout=(3, 8))
+                _resp.raise_for_status()
+                observations = (_resp.json() or {}).get("observations") or []
+            except Exception:
+                observations = []
             for item in observations:
                 try:
                     value = float(item.get("value"))
@@ -579,46 +616,73 @@ class CftcCotProvider(MacroProvider):
     display_name = "CFTC COT"
     capabilities = ("futures_positioning", "institutional_flow")
 
+    _XOOMAR_COMMODITY_SLUG = {
+        "GOLD": "gold",
+        "SILVER": "silver",
+        "CRUDE": "crude-oil-light-sweet",
+        "COPPER": "copper-grade-1",
+        "BITCOIN": "bitcoin",
+    }
+
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         commodity = _infer_cftc_commodity(query)
-        payload = _get_json(
-            CFTC_SODA_URL,
-            params={
-                "$limit": max(1, min(max(query.limit, 5), 20)),
-                "$order": "report_date_as_yyyy_mm_dd DESC",
-                "$where": f"commodity_name like '%{_soql_like(commodity)}%'",
-            },
-        )
-        rows = [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
-        row = _primary_cot_row(rows)
+        slug = self._XOOMAR_COMMODITY_SLUG.get(commodity, "gold")
+
+        def _fetch_payload():
+            import requests as _rq
+            _resp = _rq.get(
+                "https://xoomar.com/api/markets/cot",
+                headers=_request_headers("application/json"),
+                timeout=(3, 12),
+            )
+            _resp.raise_for_status()
+            return _resp.json()
+
+        try:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                payload = _ex.submit(_fetch_payload).result(timeout=15)
+        except Exception as exc:
+            logger.warning("cftc_cot.fetch_failed: %s", exc)
+            return []
+
+        data = payload.get("data") if isinstance(payload, dict) else []
+        if not isinstance(data, list):
+            return []
+        row = None
+        for item in data:
+            if isinstance(item, dict) and item.get("slug") == slug:
+                row = item
+                break
         if not isinstance(row, dict):
             return []
-        long_value = _row_number(row, "m_money_positions_long_all")
-        short_value = _row_number(row, "m_money_positions_short_all")
-        prod_long = _row_number(row, "prod_merc_positions_long_all")
-        prod_short = _row_number(row, "prod_merc_positions_short_all")
-        open_interest = _row_number(row, "open_interest_all")
+        long_value = _row_number(row, "assetMgrLong")
+        short_value = _row_number(row, "assetMgrShort")
+        prod_long = _row_number(row, "dealerLong")
+        prod_short = _row_number(row, "dealerShort")
+        open_interest = _row_number(row, "openInterest")
         net = round(long_value - short_value, 4) if long_value is not None and short_value is not None else None
         commercial_net = round(prod_long - prod_short, 4) if prod_long is not None and prod_short is not None else None
-        observed_at = _date_prefix(row.get("report_date_as_yyyy_mm_dd"))
+        observed_at = _date_prefix(row.get("reportDate"))
         return [
             _signal(
                 source=self.provider_id,
                 signal_type="managed_money_net_position",
                 value=net,
-                interpretation="CFTC 管理基金黄金/商品净仓位，代表期货市场趋势资金方向。",
+                interpretation=f"CFTC 管理基金{commodity}净仓位，代表期货市场趋势资金方向。数据来源 xoomar.com。",
                 time_horizon="medium",
                 confidence=0.66 if net is not None else 0.4,
                 observed_at=observed_at,
-                source_url="https://publicreporting.cftc.gov/",
+                source_url="https://xoomar.com/markets/cot",
                 metadata={
                     "commodity_query": commodity,
-                    "commodity": row.get("commodity_name"),
-                    "market_name": row.get("market_and_exchange_names"),
+                    "slug": slug,
+                    "commodity": row.get("name"),
                     "long": long_value,
                     "short": short_value,
                     "open_interest": open_interest,
                     "commercial_net": commercial_net,
+                    "data_source": "xoomar_cot_api",
                 },
             )
         ]
@@ -733,8 +797,14 @@ class BisProvider(MacroProvider):
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         signals: list[MacroSignal] = []
-        for topic, url in BIS_BULK_DOWNLOADS.items():
-            rows = _get_zip_csv_rows(url, timeout=10)
+        # DBnomics-based BIS series mapping (free, no API key)
+        # provider/dataset/freq triples; global_liquidity unavailable on DBnomics → skipped
+        _BIS_SERIES: list[tuple[str, str, str, str]] = [
+            ("policy_rates", "BIS", "WS_CBPOL", "M"),
+            ("credit_gap", "BIS", "WS_CREDIT_GAP", "Q"),
+        ]
+        for topic, provider, dataset, freq in _BIS_SERIES:
+            rows = _get_dbnomics_rows(provider, dataset, freq, timeout=10)
             row = self._select_latest_us_row(rows)
             if not row:
                 continue
@@ -750,11 +820,11 @@ class BisProvider(MacroProvider):
                     time_horizon="long" if topic == "credit_gap" else "mixed",
                     confidence=0.67 if value is not None else 0.45,
                     observed_at=period or None,
-                    source_url="https://data.bis.org/",
+                    source_url="https://db.nomics.world/",
                     metadata={
                         "topic": topic,
                         "period": period,
-                        "data_quality": "official_bis_statistics",
+                        "data_quality": "official_bis_statistics_via_dbnomics",
                         "raw_keys": list(row.keys())[:20],
                     },
                 )
@@ -988,29 +1058,55 @@ class FearGreedProvider(MacroProvider):
     provider_id = "fear_greed"
     display_name = "CNN Fear & Greed"
     capabilities = ("market_sentiment",)
+    _cache: tuple[float, list] | None = None
+    _cache_ttl = 3600.0
 
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        import time as _time
+        cached = FearGreedProvider._cache
+        if cached is not None and (_time.time() - cached[0]) < FearGreedProvider._cache_ttl:
+            return list(cached[1])
+
+        def _fetch_payload() -> Any:
+            import requests as _rq
+            _resp = _rq.get(
+                "https://feargreedchart.com/api/?action=all",
+                headers=_request_headers("application/json"),
+                timeout=(3, 12),
+            )
+            _resp.raise_for_status()
+            return _resp.json()
+
         try:
-            payload = _get_json("https://production.dataviz.cnn.io/index/fearandgreed/graphdata", timeout=3)
-        except Exception:
-            return self._vix_proxy_signal()
-        data = payload.get("fear_and_greed") if isinstance(payload, dict) else {}
-        if not isinstance(data, dict):
-            return self._vix_proxy_signal()
-        score = _number(data.get("score"))
-        rating = str(data.get("rating") or "")
-        return [
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                payload = _ex.submit(_fetch_payload).result(timeout=15)
+        except Exception as exc:
+            logger.warning("fear_greed.fetch_failed: %s", exc)
+            return []
+        score_data = payload.get("score") if isinstance(payload, dict) else {}
+        if not isinstance(score_data, dict):
+            return []
+        score = _number(score_data.get("score"))
+        components = score_data.get("components") or []
+        comp_desc = "; ".join(
+            f"{c.get('name', '')}={c.get('val', '')}" for c in components if isinstance(c, dict)
+        )
+        signals = [
             _signal(
                 source=self.provider_id,
                 signal_type="market_sentiment",
                 value=score,
-                interpretation=f"CNN Fear & Greed 指数：{rating or 'unknown'}。",
+                interpretation=f"Fear & Greed 指数：{score}（{comp_desc}）。数据来源 feargreedchart.com。",
                 time_horizon="short",
-                confidence=0.63 if score is not None else 0.4,
-                observed_at=str(data.get("timestamp") or ""),
-                source_url="https://www.cnn.com/markets/fear-and-greed",
+                confidence=0.65 if score is not None else 0.4,
+                observed_at=str(payload.get("ts") or ""),
+                source_url="https://feargreedchart.com",
+                metadata={"data_quality": "feargreedchart_api", "components": comp_desc},
             )
         ]
+        FearGreedProvider._cache = (_time.time(), signals)
+        return signals
 
     def _vix_proxy_signal(self) -> list[MacroSignal]:
         try:
@@ -1056,6 +1152,46 @@ class FearGreedProvider(MacroProvider):
                     "first": first,
                     "data_quality": "fallback_yahoo_chart_vix",
                 },
+            )
+        ]
+
+
+class AlternativeMeFearGreedProvider(MacroProvider):
+    """Crypto Fear & Greed Index via alternative.me (free, no API key)."""
+    provider_id = "altme_fng"
+    display_name = "Alternative.me Crypto F&G"
+    capabilities = ("market_sentiment",)
+
+    def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        try:
+            import requests
+            _resp = requests.get(
+                "https://api.alternative.me/fng/?limit=2",
+                headers=_request_headers("application/json"),
+                timeout=5,
+            )
+            _resp.raise_for_status()
+            payload = _resp.json()
+        except Exception as exc:
+            logger.warning("altme_fng.fetch_failed: %s", exc)
+            return []
+        data = payload.get("data") if isinstance(payload, dict) else []
+        if not isinstance(data, list) or not data:
+            return []
+        latest = data[0] if isinstance(data[0], dict) else {}
+        value = _number(latest.get("value"))
+        classification = str(latest.get("value_classification") or "")
+        return [
+            _signal(
+                source=self.provider_id,
+                signal_type="market_sentiment",
+                value=value,
+                interpretation=f"加密货币 Fear & Greed 指数：{value}（{classification}）。数据来源 alternative.me。",
+                time_horizon="short",
+                confidence=0.6 if value is not None else 0.4,
+                observed_at=str(latest.get("timestamp") or ""),
+                source_url="https://alternative.me/crypto/fear-and-greed-index/",
+                metadata={"data_quality": "alternative_me_api", "classification": classification},
             )
         ]
 
@@ -1108,7 +1244,14 @@ class CMEFedWatchProvider(MacroProvider):
             raise MacroProviderUnavailable(
                 "CME FedWatch requires CME_FEDWATCH_ENDPOINT or optional cme_fedwatch package."
             ) from exc
-        return get_probabilities(meeting="next")
+        try:
+            return get_probabilities(meeting="next")
+        except Exception as exc:
+            raise MacroProviderUnavailable(
+                f"CME FedWatch: cannot reach CME – {exc}. "
+                "The CME website may be blocked from this network. "
+                "Set CME_FEDWATCH_ENDPOINT env var for a proxy/alternative endpoint."
+            ) from exc
 
     def _extract_probability_rows(self, payload: Any) -> list[dict[str, Any]]:
         if not isinstance(payload, dict):
@@ -1558,6 +1701,7 @@ class StooqProvider(MacroProvider):
             url = f"https://stooq.com/q/l/?s={urllib.parse.quote(symbol)}&f=sd2t2ohlcv&h&e=csv"
             text_response = _get_text(url, timeout=8)
             if not text_response or "\n" not in text_response:
+                logger.warning("stooq.empty_response symbol=%s: CSV API returned no usable data (endpoint may be deprecated)", symbol)
                 return signals
             lines = text_response.strip().split("\n")
             if len(lines) < 2:
@@ -1595,8 +1739,8 @@ class StooqProvider(MacroProvider):
                         },
                     )
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("stooq.fetch_failed symbol=%s: %s", symbol, exc)
 
         return signals
 
@@ -1620,8 +1764,8 @@ def create_default_providers() -> list[MacroProvider]:
         FearGreedProvider(),
         CMEFedWatchProvider(),
         RssNewsProvider(),
-        WebSearchProvider(),
         AnySearchProvider(),
+        AlternativeMeFearGreedProvider(),
         YahooPriceProvider(),
         DeribitProvider(),
         CurrencyProvider(),
