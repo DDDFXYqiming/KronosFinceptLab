@@ -42,7 +42,7 @@ cd web && npm install && npm run dev
 | 行情数据 | `kronos data fetch` | `GET /api/data/*` | 数据页面 | `fetch_a_stock` |
 | 技术指标 | `kronos data indicator` | `GET /api/data/indicator/*` | 数据页面 | `calculate_indicators` |
 | AI 智能体分析 | `kronos analyze agent` | `POST /api/v1/analyze/agent` | 分析页面 | `analyze_agent` |
-| 宏观分析 | `kronos analyze macro` | `POST /api/v1/analyze/macro` | 宏观页面 | `analyze_macro` |
+| 宏观分析 | `kronos analyze macro` | `POST /api/v1/analyze/macro` | 宏观页面<sup>†</sup> | `analyze_macro` |
 | AI 个股报告 | `kronos analyze ai-analyze` | `POST /api/v1/analyze/ai` | 分析页面 | `analyze_ai` |
 | DCF/风险/组合 | `kronos analyze dcf` | `POST /api/v1/analyze/dcf` | 分析页面 | `analyze_dcf` 等 |
 | 策略回测 | `kronos backtest ranking` | `POST /api/backtest/ranking` | 回测页面 | `run_ranking_backtest` |
@@ -77,7 +77,7 @@ flowchart LR
     subgraph data["数据与分析"]
         DS["11+ 数据源 / DataSources"]
         FIN["财务分析 / Financial"]
-        MACRO["17+ 宏观信号 / Macro"]
+        MACRO["18+ 宏观信号 / Macro"]
         BT["回测引擎 / Backtest"]
     end
 
@@ -134,7 +134,7 @@ KronosFinceptLab/
 │   ├── cli/                     # Click CLI 命令
 │   ├── data_sources/            # 行情数据适配器（东方财富、Yahoo 等）
 │   ├── financial/               # 财务报表（BaoStock、Yahoo）
-│   ├── macro/                   # 宏观数据提供方（17+ 信号类型）
+│   ├── macro/                   # 宏观数据提供方（18 信号提供方：FRED、CME、Kalshi、Deribit 等）
 │   ├── agent.py                 # AI 智能体编排
 │   ├── service.py               # 共享预测服务
 │   ├── predictor.py             # Kronos 模型推理
@@ -198,6 +198,8 @@ cd web && npm run typecheck && npm run lint && npm run test:frontend
 ---
 
 > 所有预测和分析仅供研究用途，不构成投资建议。
+
+† Web 宏观页面支持手动选择数据源（FRED/CME/Kalshi/Deribit 等），未选择时自动使用所有可用提供方。信号渲染已增强，订单簿和期权希腊值以结构化格式展示。
 
 ---
 

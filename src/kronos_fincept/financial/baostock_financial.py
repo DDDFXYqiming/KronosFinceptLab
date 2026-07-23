@@ -11,6 +11,7 @@ from .schemas import (
     FinancialData, IncomeStatement, BalanceSheet, CashFlowStatement
 )
 from .financial_source import FinancialDataSource
+from ..logging_config import log_perf
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class BaoStockFinancialSource(FinancialDataSource):
         else:
             return f"sz.{symbol}"
     
+    @log_perf(event="baostock.financial", level=20, log_args=True, log_result=True, max_result_len=500)
     def get_financial_data(self, symbol: str, periods: int = 4) -> Optional[FinancialData]:
         """Get financial data for a symbol."""
         try:
@@ -52,6 +54,7 @@ class BaoStockFinancialSource(FinancialDataSource):
             logger.warning("Error getting financial data from BaoStock: %s", e)
             return None
     
+    @log_perf(event="baostock.income", level=20, log_args=True, log_result=True, max_result_len=500)
     def get_income_statements(self, symbol: str, periods: int = 4) -> List[IncomeStatement]:
         """Get income statements from BaoStock."""
         try:

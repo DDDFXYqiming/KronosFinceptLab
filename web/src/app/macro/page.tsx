@@ -29,6 +29,27 @@ const VERSION = "v10.8.8";
 const MAX_MACRO_TURNS = 5;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 
+const KNOWN_PROVIDERS = [
+  { id: "fred", label: "FRED", group: "经济数据" },
+  { id: "cme", label: "CME", group: "利率/期货" },
+  { id: "kalshi", label: "Kalshi", group: "预测市场" },
+  { id: "deribit", label: "Deribit", group: "加密/期权" },
+  { id: "polymarket", label: "PolyMarket", group: "预测市场" },
+  { id: "coingecko", label: "CoinGecko", group: "加密/商品" },
+  { id: "bis", label: "BIS", group: "经济数据" },
+  { id: "fear_greed", label: "Fear&Greed", group: "情绪/舆情" },
+  { id: "google_trends", label: "GoogleTrends", group: "情绪/舆情" },
+  { id: "news_sentiment", label: "新闻情绪", group: "情绪/舆情" },
+  { id: "rss_news", label: "RSS新闻", group: "情绪/舆情" },
+  { id: "web_search", label: "网络搜索", group: "情绪/舆情" },
+  { id: "edgar", label: "EDGAR", group: "持仓/衍生品" },
+  { id: "CotReport", label: "COT报告", group: "持仓/衍生品" },
+  { id: "EconomicCalendar", label: "经济日历", group: "经济数据" },
+  { id: "WorldBank", label: "世界银行", group: "经济数据" },
+  { id: "IMF", label: "IMF", group: "经济数据" },
+  { id: "OECD", label: "OECD", group: "经济数据" },
+];
+
 type ActiveMacroRun = {
   queryKey: QueryKey;
   question: string;
@@ -158,8 +179,51 @@ function formatUnknownValue(value: unknown): string {
   }
 }
 
+function formatSignalValue(signal: MacroSignal): string {
+  const st = (signal.signal_type || "").toLowerCase();
+  const src = (signal.source || "").toLowerCase();
+
+  // OrderBook signals
+  if (/(orderbook|order_book|bid|ask|depth|l2|l3)/.test(st) || /(orderbook|order_book|bid|ask|depth|l2|l3)/.test(src)) {
+    const v = signal.value as any;
+    if (v && typeof v === "object") {
+      const parts: string[] = [];
+      if (v.bid != null) parts.push(`Bid:${v.bid}`);
+      if (v.ask != null) parts.push(`Ask:${v.ask}`);
+      if (v.mid != null) parts.push(`Mid:${v.mid}`);
+      if (v.spread != null) parts.push(`Spread:${typeof v.spread === "number" ? (v.spread * 100).toFixed(3) + "%" : v.spread}`);
+      if (v.bid_depth != null) parts.push(`BidQty:${v.bid_depth}`);
+      if (v.ask_depth != null) parts.push(`AskQty:${v.ask_depth}`);
+      if (v.imbalance != null) parts.push(`Imb:${typeof v.imbalance === "number" ? (v.imbalance * 100).toFixed(1) + "%" : v.imbalance}`);
+      if (parts.length) return parts.join(" | ");
+    }
+    return formatUnknownValue(signal.value);
+  }
+
+  // Greeks signals
+  if (/(greeks|delta|gamma|theta|vega|rho|iv|implied_vol)/.test(st) || /(greeks|delta|gamma|theta|vega|rho|iv|implied_vol)/.test(src)) {
+    const v = signal.value as any;
+    if (v && typeof v === "object") {
+      const parts: string[] = [];
+      if (v.delta != null) parts.push(`Δ:${v.delta}`);
+      if (v.gamma != null) parts.push(`Γ:${v.gamma}`);
+      if (v.theta != null) parts.push(`Θ:${v.theta}`);
+      if (v.vega != null) parts.push(`V:${v.vega}`);
+      if (v.rho != null) parts.push(`ρ:${v.rho}`);
+      if (v.iv != null) parts.push(`IV:${typeof v.iv === "number" ? (v.iv * 100).toFixed(1) + "%" : v.iv}`);
+      if (v.underlying != null) parts.push(`Spot:${v.underlying}`);
+      if (parts.length) return parts.join(" | ");
+    }
+    return formatUnknownValue(signal.value);
+  }
+
+  return formatUnknownValue(signal.value);
+}
+
 function signalLayer(signal: MacroSignal): string {
   const text = `${signal.signal_type} ${signal.source}`.toLowerCase();
+  if (/(orderbook|order_book|bid|ask|depth|spread|imbalance|l2|l3)/.test(text) && !/rate|yield/.test(text)) return "订单簿/深度";
+  if (/(greeks|delta|gamma|theta|vega|rho|iv|implied_vol|option)/.test(text)) return "期权希腊值";
   if (/(polymarket|kalshi|prediction|event)/.test(text)) return "预测市场";
   if (/(gold|silver|oil|commodity|coingecko|btc|crypto|deribit)/.test(text)) return "商品/加密";
   if (/(yield|rate|treasury|fed|bis|cme)/.test(text)) return "利率/收益率";
@@ -438,7 +502,7 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
                   </span>
                 </summary>
                 <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-                  <p><span className="font-semibold text-foreground">当前值：</span>{formatUnknownValue(signal.value)}</p>
+                  <p><span className="font-semibold text-foreground">当前值：</span>{formatSignalValue(signal)}</p>
                   <p><span className="font-semibold text-foreground">解释：</span>{signal.interpretation}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <p><span className="font-semibold text-foreground">期限：</span>{signal.time_horizon || "-"}</p>
@@ -474,7 +538,7 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
                   <tr key={`${group}-${signal.source}-${index}`} className="border-b border-border last:border-b-0">
                     <td className="py-1.5 font-medium text-foreground">{signal.source}</td>
                     <td className="py-1.5 text-muted-foreground">{signal.signal_type}</td>
-                    <td className="py-1.5 text-muted-foreground">{formatUnknownValue(signal.value)}</td>
+                    <td className="py-1.5 text-muted-foreground">{formatSignalValue(signal)}</td>
                     <td className="py-1.5 text-muted-foreground">{signal.interpretation}</td>
                     <td className="py-1.5 text-muted-foreground">{signal.time_horizon || "-"}</td>
                     <td className="py-1.5 text-right font-mono text-foreground">
@@ -504,11 +568,11 @@ function ProbabilityTable({ scenarios }: { scenarios: MacroProbabilityScenario[]
   if (!scenarios.length) return null;
   return (
     <div className="table-scroll rounded-lg border border-border bg-background">
-      <table className="min-w-[30rem] w-full text-xs sm:min-w-[40rem] sm:text-sm">
+      <table className="table-fixed min-w-[30rem] w-full text-xs sm:min-w-[40rem] sm:text-sm">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 text-left">场景</th>
-            <th className="py-2 text-right">概率</th>
+            <th className="py-2 text-right w-14">概率</th>
             <th className="py-2 text-left">依据</th>
           </tr>
         </thead>
@@ -563,6 +627,7 @@ function MacroContent() {
   const demoMode = searchParams.get("demo") === "1";
   const inFlightRef = useRef(false);
   const [question, setQuestion] = useSessionState("kronos-macro-question", defaultMacroQuestion(language));
+  const [selectedProviders, setSelectedProviders] = useSessionState<string[]>("kronos-macro-providers", []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-macro-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-macro-result", null);
@@ -610,6 +675,7 @@ function MacroContent() {
   const buildRequest = useCallback((run: ActiveMacroRun) => ({
     question: run.question,
     rss_feeds: getStoredRssFeeds(),
+    provider_ids: selectedProviders.length > 0 ? selectedProviders : void 0,
     context: {
       entry: "web-macro",
       version: VERSION,
@@ -765,6 +831,55 @@ function MacroContent() {
             className="app-input min-h-36 resize-none px-4 py-3"
             placeholder={tx(language, "例如：现在适合买黄金吗？", "Example: is now a good time to buy gold?")}
           />
+          {/* --- Data Source Toggle Chips --- */}
+          <details className="rounded-lg border border-border bg-muted/30 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none">
+              {tx(language, "macro.providers", "macro.providers")} – {selectedProviders.length > 0
+                ? `${selectedProviders.length} ${tx(language, "已选", "selected")}`
+                : tx(language, "macro.providersAll", "macro.providersAll")}
+            </summary>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSelectedProviders([])}
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                  selectedProviders.length === 0
+                    ? "bg-accent text-white"
+                    : "border border-border text-muted-foreground hover:border-accent/40"
+                }`}
+              >
+                {tx(language, "macro.providersAll", "macro.providersAll")}
+              </button>
+              {KNOWN_PROVIDERS.map((prov) => {
+                const active = selectedProviders.includes(prov.id) || selectedProviders.length === 0;
+                return (
+                  <button
+                    key={prov.id}
+                    type="button"
+                    onClick={() => setSelectedProviders((prev) => {
+                      if (prev.length === 0) {
+                        // Transition from "All" → select everything except this one
+                        return KNOWN_PROVIDERS.filter((p) => p.id !== prov.id).map((p) => p.id);
+                      }
+                      if (prev.includes(prov.id)) {
+                        const next = prev.filter((id) => id !== prov.id);
+                        return next.length === 0 ? [] : next;  // empty → back to All
+                      }
+                      return [...prev, prov.id];
+                    })}
+                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                      active
+                        ? "bg-accent text-white"
+                        : "border border-border text-muted-foreground hover:border-accent/40 opacity-50"
+                    }`}
+                    title={prov.group}
+                  >
+                    {prov.label}
+                  </button>
+                );
+              })}
+            </div>
+          </details>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-wrap gap-2">
               {examples.map((item) => (
@@ -910,15 +1025,6 @@ function MacroContent() {
             </div>
           </Card>
 
-          <MacroDataQuality result={result} signals={macroSignals} />
-
-          <ProviderCoverageMatrix rows={providerRows} />
-
-          <Card>
-            <CardTitle>{tx(language, "信号来源（分层）", "Signal Sources")}</CardTitle>
-            <MacroSignalsTable signals={macroSignals} />
-          </Card>
-
           <Card>
             <CardTitle>{tx(language, "信号一致性评估", "Signal Consistency")}</CardTitle>
             <div className="space-y-4">
@@ -953,6 +1059,15 @@ function MacroContent() {
             ) : (
               <p className="text-sm text-muted-foreground">{tx(language, "暂无监控信号。", "No monitoring signals yet.")}</p>
             )}
+          </Card>
+
+          <MacroDataQuality result={result} signals={macroSignals} />
+
+          <ProviderCoverageMatrix rows={providerRows} />
+
+          <Card>
+            <CardTitle>{tx(language, "信号来源（分层）", "Signal Sources")}</CardTitle>
+            <MacroSignalsTable signals={macroSignals} />
           </Card>
 
           {result.tool_calls.length > 0 && (

@@ -13,7 +13,7 @@ import {
   getConfiguredApiKey,
   saveConfiguredApiKey,
 } from "@/lib/api";
-import { DEFAULT_MODEL_ID } from "@/lib/defaults";
+import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP, SUPPORTED_MODEL_IDS } from "@/lib/defaults";
 import { LANGUAGE_OPTIONS, t } from "@/lib/i18n";
 import { getMarketOptions } from "@/lib/markets";
 import {
@@ -513,6 +513,26 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+          {/* Model size hints */}
+          {(() => {
+            const info = MODEL_SIZE_MAP[preferences.defaultModelId] ?? MODEL_SIZE_MAP[DEFAULT_MODEL_ID];
+            return (
+              <div className="mt-1 grid grid-cols-3 gap-2 text-[11px]">
+                <div className="rounded-md border border-border bg-muted/50 px-2 py-1.5">
+                  <span className="text-muted-foreground">{t(language, "settings.modelSize")}: </span>
+                  <span className="font-medium text-foreground">{info.label}</span>
+                </div>
+                <div className="rounded-md border border-border bg-muted/50 px-2 py-1.5">
+                  <span className="text-muted-foreground">{t(language, "settings.modelMemory")}: </span>
+                  <span className="font-medium text-foreground">{info.memory}</span>
+                </div>
+                <div className="rounded-md border border-border bg-muted/50 px-2 py-1.5">
+                  <span className="text-muted-foreground">{t(language, "settings.modelSpeed")}: </span>
+                  <span className="font-medium text-foreground">{info.speed}</span>
+                </div>
+              </div>
+            );
+          })()}
           <div>
             <label className="field-label">{t(language, "settings.language")}</label>
             <AppSelect

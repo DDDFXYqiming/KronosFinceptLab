@@ -243,9 +243,13 @@ class AnySearchClient(WebSearchClient):
         if not self.is_configured:
             return self._response(False, "disabled", clean_query, started, [], "anysearch is not enabled")
         try:
+            headers = {"Content-Type": "application/json"}
+            api_key = getattr(self.config, "api_key", "")
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
             response = self._requests().post(
                 self._endpoint("https://api.anysearch.com/v1/search"),
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 json={"query": clean_query, "max_results": self._max_results()},
                 timeout=self._timeout(),
             )

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import time
 from typing import Iterable
 
-from kronos_fincept.macro.providers import MacroProvider, MacroProviderUnavailable, create_default_providers
+from kronos_fincept.logging_config import log_event
+from kronos_fincept.macro.providers import MacroProvider, MacroProviderUnavailable, create_all_providers, create_default_providers
 from kronos_fincept.macro.schemas import MacroGatherResult, MacroProviderResult, MacroQuery, MacroSignal
+
+logger = logging.getLogger(__name__)
 
 
 SIGNAL_SOURCE_PRIORITY: dict[str, int] = {
@@ -16,21 +20,39 @@ SIGNAL_SOURCE_PRIORITY: dict[str, int] = {
     "china_macro_akshare": 10,
     "china_macro_chinalive": 10,
     "china_nbs_live": 10,
+    "fedwatch_do": 18,
     "us_treasury": 20,
+    "treasury_do": 20,
     "dbnomics": 25,
     "worldbank": 25,
+    "worldbank_do": 25,
     "bis": 25,
+    "bis_do": 25,
+    "polymarket_orderbook_do": 32,
+    "kalshi_orderbook_do": 32,
+    "edgar_do": 28,
     "cftc_cot": 35,
+    "cftc_do": 35,
+    "deribit_options_do": 35,
     "stooq": 40,
+    "stooq_do": 40,
     "yahoo_price": 40,
+    "yahoo_price_do": 40,
     "currency": 40,
     "yfinance_options": 45,
+    "yfinance_options_do": 45,
+    "yf_options_do": 45,
     "coingecko": 45,
+    "coingecko_do": 45,
     "deribit": 45,
+    "polymarket_do": 52,
+    "kalshi_do": 52,
     "fear_greed": 55,
+    "feargreed_do": 55,
+    "altme_fng": 55,
     "rss_news": 58,
     "anysearch": 60,
-    "web_search": 65,
+    "websearch_do": 60,
 }
 
 
@@ -48,7 +70,7 @@ class MacroDataManager:
         failure_cooldown_seconds: int = 300,
         max_workers: int | None = None,
     ) -> None:
-        self.providers = {provider.provider_id: provider for provider in (providers or create_default_providers())}
+        self.providers = {provider.provider_id: provider for provider in (providers or create_all_providers())}
         self.cache_ttl_seconds = max(0, cache_ttl_seconds)
         self.timeout_seconds = max(0.1, timeout_seconds)
         self.per_provider_timeout_seconds = max(0.1, per_provider_timeout_seconds)
@@ -141,6 +163,23 @@ class MacroDataManager:
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+        for provider in selected:
+            pid = provider.provider_id
+            result = results.get(pid)
+            if result is None:
+                continue
+            log_event(
+                logger,
+                logging.INFO if result.status in {"completed", "skipped"} else logging.WARNING,
+                "macro.provider",
+                f"provider {pid}: {result.status} signals={len(result.signals)} elapsed={result.elapsed_ms}ms",
+                provider=pid,
+                status=result.status,
+                signals=len(result.signals),
+                elapsed_ms=result.elapsed_ms,
+                error=result.error,
+            )
+
         signals: list[MacroSignal] = []
         for provider_id in [provider.provider_id for provider in selected]:
             signals.extend(results.get(provider_id, MacroProviderResult(provider_id, "empty")).signals)
@@ -168,6 +207,16 @@ class MacroDataManager:
                     elapsed_ms=elapsed_ms,
                     error=f"provider timed out after {self.per_provider_timeout_seconds:g}s",
                 )
+        except Exception as exc:
+            single.shutdown(wait=False, cancel_futures=True)
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            return MacroProviderResult(
+                provider_id=provider.provider_id,
+                status="failed",
+                signals=[],
+                elapsed_ms=elapsed_ms,
+                error=_short_error(exc),
+            )
         finally:
             single.shutdown(wait=False, cancel_futures=True)
         elapsed_ms = int((time.perf_counter() - started) * 1000)

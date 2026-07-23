@@ -371,11 +371,11 @@ function MacroScenarioTable({ scenarios }: { scenarios: MacroProbabilityScenario
   if (!scenarios.length) return null;
   return (
     <div className="table-scroll mt-3 rounded-lg border border-border bg-background">
-      <table className="min-w-[26rem] w-full text-xs sm:min-w-[28rem] sm:text-sm">
+      <table className="table-fixed min-w-[26rem] w-full text-xs sm:min-w-[28rem] sm:text-sm">
         <thead className="bg-muted">
           <tr className="border-b border-border text-muted-foreground">
             <th className="px-2 py-2 text-left">场景</th>
-            <th className="px-2 py-2 text-right">概率</th>
+            <th className="px-2 py-2 text-right w-14">概率</th>
             <th className="px-2 py-2 text-left">依据</th>
           </tr>
         </thead>

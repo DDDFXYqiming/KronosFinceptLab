@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pandas>=2.0",
     "numpy>=1.24",
+    "digital-oracle",
 ]
 
 [project.optional-dependencies]

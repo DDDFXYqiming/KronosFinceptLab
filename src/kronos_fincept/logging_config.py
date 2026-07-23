@@ -406,6 +406,24 @@ class TextFormatter(logging.Formatter):
         ms = getattr(record, "duration_ms", None)
         if ms is not None:
             parts.append(f"{ms}ms")
+        # Include all remaining extra fields generically (like JsonFormatter does)
+        _std = {*{k for k in vars(record) if k.startswith("_")},
+                "name", "levelno", "levelname", "pathname", "filename",
+                "module", "lineno", "funcName", "created", "msecs",
+                "relativeCreated", "thread", "threadName", "process",
+                "msg", "args", "message", "exc_info", "exc_text",
+                "stack_info", "asctime", "event", "request_id",
+                "user_id", "symbol", "market", "duration_ms"}
+        for k in sorted(vars(record)):
+            if k in _std:
+                continue
+            v = getattr(record, k, None)
+            if v is None or v == "" or v == [] or v == {}:
+                continue
+            sv = redact(str(v))
+            if len(sv) > 120:
+                sv = sv[:117] + "..."
+            parts.append(f"{k}={sv}")
         if record.levelno >= logging.ERROR:
             ctx = _sys_ctx()
             if "mem_mb" in ctx:
@@ -558,6 +576,7 @@ def log_perf(
     level: int = logging.DEBUG,
     log_args: bool = False,
     log_result: bool = False,
+    max_result_len: int | None = None,
     track_metric: bool = True,
     logger_name: str | None = None,
 ) -> Callable:
@@ -583,7 +602,12 @@ def log_perf(
                 ms = round((time.perf_counter() - start) * 1000, 2)
                 extra: dict[str, Any] = {"duration_ms": ms}
                 if log_result:
-                    extra["result"] = redact(result)
+                    res = redact(result)
+                    if max_result_len is not None:
+                        res_str = str(res)
+                        if len(res_str) > max_result_len:
+                            res = res_str[:max_result_len] + "..."
+                    extra["result"] = res
                 log_event(_lg, level, _ev, **extra)
                 if track_metric:
                     record_metric(_ev, ms)
@@ -609,7 +633,12 @@ def log_perf(
                 ms = round((time.perf_counter() - start) * 1000, 2)
                 extra: dict[str, Any] = {"duration_ms": ms}
                 if log_result:
-                    extra["result"] = redact(result)
+                    res = redact(result)
+                    if max_result_len is not None:
+                        res_str = str(res)
+                        if len(res_str) > max_result_len:
+                            res = res_str[:max_result_len] + "..."
+                    extra["result"] = res
                 log_event(_lg, level, _ev, **extra)
                 if track_metric:
                     record_metric(_ev, ms)

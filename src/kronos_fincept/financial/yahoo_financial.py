@@ -11,6 +11,7 @@ from .schemas import (
     FinancialData, IncomeStatement, BalanceSheet, CashFlowStatement
 )
 from .financial_source import FinancialDataSource
+from ..logging_config import log_perf
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class YahooFinanceFinancialSource(FinancialDataSource):
         else:
             return f"{symbol}.SZ"
     
+    @log_perf(event="yahoo.financial", level=20, log_args=True, log_result=True, max_result_len=500)
     def get_financial_data(self, symbol: str, periods: int = 4) -> Optional[FinancialData]:
         """Get financial data for a symbol."""
         try:
@@ -52,6 +54,7 @@ class YahooFinanceFinancialSource(FinancialDataSource):
             logger.warning("Error getting financial data from Yahoo Finance: %s", e)
             return None
     
+    @log_perf(event="yahoo.income", level=20, log_args=True, log_result=True, max_result_len=500)
     def get_income_statements(self, symbol: str, periods: int = 4) -> List[IncomeStatement]:
         """Get income statements from Yahoo Finance."""
         try:
@@ -98,6 +101,7 @@ class YahooFinanceFinancialSource(FinancialDataSource):
             logger.warning("Error getting income statements from Yahoo Finance: %s", e)
             return []
     
+    @log_perf(event="yahoo.balance", level=20, log_args=True, log_result=True, max_result_len=500)
     def get_balance_sheets(self, symbol: str, periods: int = 4) -> List[BalanceSheet]:
         """Get balance sheets from Yahoo Finance."""
         try:
@@ -145,6 +149,7 @@ class YahooFinanceFinancialSource(FinancialDataSource):
             logger.warning("Error getting balance sheets from Yahoo Finance: %s", e)
             return []
     
+    @log_perf(event="yahoo.cashflow", level=20, log_args=True, log_result=True, max_result_len=500)
     def get_cash_flow_statements(self, symbol: str, periods: int = 4) -> List[CashFlowStatement]:
         """Get cash flow statements from Yahoo Finance."""
         try:
