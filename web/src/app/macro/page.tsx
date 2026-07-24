@@ -14,7 +14,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { getStoredRssFeeds } from "@/lib/rssFeeds";
 import { useSessionState } from "@/lib/useSessionState";
 import { useAppStore } from "@/stores/app";
-import type { Language } from "@/lib/i18n";
+import { t, type Language } from "@/lib/i18n";
 import type {
   AgentAnalyzeResponse,
   AgentToolCall,
@@ -220,16 +220,17 @@ function formatSignalValue(signal: MacroSignal): string {
   return formatUnknownValue(signal.value);
 }
 
+/** Returns an i18n key; caller should wrap with t() */
 function signalLayer(signal: MacroSignal): string {
   const text = `${signal.signal_type} ${signal.source}`.toLowerCase();
-  if (/(orderbook|order_book|bid|ask|depth|spread|imbalance|l2|l3)/.test(text) && !/rate|yield/.test(text)) return "订单簿/深度";
-  if (/(greeks|delta|gamma|theta|vega|rho|iv|implied_vol|option)/.test(text)) return "期权希腊值";
-  if (/(polymarket|kalshi|prediction|event)/.test(text)) return "预测市场";
-  if (/(gold|silver|oil|commodity|coingecko|btc|crypto|deribit)/.test(text)) return "商品/加密";
-  if (/(yield|rate|treasury|fed|bis|cme)/.test(text)) return "利率/收益率";
-  if (/(cot|position|持仓|option|edgar)/.test(text)) return "持仓/衍生品";
-  if (/(sentiment|fear|greed|search|news|web)/.test(text)) return "情绪/舆情";
-  return "其他";
+  if (/(orderbook|order_book|bid|ask|depth|spread|imbalance|l2|l3)/.test(text) && !/rate|yield/.test(text)) return "macro.signalLayer.orderBook";
+  if (/(greeks|delta|gamma|theta|vega|rho|iv|implied_vol|option)/.test(text)) return "macro.signalLayer.greeks";
+  if (/(polymarket|kalshi|prediction|event)/.test(text)) return "macro.signalLayer.predictionMarket";
+  if (/(gold|silver|oil|commodity|coingecko|btc|crypto|deribit)/.test(text)) return "macro.signalLayer.commodityCrypto";
+  if (/(yield|rate|treasury|fed|bis|cme)/.test(text)) return "macro.signalLayer.rateYield";
+  if (/(cot|position|持仓|option|edgar)/.test(text)) return "macro.signalLayer.positionDerivative";
+  if (/(sentiment|fear|greed|search|news|web)/.test(text)) return "macro.signalLayer.sentiment";
+  return "macro.signalLayer.other";
 }
 
 function normalizeSignals(value: MacroSignal[] | undefined): MacroSignal[] {
@@ -469,6 +470,7 @@ function ToolCalls({ calls }: { calls: AgentToolCall[] }) {
 }
 
 function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
+  const language = useAppStore((state) => state.preferences.language);
   if (!signals.length) {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
@@ -488,7 +490,7 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
     <div className="space-y-3">
       {Object.entries(grouped).map(([group, groupSignals]) => (
         <div key={group} className="rounded-lg border border-border bg-background p-3">
-          <p className="mb-2 text-sm font-semibold text-foreground">{group}</p>
+          <p className="mb-2 text-sm font-semibold text-foreground">{t(language, group)}</p>
           <div className="space-y-2 sm:hidden">
             {groupSignals.map((signal, index) => (
               <details key={`${group}-mobile-${signal.source}-${index}`} className="rounded-lg border border-border bg-surface p-3">
