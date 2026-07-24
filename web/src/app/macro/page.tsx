@@ -811,7 +811,9 @@ function MacroContent() {
   const monitoring = normalizeMonitoring(report?.monitoring_signals);
   const providerRows = getMacroProviderRows(result);
   const evidence = result?.macro_dimension_coverage || report?.macro_evidence;
-  const macroAction = result ? macroActionCopy(result.recommendation, evidence) : "";
+  const macroAction = result
+    ? (result.report?.conclusion || result.report?.macro_analysis || macroActionCopy(result.recommendation, evidence))
+    : "";
 
   return (
     <div className="page-shell space-y-6">

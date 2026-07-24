@@ -1,0 +1,38 @@
+{
+  "updated": "2026-07-23T21:54:55.561750",
+  "task": "KronosFinceptLab 宏观数据源修复 (第2轮)",
+  "fixes": {
+    "_run_provider": "PATCHED - 空列表不再 set_result() 导致 await asyncio.wait() 永久阻塞",
+    "BIS_DBnomics": {
+      "status": "DONE",
+      "description": "BisProvider 改用 DBnomics API (api.db.nomics.world/v22/series/BIS/...)",
+      "details": "WS_CBPOL (policy_rates): 852 rows, latest 2025-06=4.375 | WS_CREDIT_GAP: 847 rows, latest 2024-Q4=143.0 | WS_GLI: NOT in DBnomics",
+      "files": "digital_oracle.py: 新增 _get_dbnomics_rows() + 重写 BisProvider.fetch_signals()"
+    },
+    "BIS_BULK_DOWNLOADS": {
+      "status": "REPLACED",
+      "description": "原 BIS_BULK_DOWNLOADS URL 全部 404 (static.bis.org 可能已迁移)，改为 DBnomics JSON API"
+    },
+    "CME_FedWatch": {
+      "status": "DONE (graceful degradation)",
+      "description": "CME 直连超时，_fetch_payload try/except → 返回 unavailable 信号，不阻塞整体",
+      "files": "digital_oracle.py: CMEFedWatchProvider._fetch_payload 加 try/except"
+    },
+    "source_project_cache": {
+      "status": "DONE",
+      "description": "创建 external/stock-analysis-system/data/macro 目录，SourceProjectMacroCacheProvider 返回 3 信号",
+      "files": "source_project_cache.py: SourceProjectMacroCacheProvider"
+    }
+  },
+  "pending": [
+    "重启服务 (stop port 8000/3000, start API + Web)",
+    "端到端验证: POST /api/v1/analyze/ai 确保宏观不再失败",
+    "WS_GLI 替代方案 (DBnomics无此数据集，需找其他源或标记unavailable)"
+  ],
+  "key_findings": [
+    "DBnomics BIS 数据格式: URL=.../BIS/{dataset}/{freq}.US?observations=true&limit=N",
+    "CME 用 curl_cffi impersonate chrome，不支持 proxy，国内直连超时",
+    "_run_provider 空列表 bug: future.set_result() 从未调用 → asyncio.wait 永久等待 → 60s 超时",
+    "SourceProjectMacroCacheProvider 在 source_project_cache.py (非 digital_oracle.py)"
+  ]
+}
