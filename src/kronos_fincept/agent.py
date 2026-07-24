@@ -2105,7 +2105,7 @@ def _select_embedded_macro_provider_ids(question: str, *, symbols: list[Resolved
         "cn": (*cn_preferred, "fear_greed", "us_treasury", "yahoo_price"),
         "hk": ("fear_greed", "us_treasury", "yahoo_price", "cftc_cot"),
         "us": ("us_treasury", "fear_greed", "yfinance_options", "yahoo_price"),
-        "commodity": ("yahoo_price", "cftc_cot", "us_treasury", "fear_greed"),
+        "commodity": ("yahoo_price", "stooq", "cftc_cot", "us_treasury", "fear_greed"),
     }
     preferred = list(preferred_by_market.get(market or "", ()))
     selected: list[str] = []

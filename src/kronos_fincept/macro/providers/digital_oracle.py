@@ -1493,7 +1493,18 @@ class YahooPriceProvider(MacroProvider):
         symbol, label = _infer_yahoo_symbol(query)
         if yf is None or not symbol:
             return []
-        history = yf.Ticker(symbol).history(period="1mo")
+        history = None
+        for attempt in range(3):
+            try:
+                history = yf.Ticker(symbol).history(period="1mo")
+                break
+            except Exception as e:
+                if attempt < 2:
+                    wait = 0.5 * (2 ** attempt)
+                    logger.debug("yahoo_price fetch attempt %d failed (%s), retrying in %.1fs", attempt + 1, e, wait)
+                    time.sleep(wait)
+                else:
+                    logger.warning("yahoo_price fetch failed after 3 attempts for %s: %s", symbol, e)
         if history is None or getattr(history, "empty", True):
             return []
         close = history["Close"]
@@ -1689,8 +1700,21 @@ class StooqProvider(MacroProvider):
                     symbol = stooq_sym
                     label = desc
 
+        # Fallback: check commodity patterns (gold/oil/copper) via YAHOO_ASSET_SYMBOLS → STOOQ_SYMBOL_MAP
         if not symbol:
-            # Fallback to S&P 500
+            yahoo_sym, yahoo_label = _infer_yahoo_symbol(query)
+            if yahoo_sym and yahoo_sym != "SPY":
+                mapped = STOOQ_SYMBOL_MAP.get(yahoo_sym, yahoo_sym.lower())
+                if mapped:
+                    symbol = mapped
+                    label = yahoo_label
+
+        if not symbol:
+            # For commodity-like queries, return empty instead of falling back to S&P 500
+            yahoo_sym, _ = _infer_yahoo_symbol(query)
+            if yahoo_sym and yahoo_sym != "SPY":
+                return signals  # commodity detected but no stooq mapping; don't pollute with S&P500
+            # Fallback to S&P 500 for general macro queries
             symbol = "^SPX"
             label = "标普500"
 
