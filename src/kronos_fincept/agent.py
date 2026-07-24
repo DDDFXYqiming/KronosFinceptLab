@@ -4032,6 +4032,14 @@ def _call_llm_report(question: str, context: dict[str, Any]) -> dict[str, Any] |
 Digital Oracle 5 条铁规则：
 {DIGITAL_ORACLE_IRON_RULES}
 
+数据时效性规则（极其重要）：
+- 当前分析日期：{datetime.now().strftime("%Y-%m-%d %H:%M UTC")}。这是你执行分析的实时时刻。
+- 下方 trusted_project_context.macro.signals 中的所有信号均来自实时数据源（API/网页抓取），每条信号含 observed_at 时间戳标注数据实际更新时间。
+- 绝对禁止用你的训练数据中记忆的"当前"值覆盖这些实时信号值！例如：如果 real_yield_10y 信号显示 2.39，即使你记忆中美债收益率不同，也必须优先使用 2.39。
+- 如果某信号 observed_at 距分析日期超过 72 小时，应在结论中明确标注该数据的时效性风险。
+- 结论中的价格区间、利率水平、持仓数据必须基于 signals 中的实际值，不得凭空给出其他数值。
+- 引用外部人物/机构时，只依据 signals 和 online_research 中实际出现的信息，禁止从训练数据中推测"现任""当前"等时间敏感事实。
+
 JSON 字段：
 conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties, recommendation, confidence, risk_level, disclaimer,
 如果 trusted_project_context.macro 存在，还必须输出：
@@ -4066,6 +4074,7 @@ asset_reports: [
             "question": question,
             "trusted_project_context": prompt_context,
             "output_language": output_language,
+            "analysis_date": datetime.now().isoformat(),
         }
         user_content = _serialize_llm_user_prompt(user_prompt)
         if user_content is None:

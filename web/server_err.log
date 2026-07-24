@@ -4,4 +4,4 @@
 
  ✓ Starting...
  ⚠ "next start" does not work with "output: standalone" configuration. Use "node .next/standalone/server.js" instead.
- ✓ Ready in 318ms
+ ✓ Ready in 301ms
