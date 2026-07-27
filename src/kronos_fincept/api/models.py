@@ -42,7 +42,7 @@ class ForecastRequestIn(BaseModel):
     temperature: float = Field(default=0.5, gt=0, le=2)
     top_k: int = Field(default=0, ge=0, le=100)
     top_p: float = Field(default=0.9, gt=0, le=1)
-    sample_count: int = Field(default=8, ge=1, le=8)
+    sample_count: int = Field(default=8, ge=1, le=64)
 
     @field_validator("model_id")
     @classmethod
@@ -101,7 +101,7 @@ class BatchForecastItemIn(BaseModel):
     temperature: float | None = Field(default=None, gt=0, le=2)
     top_k: int | None = Field(default=None, ge=0, le=100)
     top_p: float | None = Field(default=None, gt=0, le=1)
-    sample_count: int | None = Field(default=None, ge=1, le=8)
+    sample_count: int | None = Field(default=None, ge=1, le=64)
 
     @field_validator("model_id")
     @classmethod

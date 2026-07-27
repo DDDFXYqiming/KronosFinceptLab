@@ -12,6 +12,7 @@ import { ApiError, api, formatApiError } from "@/lib/api";
 import { demoForecastRows, demoHistoricalRows, DEMO_SYMBOL } from "@/lib/demoData";
 import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
 import { AntDatePicker } from "@/components/antd/AntDatePicker";
+import { AntSelect } from "@/components/antd/AntSelect";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
 import { AntTable } from "@/components/antd/AntTable";
@@ -107,6 +108,7 @@ function ForecastContent() {
   const [predLoading, setPredLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-forecast-error", "");
   const [predResult, setPredResult] = useSessionState<ForecastResponse | null>("kronos-forecast-result", null);
+  const [sampleCount, setSampleCount] = useSessionState("kronos-forecast-sample-count", 8);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -377,6 +379,8 @@ function ForecastContent() {
             model_id: modelId,
             rows: data,
             dry_run: false,
+            sample_count: sampleCount,
+            temperature: 0.5,
           }, { signal }),
       });
       applyForecastResponse(res);
@@ -422,6 +426,21 @@ function ForecastContent() {
           <div>
             <label className="field-label">{tx(language, "结束日期", "End date")}</label>
             <AntDatePicker value={endDate} onChange={setEndDate} />
+          </div>
+          <div>
+            <label className="field-label">采样数</label>
+            <AntSelect
+              value={`sc${sampleCount}`}
+              onChange={(v) => setSampleCount(parseInt(v.replace("sc", ""), 10))}
+              options={[
+                { value: "sc8", label: "8 次（快速）" },
+                { value: "sc16", label: "16 次" },
+                { value: "sc32", label: "32 次" },
+                { value: "sc64", label: "64 次（高精度）" },
+              ]}
+              ariaLabel="采样数"
+              className="mt-1"
+            />
           </div>
           <div className="flex items-end">
             <Button
