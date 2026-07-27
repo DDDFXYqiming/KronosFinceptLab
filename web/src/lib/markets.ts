@@ -1,6 +1,6 @@
 import { DEFAULT_LANGUAGE, t, type Language } from "@/lib/i18n";
 
-export type Market = "cn" | "us" | "hk" | "commodity";
+export type Market = "cn" | "hk";
 
 export interface MarketOption {
   value: Market;
@@ -12,9 +12,7 @@ export const DEFAULT_MARKET: Market = "cn";
 
 export const MARKET_OPTIONS: MarketOption[] = [
   { value: "cn", label: "A股", backendValue: "cn" },
-  { value: "us", label: "美股", backendValue: "us" },
   { value: "hk", label: "港股", backendValue: "hk" },
-  { value: "commodity", label: "大宗商品", backendValue: "commodity" },
 ];
 
 const MARKET_SET = new Set<Market>(MARKET_OPTIONS.map((option) => option.value));

@@ -6,17 +6,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { AntButton as Button } from "@/components/antd/AntButton";
-import { AntSelect as AppSelect } from "@/components/antd/AntSelect";
 import type { AppSelectOption } from "@/components/ui/AppSelect";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { ApiError, api, formatApiError } from "@/lib/api";
-import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
+import { demoForecastRows, demoHistoricalRows, DEMO_SYMBOL } from "@/lib/demoData";
 import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
 import { AntDatePicker } from "@/components/antd/AntDatePicker";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
 import { AntTable } from "@/components/antd/AntTable";
-import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
+import { getMarketLabel, type Market } from "@/lib/markets";
+import { inferMarketFromSymbol } from "@/lib/symbols";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import type { Language } from "@/lib/i18n";
 import { queryKeys } from "@/lib/queryKeys";
@@ -83,20 +83,13 @@ function ForecastContent() {
   const queryClient = useQueryClient();
   const { preferences, setPreferences } = useAppStore();
   const language = preferences.language;
-  const marketOptions = getMarketOptions(language);
   const symbolParam = searchParams.get("symbol");
-  const marketParam = searchParams.get("market");
-  const hasMarketParam = marketParam !== null;
   const [symbol, setSymbol] = useSessionState(
     "kronos-forecast-symbol",
     symbolParam ? normalizeSymbol(symbolParam) : DEFAULT_SYMBOL,
     { preferInitial: Boolean(symbolParam) }
   );
-  const [market, setMarket] = useSessionState<Market>(
-    "kronos-forecast-market",
-    normalizeMarket(marketParam, DEFAULT_MARKET),
-    { preferInitial: hasMarketParam }
-  );
+  const market = useMemo(() => inferMarketFromSymbol(symbol), [symbol]);
   const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
@@ -223,7 +216,6 @@ function ForecastContent() {
   useEffect(() => {
     if (!demoMode) return;
     setSymbol(DEMO_SYMBOL);
-    setMarket(DEMO_MARKET as Market);
     setData(demoHistoricalRows);
     setPrediction(demoForecastRows);
     setPredResult({
@@ -233,7 +225,7 @@ function ForecastContent() {
       metadata: { device: "demo", elapsed_ms: 0, backend: "demo", warning: tx(language, "演示数据，不代表实时行情，不构成投资建议。", "Demo data only. Not real-time market data or investment advice.") },
     });
     setError("");
-  }, [demoMode, language, setData, setError, setMarket, setPredResult, setPrediction, setSymbol]);
+  }, [demoMode, language, setData, setError, setPredResult, setPrediction, setSymbol]);
 
   // Create/destroy chart
   useEffect(() => {
@@ -422,10 +414,6 @@ function ForecastContent() {
           <div>
             <label className="field-label">{tx(language, "代码", "Symbol")}</label>
             <AntInput value={symbol} onChange={setSymbol} placeholder={DEFAULT_SYMBOL} />
-          </div>
-          <div>
-            <label className="field-label">{tx(language, "市场", "Market")}</label>
-            <AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel={tx(language, "市场", "Market")} className="mt-1" />
           </div>
           <div>
             <label className="field-label">{tx(language, "开始日期", "Start date")}</label>
