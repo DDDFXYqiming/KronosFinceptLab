@@ -98,9 +98,9 @@ def _base_url() -> str:
 
 def _timeout() -> int:
     try:
-        return max(1, int(float(os.environ.get("CHINALIVE_REQUEST_TIMEOUT", "15"))))
-    except ValueError:
-        return 15
+        return max(5, int(os.environ.get("CHINALIVE_REQUEST_TIMEOUT", "8")))
+    except (TypeError, ValueError):
+        return 8
 
 
 def _get_json(endpoint: str) -> Any:

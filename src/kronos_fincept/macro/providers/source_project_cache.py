@@ -187,7 +187,7 @@ class SourceProjectMacroCacheProvider(MacroProvider):
             return []
         base_dir = _macro_cache_dir()
         if not base_dir.is_dir():
-            raise MacroProviderUnavailable(f"source macro cache directory not found: {base_dir}")
+            return []
 
         available = _available_series(base_dir)
         signals: list[MacroSignal] = []

@@ -4440,10 +4440,13 @@ def _apply_macro_evidence_guard(report: dict[str, Any], macro_context: dict[str,
     required_dimensions = int(coverage.get("required_dimension_count") or MACRO_REQUIRED_DIMENSION_COUNT)
     dimension_labels = coverage.get("dimension_labels") or []
     cap = float(coverage.get("confidence_cap") or 0.45)
-    warning = (
-        f"宏观证据不足：当前只覆盖 {dimension_count}/{required_dimensions} 类独立信号维度"
-        f"（{', '.join(dimension_labels) if dimension_labels else '无'}），不能给出高置信度强结论。"
-    )
+    if dimension_count == 0:
+        warning = "宏观数据源暂不可用，未获取到独立宏观信号。个股技术/基本面分析仍可参考。"
+    else:
+        warning = (
+            f"宏观证据不足：当前只覆盖 {dimension_count}/{required_dimensions} 类独立信号维度"
+            f"（{', '.join(dimension_labels) if dimension_labels else '无'}），不能给出高置信度强结论。"
+        )
     report["confidence"] = min(float(report.get("confidence") or 0.0), cap)
     if str(report.get("recommendation") or "") in {"买入", "强烈买入", "增持"}:
         report["recommendation"] = "观察"
