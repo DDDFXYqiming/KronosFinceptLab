@@ -34,7 +34,7 @@ class ChinaMacroAkshareProvider(MacroProvider):
             if fetcher is None:
                 return indicator, None
             try:
-                return indicator, _with_timeout(fetcher, 10, ak)
+                return indicator, _with_timeout(fetcher, 6, ak)
             except Exception:
                 return indicator, None
 

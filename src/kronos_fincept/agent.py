@@ -2134,12 +2134,12 @@ def _question_requires_macro(text: str) -> bool:
 def _select_embedded_macro_provider_ids(question: str, *, symbols: list[ResolvedSymbol]) -> list[str]:
     symbol_list = [item.symbol for item in symbols]
     market = symbols[0].market if symbols else None
-    cn_preferred = ["source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive"]
+    cn_preferred = ["fear_greed", "yahoo_price", "china_macro_nbs", "china_macro_akshare", "source_project_macro_cache"]
     if _optional_provider_enabled("KRONOS_ENABLE_NBS_LIVE"):
         cn_preferred.append("china_nbs_live")
     base = select_macro_provider_ids(question, symbols=symbol_list)
     preferred_by_market: dict[str, tuple[str, ...]] = {
-        "cn": (*cn_preferred, "fear_greed", "us_treasury", "yahoo_price"),
+        "cn": (*cn_preferred, "china_macro_chinalive", "us_treasury"),
         "hk": ("fear_greed", "us_treasury", "yahoo_price", "cftc_cot"),
 
     }
@@ -2149,9 +2149,9 @@ def _select_embedded_macro_provider_ids(question: str, *, symbols: list[Resolved
         if provider_id in selected:
             continue
         selected.append(provider_id)
-        if len(selected) >= 3:
+        if len(selected) >= 5:
             break
-    return selected or base[:3]
+    return selected or base[:5]
 
 
 def _tool_metadata(**fields: Any) -> dict[str, Any]:

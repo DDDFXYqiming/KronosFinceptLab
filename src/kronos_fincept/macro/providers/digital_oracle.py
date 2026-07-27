@@ -26,6 +26,7 @@ from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderUnav
 from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
 from kronos_fincept.macro.providers.china_macro import ChinaMacroAkshareProvider
 from kronos_fincept.macro.providers.chinalive import ChinaDataLiveProvider
+from kronos_fincept.macro.providers.nbs_provider import NBSMacroProvider
 from kronos_fincept.macro.providers.dbnomics import DBnomicsProvider
 from kronos_fincept.macro.providers.fred import FredProvider
 from kronos_fincept.macro.providers.nbs_live import ChinaNBSLiveProvider
@@ -1778,6 +1779,7 @@ def create_default_providers() -> list[MacroProvider]:
         ChinaMacroAkshareProvider(),
         ChinaDataLiveProvider(),
         ChinaNBSLiveProvider(),
+        NBSMacroProvider(),
         USTreasuryProvider(),
         CftcCotProvider(),
         CoinGeckoProvider(),
