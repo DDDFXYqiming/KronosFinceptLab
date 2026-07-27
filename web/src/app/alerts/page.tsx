@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
 import { api, formatApiError } from "@/lib/api";
+import { AntInput } from "@/components/antd/AntInput";
+import { AntAlert } from "@/components/antd/AntAlert";
 import { t } from "@/lib/i18n";
 import { getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
@@ -159,11 +161,11 @@ export default function AlertsPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <label className="field-label">{t(language, "common.name")}</label>
-            <input className="app-input mt-1" value={name} onChange={(e) => setName(e.target.value)} />
+            <AntInput value={name} onChange={setName} />
           </div>
           <div>
             <label className="field-label">{t(language, "common.symbol")}</label>
-            <input className="app-input mt-1 font-mono" value={symbol} onChange={(e) => setSymbol(e.target.value)} />
+            <AntInput value={symbol} onChange={setSymbol} />
           </div>
           <div>
             <label className="field-label">{t(language, "common.market")}</label>
@@ -207,16 +209,11 @@ export default function AlertsPage() {
           </div>
           <div className="md:col-span-2">
             <label className="field-label">{t(language, "common.webhookUrl")}</label>
-            <input
-              className="app-input mt-1"
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder={t(language, "alerts.sensitivePlaceholder")}
-            />
+            <AntInput value={webhookUrl} onChange={setWebhookUrl} placeholder="https://open.feishu.cn/..." />
           </div>
           <div>
             <label className="field-label">{t(language, "common.email")}</label>
-            <input className="app-input mt-1" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} />
+            <AntInput value={emailTo} onChange={setEmailTo} />
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row">
@@ -226,7 +223,7 @@ export default function AlertsPage() {
             {showSensitiveFields ? t(language, "alerts.hideSensitive") : t(language, "alerts.showSensitive")}
           </Button>
         </div>
-        {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{error}</div>}
+        {error && <AntAlert type="error" message={error} />}
       </Card>
 
       <Card>

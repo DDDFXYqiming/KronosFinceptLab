@@ -7,6 +7,8 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect } from "@/components/ui/AppSelect";
+import { AntInput } from "@/components/antd/AntInput";
+import { AntAlert } from "@/components/antd/AntAlert";
 import { useAppStore, type WatchlistItem } from "@/stores/app";
 import { DEFAULT_MARKET, MARKET_OPTIONS, getMarketLabel, getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
@@ -344,7 +346,7 @@ export default function WatchlistPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div>
             <label className="field-label">代码</label>
-            <input type="text" value={symbol} onChange={(e) => setSymbol(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAdd()} className="app-input mt-1 font-mono" placeholder={`例如 ${DEFAULT_SYMBOL}`} />
+            <AntInput value={symbol} onChange={setSymbol} onKeyDown={(e) => (e as React.KeyboardEvent).key === "Enter" && handleAdd()} placeholder={`例如 ${DEFAULT_SYMBOL}`} />
           </div>
           <div>
             <label className="field-label">市场</label>
@@ -352,15 +354,15 @@ export default function WatchlistPage() {
           </div>
           <div>
             <label className="field-label">名称</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="app-input mt-1" placeholder="可选" />
+            <AntInput value={name} onChange={setName} placeholder="可选" />
           </div>
           <div>
             <label className="field-label">标签</label>
-            <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className="app-input mt-1" placeholder="低估, 银行" />
+            <AntInput value={tags} onChange={setTags} placeholder="低估, 银行" />
           </div>
           <div className="xl:col-span-2">
             <label className="field-label">备注</label>
-            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="app-input mt-1" placeholder="研究假设或跟踪理由" />
+            <AntInput value={note} onChange={setNote} placeholder="研究假设或跟踪理由" />
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap">
@@ -374,7 +376,7 @@ export default function WatchlistPage() {
         </div>
       </Card>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
+      {error && <AntAlert type="error" message={error} />}
 
       <Card>
         <CardTitle subtitle="服务端 SQLite 持久化，重启后仍可恢复。">服务端自选列表</CardTitle>

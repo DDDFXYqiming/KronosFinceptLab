@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
 import { AntDatePicker } from "@/components/antd/AntDatePicker";
+import { AntInput } from "@/components/antd/AntInput";
+import { AntAlert } from "@/components/antd/AntAlert";
 import { BacktestEquityChart } from "@/components/charts/BacktestEquityChart";
 import { api, formatApiError } from "@/lib/api";
 import { downloadTextFile, makeDatedFilename, toCsv, validateDateRange } from "@/lib/exportUtils";
@@ -183,7 +185,7 @@ export default function BacktestPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
             <label className="field-label">股票代码（逗号分隔）</label>
-            <input type="text" value={symbols} onChange={(e) => setSymbols(e.target.value)} className="app-input mt-1" />
+            <AntInput value={symbols} onChange={setSymbols} />
           </div>
           <div>
             <label className="field-label">开始日期</label>
@@ -215,7 +217,7 @@ export default function BacktestPage() {
           </div>
           <div>
             <label className="field-label">基准 benchmark</label>
-            <input type="text" value={benchmark} onChange={(e) => setBenchmark(e.target.value)} className="app-input mt-1 font-mono" />
+            <AntInput value={benchmark} onChange={setBenchmark} />
           </div>
           <div>
             <label className="field-label">手续费 feeBps</label>
@@ -250,7 +252,7 @@ export default function BacktestPage() {
         {rollingResult && <div className="mt-2"><p className="text-sm text-muted-foreground">Rolling validation：{rollingResult.summary.folds} folds，平均收益 {formatPercent(Number(rollingResult.summary.avg_total_return || 0))}</p></div>}
       </Card>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
+      {error && <AntAlert type="error" message={error} />}
 
       {result && (
         <>

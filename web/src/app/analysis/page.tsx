@@ -10,6 +10,7 @@ import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { AgentProgress } from "@/components/ui/AgentProgress";
 import { MarkdownText } from "@/components/ui/MarkdownText";
 import { api, formatApiError } from "@/lib/api";
+import { AntAlert } from "@/components/antd/AntAlert";
 import { demoAgentResult } from "@/lib/demoData";
 import { normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
@@ -1021,14 +1022,7 @@ function AnalysisContent() {
         </Card>
       )}
 
-      {error && (
-        <div className="rounded-xl border border-error/20 bg-error/5 p-4 text-sm text-error">
-          <div className="flex items-start gap-3">
-                        <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
-            <span>{error}</span>
-          </div>
-        </div>
-      )}
+      {error && <AntAlert type="error" message={error} />}
 
       {result && (
         <>

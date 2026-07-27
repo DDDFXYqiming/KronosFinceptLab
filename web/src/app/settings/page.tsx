@@ -5,6 +5,8 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
+import { AntInput } from "@/components/antd/AntInput";
+import { AntAlert } from "@/components/antd/AntAlert";
 import { AppNumberInput } from "@/components/ui/AppNumberInput";
 import {
   KRONOS_API_KEY_STORAGE_KEY,
@@ -266,7 +268,7 @@ export default function SettingsPage() {
           <Button variant="secondary" onClick={exportLocalState}>{t(language, "settings.exportState")}</Button>
           <Button variant="danger" onClick={clearLocalCaches}>{t(language, "settings.clearLocalCache")}</Button>
         </div>
-        {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{error}</div>}
+        {error && <AntAlert type="error" message={error} />}
       </Card>
 
       <Card>
@@ -308,7 +310,7 @@ export default function SettingsPage() {
           <Button variant="secondary" onClick={() => prewarmModelCache(false)} loading={modelBusy}>{t(language, "settings.prewarmModel")}</Button>
           <Button variant="danger" onClick={clearModelCache} disabled={modelBusy}>{t(language, "settings.clearModelCache")}</Button>
         </div>
-        {modelError && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{modelError}</div>}
+        {modelError && <AntAlert type="error" message={modelError} />}
         {modelCacheResult && (
           <pre className="mt-4 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-xs text-muted-foreground">
             {JSON.stringify(modelCacheResult, null, 2)}
@@ -321,21 +323,11 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr_auto] md:items-end">
           <div>
             <label className="field-label">{t(language, "settings.rssName")}</label>
-            <input
-              value={rssTitle}
-              onChange={(event) => setRssTitle(event.target.value)}
-              className="app-input mt-1"
-              placeholder="Federal Reserve"
-            />
+            <AntInput value={rssTitle} onChange={setRssTitle} placeholder="Federal Reserve" />
           </div>
           <div>
             <label className="field-label">RSS URL</label>
-            <input
-              value={rssUrl}
-              onChange={(event) => setRssUrl(event.target.value)}
-              className="app-input mt-1 font-mono"
-              placeholder="https://..."
-            />
+            <AntInput value={rssUrl} onChange={setRssUrl} placeholder="https://..." />
           </div>
           <Button onClick={addRssFeed}>{t(language, "settings.rssAdd")}</Button>
         </div>
@@ -395,7 +387,7 @@ export default function SettingsPage() {
           </div>
           <Button onClick={() => refreshMacroProviderStatus(macroMode)}>{t(language, "settings.refreshProviderStatus")}</Button>
         </div>
-        {macroStatusError && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{macroStatusError}</div>}
+        {macroStatusError && <AntAlert type="error" message={macroStatusError} />}
         <div className="mt-4 table-scroll">
           <table className="min-w-[52rem] w-full text-sm">
             <thead>
@@ -432,14 +424,13 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
           <div>
             <label className="field-label" htmlFor={KRONOS_API_KEY_STORAGE_KEY}>{t(language, "settings.apiKeyLabel")}</label>
-            <input
+            <AntInput
               id={KRONOS_API_KEY_STORAGE_KEY}
-              type="password"
               value={apiKey}
-              onChange={(event) => { setApiKey(event.target.value); setApiKeySaved(false); }}
-              className="app-input mt-1"
-              autoComplete="off"
+              onChange={(v) => { setApiKey(v); setApiKeySaved(false); }}
+              type="password"
               placeholder="X-Kronos-Api-Key"
+              autoComplete="off"
             />
             <p className="mt-2 text-xs text-muted-foreground">
               {health?.site_api_configured
@@ -456,7 +447,7 @@ export default function SettingsPage() {
       <Card>
         <CardTitle subtitle={t(language, "settings.securitySubtitle")}>{t(language, "settings.securityTitle")}</CardTitle>
         <Button onClick={refreshSecuritySummary}>{t(language, "settings.readSecurity")}</Button>
-        {securityError && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{securityError}</div>}
+        {securityError && <AntAlert type="error" message={securityError} />}
         {securitySummary && (
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
             {Object.entries(securitySummary.counters).length === 0 ? (

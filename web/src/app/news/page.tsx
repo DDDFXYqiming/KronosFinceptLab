@@ -6,6 +6,8 @@ import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppNumberInput } from "@/components/ui/AppNumberInput";
 import { api, formatApiError } from "@/lib/api";
+import { AntInput } from "@/components/antd/AntInput";
+import { AntAlert } from "@/components/antd/AntAlert";
 import {
   DEFAULT_RSS_FEEDS,
   normalizeRssFeed,
@@ -94,11 +96,11 @@ export default function NewsPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr_10rem]">
           <div>
             <label className="field-label">{tx(language, "名称", "Name")}</label>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} className="app-input mt-1" placeholder={tx(language, "例如 Fed", "e.g. Fed")} />
+            <AntInput value={title} onChange={setTitle} placeholder={tx(language, "例如 Fed", "e.g. Fed")} />
           </div>
           <div>
             <label className="field-label">RSS URL</label>
-            <input value={url} onChange={(event) => setUrl(event.target.value)} className="app-input mt-1 font-mono" placeholder="https://..." />
+            <AntInput value={url} onChange={setUrl} placeholder="https://..." />
           </div>
           <div>
             <label className="field-label">{tx(language, "每源条数", "Items per feed")}</label>
@@ -112,7 +114,7 @@ export default function NewsPage() {
         </div>
       </Card>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
+      {error && <AntAlert type="error" message={error} />}
 
       <Card>
         <CardTitle>{tx(language, "已启用源", "Enabled Feeds")} ({activeFeeds.length})</CardTitle>

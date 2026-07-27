@@ -11,6 +11,8 @@ import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
 import { ReturnComparisonChart } from "@/components/charts/ReturnComparisonChart";
 import { ApiError, api, formatApiError } from "@/lib/api";
+import { AntInput } from "@/components/antd/AntInput";
+import { AntAlert } from "@/components/antd/AntAlert";
 import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_BATCH_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
@@ -300,7 +302,7 @@ function BatchContent() {
         <CardTitle subtitle="支持常用股票池、自选股、排序、导出和失败重试。">多标的对比</CardTitle>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div><label className="field-label">股票池</label><AppSelect value={poolPreset} onChange={applyPoolPreset} options={poolOptions} ariaLabel="股票池" className="mt-1" /></div>
-          <div className="md:col-span-2"><label className="field-label">股票代码（逗号分隔）</label><input value={input} onChange={(e) => { setPoolPreset("custom"); setInput(e.target.value); }} className="app-input mt-1 font-mono" placeholder={DEFAULT_BATCH_SYMBOLS} /></div>
+          <div className="md:col-span-2"><label className="field-label">股票代码（逗号分隔）</label><AntInput value={input} onChange={(v) => { setPoolPreset("custom"); setInput(v); }} placeholder={DEFAULT_BATCH_SYMBOLS} /></div>
           <div><label className="field-label">市场</label><AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel="市场" className="mt-1" /></div>
           <div><label className="field-label">预测天数</label><AppNumberInput value={predLen} onChange={setPredLen} min={1} max={30} ariaLabel="预测天数" className="mt-1" /></div>
           
@@ -309,7 +311,7 @@ function BatchContent() {
       </Card>
 
       {(loading || progress.total > 0) && <Card><CardTitle>执行进度</CardTitle><div className="grid grid-cols-2 gap-3 md:grid-cols-6"><div>total {progress.total}</div><div>completed {progress.completed}</div><div>success {progress.success}</div><div>failed {progress.failed}</div><div>skipped {progress.skipped}</div><div>running {progress.running.join(", ") || "-"}</div></div></Card>}
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
+      {error && <AntAlert type="error" message={error} />}
       {results.length > 0 && <><Card><CardTitle>预测收益率对比</CardTitle><ReturnComparisonChart data={chartData} /></Card><Card><CardTitle action={<AppSelect value={sortKey} onChange={setSortKey} options={sortOptions} ariaLabel="排序方式" className="w-40" buttonClassName="min-h-10" />}>排名</CardTitle><div className="table-scroll"><table className="min-w-[44rem] w-full text-sm md:min-w-[56rem]"><thead><tr className="border-b border-gray-700 text-gray-400"><th className="py-2 text-left">排名</th><th className="py-2 text-left">代码</th><th className="py-2 text-left">市场</th><th className="py-2 text-right">最新收盘</th><th className="py-2 text-right">预测收盘</th><th className="py-2 text-right">预测收益率</th><th className="py-2 text-left">风险</th><th className="py-2 text-right">操作</th></tr></thead><tbody>{sortedResults.map((result) => <tr key={result.symbol} className="border-b border-gray-800 hover:bg-surface-overlay"><td className="py-2">{result.rank}</td><td className="py-2 font-mono font-bold text-white">{result.symbol}</td><td className="py-2">{getMarketLabel(result.market || market, preferences.language)}</td><td className="py-2 text-right">{result.last_close.toFixed(2)}</td><td className="py-2 text-right">{result.predicted_close.toFixed(2)}</td><td className={result.predicted_return >= 0 ? "py-2 text-right text-accent-green" : "py-2 text-right text-accent-red"}>{(result.predicted_return * 100).toFixed(2)}%</td><td className="py-2">{result.risk_label || riskLabel(result.predicted_return)}</td><td className="py-2 text-right"><div className="flex justify-end gap-2"><button className="rounded bg-surface-overlay px-2 py-1 text-xs" onClick={() => addToWatchlist({ symbol: result.symbol, market: (result.market as Market) || market, addedAt: new Date().toISOString() })}>加入自选</button><Link className="rounded bg-surface-overlay px-2 py-1 text-xs" href={`/forecast?symbol=${result.symbol}&market=${result.market || market}`}>预测</Link><Link className="rounded bg-primary/20 px-2 py-1 text-xs text-primary-light" href={`/analysis?symbol=${result.symbol}&market=${result.market || market}`}>分析</Link></div></td></tr>)}</tbody></table></div></Card></>}
       {failures.length > 0 && <Card><CardTitle>失败项</CardTitle><div className="space-y-2">{failures.map((failure) => <div key={`${failure.symbol}-${failure.stage}`} className="rounded-lg border border-border p-3 text-sm"><span className="font-mono font-bold">{failure.symbol}</span> · {failure.stage} · {failure.message}{failure.requestId ? ` request_id=${failure.requestId}` : ""}</div>)}</div></Card>}
       <Card>

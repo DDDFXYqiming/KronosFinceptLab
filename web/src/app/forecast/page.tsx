@@ -12,6 +12,8 @@ import { ApiError, api, formatApiError } from "@/lib/api";
 import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
 import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
 import { AntDatePicker } from "@/components/antd/AntDatePicker";
+import { AntInput } from "@/components/antd/AntInput";
+import { AntAlert } from "@/components/antd/AntAlert";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import type { Language } from "@/lib/i18n";
@@ -417,13 +419,7 @@ function ForecastContent() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div>
             <label className="field-label">{tx(language, "代码", "Symbol")}</label>
-            <input
-              type="text"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="app-input mt-1 font-mono"
-              placeholder={tx(language, `例如 ${DEFAULT_SYMBOL}`, `e.g. ${DEFAULT_SYMBOL}`)}
-            />
+            <AntInput value={symbol} onChange={setSymbol} placeholder={DEFAULT_SYMBOL} />
           </div>
           <div>
             <label className="field-label">{tx(language, "市场", "Market")}</label>
@@ -474,11 +470,7 @@ function ForecastContent() {
         )}
       </Card>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <AntAlert type="error" message={error} />}
 
       {hasChartData ? (
         <Card>
