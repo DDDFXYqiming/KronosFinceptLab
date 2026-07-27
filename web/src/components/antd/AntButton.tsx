@@ -11,8 +11,10 @@ interface AntButtonProps {
   icon?: ReactNode;
   onClick?: () => void;
   className?: string;
+  type?: "button" | "submit" | "reset";
   htmlType?: "button" | "submit" | "reset";
   href?: string;
+  title?: string;
 }
 
 const variantMap: Record<string, "primary" | "default" | "text" | "dashed" | "link"> = {
@@ -30,6 +32,7 @@ export function AntButton({
   icon,
   onClick,
   className = "",
+  type,
   htmlType,
   href,
 }: AntButtonProps) {
@@ -56,7 +59,7 @@ export function AntButton({
       icon={icon}
       onClick={onClick}
       className={className}
-      htmlType={htmlType}
+      htmlType={htmlType || type}
       danger={variant === "danger"}
     >
       {children}

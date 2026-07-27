@@ -8,6 +8,7 @@ interface AntNumberInputProps {
   min?: number;
   max?: number;
   step?: number;
+  integer?: boolean;
   className?: string;
   disabled?: boolean;
   ariaLabel?: string;
@@ -19,6 +20,7 @@ export function AntNumberInput({
   min = 0,
   max = 9999,
   step = 1,
+  integer,
   className = "",
   disabled,
   ariaLabel,
@@ -34,6 +36,8 @@ export function AntNumberInput({
       className={className}
       aria-label={ariaLabel}
       style={{ minHeight: 44, width: "100%" }}
+      stringMode={!integer}
+      precision={integer ? 0 : undefined}
     />
   );
 }

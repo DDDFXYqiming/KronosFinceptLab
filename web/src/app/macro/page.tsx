@@ -3,7 +3,7 @@
 import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useIsFetching, useQueryClient, type QueryKey } from "@tanstack/react-query";
-import { Button } from "@/components/ui/Button";
+import { AntButton as Button } from "@/components/antd/AntButton";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";

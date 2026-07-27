@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
-import { Button } from "@/components/ui/Button";
-import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
-import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
+import { AntButton as Button } from "@/components/antd/AntButton";
+import { AntSelect as AppSelect } from "@/components/antd/AntSelect";
+import type { AppSelectOption } from "@/components/ui/AppSelect";
+import { AntNumberInput as AppNumberInput } from "@/components/antd/AntNumberInput";
+import { clampNumber } from "@/components/ui/AppNumberInput";
 import { api, formatApiError } from "@/lib/api";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";

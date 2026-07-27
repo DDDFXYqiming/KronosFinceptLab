@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useIsFetching, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { Card, CardTitle, CardGrid } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
-import { Button } from "@/components/ui/Button";
+import { AntButton as Button } from "@/components/antd/AntButton";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { AgentProgress } from "@/components/ui/AgentProgress";
 import { MarkdownText } from "@/components/ui/MarkdownText";

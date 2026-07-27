@@ -16,6 +16,8 @@ interface AntSelectProps<T extends string> {
   className?: string;
   disabled?: boolean;
   placeholder?: string;
+  buttonClassName?: string;
+  description?: string;
 }
 
 export function AntSelect<T extends string>({
