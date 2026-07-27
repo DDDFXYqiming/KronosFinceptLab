@@ -316,13 +316,13 @@ function ToolCallList({ result }: { result: AgentAnalyzeResponse }) {
   );
 }
 
-function ReportSection({ title, value }: { title: string; value?: unknown }) {
+function ReportSection({ title, value, highlight }: { title: string; value?: unknown; highlight?: boolean }) {
   const text = formatReportText(value);
   if (!text) return null;
   return (
     <div className="border-b border-border last:border-b-0 py-4 first:pt-0 last:pb-0">
       <h3 className="text-sm font-semibold text-foreground mb-2">{title}</h3>
-      <MarkdownText text={text} className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap" />
+      <MarkdownText text={text} className={highlight ? "text-base font-semibold leading-relaxed text-foreground" : "text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap"} />
     </div>
   );
 }
@@ -936,6 +936,7 @@ function AnalysisContent() {
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); (e.target as HTMLFormElement).closest("form")?.requestSubmit(); } }}
             rows={4}
             className="app-input min-h-36 resize-none px-4 py-3"
             placeholder={tx(language, `例如：帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`, `Example: can I still buy ${DEFAULT_SYMBOL_NAME} now?`)}
@@ -1043,7 +1044,9 @@ function AnalysisContent() {
               <RecommendationBadge rec={result.recommendation} />
             </div>
 
-            <MarkdownText text={formatReportText(report?.conclusion)} />
+            <div className="mt-3 rounded-xl border border-accent/20 bg-accent/[0.03] p-4 text-base font-semibold leading-relaxed text-foreground">
+              <MarkdownText text={formatReportText(report?.conclusion)} />
+            </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
@@ -1073,7 +1076,7 @@ function AnalysisContent() {
 
           <Card>
             <CardTitle>{tx(language, "汇总研究报告", "Research Report")}</CardTitle>
-            <ReportSection title={tx(language, "结论", "Conclusion")} value={report?.conclusion} />
+            <ReportSection title={tx(language, "结论", "Conclusion")} value={report?.conclusion} highlight />
             <ReportSection title={tx(language, "短期预测", "Short-Term Forecast")} value={report?.short_term_prediction} />
             <ReportSection title={tx(language, "技术面", "Technical View")} value={report?.technical} />
             <ReportSection title={tx(language, "基本面", "Fundamentals")} value={report?.fundamentals} />
