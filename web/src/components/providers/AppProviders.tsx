@@ -2,8 +2,9 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConfigProvider, theme } from "antd";
+import { StyleProvider, createCache } from "@ant-design/cssinjs";
 import zhCN from "antd/locale/zh_CN";
-import { ReactNode, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -22,8 +23,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
         },
       })
   );
+  const cache = useMemo(() => createCache(), []);
 
   return (
+    <StyleProvider cache={cache}>
     <ConfigProvider
       locale={zhCN}
       theme={{
@@ -64,5 +67,6 @@ export function AppProviders({ children }: { children: ReactNode }) {
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </ConfigProvider>
+    </StyleProvider>
   );
 }
