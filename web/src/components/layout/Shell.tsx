@@ -3,7 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { ScrollManager } from "./ScrollManager";
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function Shell({ children }: { children: ReactNode }) {
   return (
     <>
       <Sidebar />

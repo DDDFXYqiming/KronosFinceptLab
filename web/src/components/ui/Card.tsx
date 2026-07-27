@@ -1,18 +1,13 @@
 "use client";
 
 import { ReactNode } from "react";
-import { motion } from "framer-motion";
-import { fadeInUp, stagger, viewportOnce } from "@/lib/animations";
 
 interface CardProps {
   children: ReactNode;
   className?: string;
   featured?: boolean;
   hoverable?: boolean;
-  /** Index for stagger animation (0-based) */
   index?: number;
-  /** Disable entrance animation */
-  noAnimation?: boolean;
 }
 
 export function Card({
@@ -20,50 +15,18 @@ export function Card({
   className = "",
   featured = false,
   hoverable = false,
-  index,
-  noAnimation = false,
 }: CardProps) {
-  const content = (
+  return (
     <div
-      className={`
-        min-w-0
-        ${featured ? "card-featured" : "card"}
-        ${hoverable ? "hover-lift" : ""}
-        ${className}
-      `}
+      className={`min-w-0 ${featured ? "card-featured" : "card"} ${hoverable ? "hover-lift" : ""} ${className}`}
     >
       {children}
     </div>
   );
-
-  if (noAnimation) return content;
-
-  return (
-    <motion.div
-      variants={fadeInUp}
-      initial="hidden"
-      whileInView="visible"
-      viewport={viewportOnce}
-      transition={{ delay: index != null ? index * 0.08 : 0 }}
-    >
-      {content}
-    </motion.div>
-  );
 }
 
-// ── Stagger container for card grids ──
 export function CardGrid({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <motion.div
-      variants={stagger}
-      initial="hidden"
-      whileInView="visible"
-      viewport={viewportOnce}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={className}>{children}</div>;
 }
 
 interface CardTitleProps {
@@ -92,12 +55,7 @@ interface CardStatProps {
 }
 
 export function CardStat({ label, value, color, trend }: CardStatProps) {
-  const trendColors = {
-    up: "text-success",
-    down: "text-error",
-    neutral: "text-muted-foreground",
-  };
-
+  const trendColors = { up: "text-success", down: "text-error", neutral: "text-muted-foreground" };
   return (
     <div>
       <p className="text-sm text-muted-foreground">{label}</p>
@@ -105,9 +63,7 @@ export function CardStat({ label, value, color, trend }: CardStatProps) {
         {value}
       </p>
       {trend && trend !== "neutral" && (
-        <p className={`mt-1 text-xs ${trendColors[trend]}`}>
-          {trend === "up" ? "↑" : "↓"} Trending
-        </p>
+        <p className={`mt-1 text-xs ${trendColors[trend]}`}>{trend === "up" ? "↑" : "↓"} Trending</p>
       )}
     </div>
   );
