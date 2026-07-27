@@ -39,10 +39,10 @@ class ForecastRequestIn(BaseModel):
     tokenizer_id: str | None = Field(default=DEFAULT_TOKENIZER_ID, max_length=64)
     dry_run: bool = Field(default=False, description="Use deterministic mock predictor")
     max_context: int = Field(default=512, ge=1, le=2048)
-    temperature: float = Field(default=1.0, gt=0, le=2)
+    temperature: float = Field(default=0.5, gt=0, le=2)
     top_k: int = Field(default=0, ge=0, le=100)
     top_p: float = Field(default=0.9, gt=0, le=1)
-    sample_count: int = Field(default=1, ge=1, le=8)
+    sample_count: int = Field(default=8, ge=1, le=8)
 
     @field_validator("model_id")
     @classmethod
@@ -213,6 +213,7 @@ class HealthResponseOut(BaseModel):
     build_source: str
     model_loaded: bool
     model_id: str
+    model_display_name: str = ""
     tokenizer_id: str | None = None
     default_model_id: str = DEFAULT_MODEL_ID
     supported_model_ids: list[str] = Field(default_factory=list)

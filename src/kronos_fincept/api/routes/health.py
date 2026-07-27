@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 
@@ -11,6 +12,18 @@ from kronos_fincept.api.deps import get_model_info
 from kronos_fincept.build_info import get_build_info
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, SUPPORTED_MODEL_IDS
 from kronos_fincept.security_utils import env_bool, split_env_list
+
+
+def _resolve_model_display_name(model_id: str) -> str:
+    """Return a human-readable label for the current model.
+
+    Detects whether the locally fine-tuned checkpoint is active by checking
+    if the external artifact directory exists.
+    """
+    ft_dir = Path(__file__).resolve().parents[4] / "external" / model_id.split("/")[-1]
+    if ft_dir.is_dir():
+        return f"{model_id.split('/')[-1]} (Fine-tuned)"
+    return model_id.split("/")[-1]
 
 router = APIRouter()
 
@@ -50,6 +63,7 @@ def _build_health_response(request: Request, deep: bool) -> HealthResponseOut:
     model_info = get_model_info(deep=deep)
     build_info = get_build_info()
 
+    model_id = model_info["model_id"]
     return HealthResponseOut(
         status=model_info["status"],
         version="2.0.0",
@@ -58,10 +72,11 @@ def _build_health_response(request: Request, deep: bool) -> HealthResponseOut:
         build_ref=build_info.build_ref,
         build_source=build_info.build_source,
         model_loaded=model_info["model_loaded"],
-        model_id=model_info["model_id"],
+        model_id=model_id,
+        model_display_name=_resolve_model_display_name(model_id),
         tokenizer_id=model_info["tokenizer_id"],
-        default_model_id=model_info["model_id"],
-        supported_model_ids=_supported_model_ids(model_info["model_id"]),
+        default_model_id=model_id,
+        supported_model_ids=_supported_model_ids(model_id),
         device=model_info["device"],
         uptime_seconds=round(uptime, 1),
         runtime_mode=model_info["runtime_mode"],

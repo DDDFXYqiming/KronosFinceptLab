@@ -48,13 +48,13 @@ _LLM_FAILURES: dict[str, tuple[int, float]] = {}
 _LLM_STATE_LOCK = threading.RLock()
 
 WEB_LLM_CONTEXT_ENTRIES = {"web-analysis", "web-macro"}
-ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"llm": 20}
-WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 30}
-WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 30
-WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 35}
-WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 35
-WEB_MACRO_TIMEOUT_SECONDS = 40.0
-WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 25.0
+ROUTER_PROVIDER_TIMEOUTS_SECONDS = {"llm": 30}
+WEB_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 60}
+WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS = 60
+WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 60}
+WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 60
+WEB_MACRO_TIMEOUT_SECONDS = 60.0
+WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 30.0
 DEFAULT_LLM_PROVIDER_ORDER = ("llm",)
 LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
 LLM_CONTEXT_MAX_TEXT_CHARS = 600
@@ -1785,7 +1785,7 @@ market 只能是 cn, hk, us, commodity。港股小米通常是 1810.hk；诺基�
             ],
             temperature=0,
             max_tokens=900,
-            timeout=20,
+            timeout=30,
             purpose="router",
             provider_timeouts=dict(ROUTER_PROVIDER_TIMEOUTS_SECONDS),
         )
@@ -1869,7 +1869,7 @@ JSON schema:
             ],
             temperature=0,
             max_tokens=900,
-            timeout=20,
+            timeout=30,
             purpose="macro_router",
             provider_timeouts=dict(ROUTER_PROVIDER_TIMEOUTS_SECONDS),
         )
@@ -4062,7 +4062,7 @@ def _llm_finish_reason(payload: dict[str, Any]) -> str | None:
 def _llm_report_timeout_seconds(context: dict[str, Any]) -> int:
     if _is_web_macro_context(context):
         return WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS
-    return WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS if _is_web_llm_context(context) else 45
+    return WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS if _is_web_llm_context(context) else 90
 
 
 def _report_provider_timeouts(context: dict[str, Any]) -> dict[str, int]:

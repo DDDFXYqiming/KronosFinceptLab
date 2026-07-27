@@ -127,10 +127,9 @@ class ForecastRow:
         )
 
     def validate_ohlc(self) -> None:
-        """Validate basic OHLC constraints."""
-        if self.high < max(self.open, self.close):
+        if self.high < max(self.open, self.close) - 1e-9:
             raise ValueError("high must be greater than or equal to open and close")
-        if self.low > min(self.open, self.close):
+        if self.low > min(self.open, self.close) + 1e-9:
             raise ValueError("low must be less than or equal to open and close")
         if self.volume < 0:
             raise ValueError("volume must be non-negative")
@@ -161,10 +160,10 @@ class ForecastRequest:
     tokenizer_id: str = DEFAULT_TOKENIZER_ID
     dry_run: bool = False
     max_context: int = 512
-    temperature: float = 1.0
+    temperature: float = 0.5
     top_k: int = 0
     top_p: float = 0.9
-    sample_count: int = 1
+    sample_count: int = 8
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ForecastRequest":

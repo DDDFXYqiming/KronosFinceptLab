@@ -11,7 +11,7 @@ import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
 import { ReturnComparisonChart } from "@/components/charts/ReturnComparisonChart";
 import { ApiError, api, formatApiError } from "@/lib/api";
-import { DEFAULT_MODEL_ID } from "@/lib/defaults";
+import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_BATCH_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
 import { queryKeys } from "@/lib/queryKeys";
@@ -21,8 +21,11 @@ import { useAppStore } from "@/stores/app";
 import type { BatchJobResult, ForecastRequest, ForecastRow, JobStatusResponse, RankedSignal } from "@/types/api";
 
 const BATCH_CONCURRENCY = 4;
-const BATCH_START_DATE = "20250101";
-const BATCH_END_DATE = "20260430";
+const __now = new Date();
+const __ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+const __y1 = new Date(); __y1.setFullYear(__y1.getFullYear() - 1);
+const BATCH_START_DATE = __ymd(__y1);
+const BATCH_END_DATE = __ymd(__now);
 
 type PoolPreset = "custom" | "a-core" | "watchlist";
 type SortKey = "rank" | "predicted_return" | "risk" | "symbol";
@@ -154,7 +157,7 @@ function BatchContent() {
   const selectedSymbols = useMemo(() => normalizeSymbols(input), [input]);
   const modelOptions = useMemo(() => Array.from(new Set((availableModelIds.length ? availableModelIds : [DEFAULT_MODEL_ID]).filter(Boolean))), [availableModelIds]);
   const poolOptions: Array<AppSelectOption<PoolPreset>> = POOL_PRESETS.map((option) => ({ value: option.value, label: option.label }));
-  const modelSelectOptions: Array<AppSelectOption<string>> = modelOptions.map((id) => ({ value: id, label: id.replace("NeoQuasar/", "") }));
+  const modelSelectOptions: Array<AppSelectOption<string>> = modelOptions.map((id) => ({ value: id, label: `${id.replace("NeoQuasar/", "")} \u00b7 ${MODEL_SIZE_MAP[id]?.memory || ""}` }));
   const sortOptions: Array<AppSelectOption<SortKey>> = [
     { value: "rank", label: "按排名" },
     { value: "predicted_return", label: "按收益率" },
@@ -300,7 +303,7 @@ function BatchContent() {
           <div className="md:col-span-2"><label className="field-label">股票代码（逗号分隔）</label><input value={input} onChange={(e) => { setPoolPreset("custom"); setInput(e.target.value); }} className="app-input mt-1 font-mono" placeholder={DEFAULT_BATCH_SYMBOLS} /></div>
           <div><label className="field-label">市场</label><AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel="市场" className="mt-1" /></div>
           <div><label className="field-label">预测天数</label><AppNumberInput value={predLen} onChange={setPredLen} min={1} max={30} ariaLabel="预测天数" className="mt-1" /></div>
-          <div><label className="field-label">模型</label>{modelSelectOptions.length > 1 ? <AppSelect value={modelOptions.includes(modelId) ? modelId : modelOptions[0]} onChange={(nextModelId) => { setModelId(nextModelId); setPreferences({ defaultModelId: nextModelId }); }} options={modelSelectOptions} ariaLabel="模型" className="mt-1" /> : <div className="mt-1 flex min-h-11 items-center rounded-[10px] border border-slate-700 bg-slate-800 px-3 text-sm text-white">{modelSelectOptions[0]?.label || DEFAULT_MODEL_ID.replace("NeoQuasar/", "")}</div>}</div>
+          
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:flex-wrap"><Button onClick={() => handleCompare(false)} loading={loading}>开始对比</Button><Button variant="secondary" onClick={() => handleCompare(true)} disabled={loading}>刷新对比</Button>{loading && <Button variant="danger" onClick={handleCancel}>取消任务</Button>}<Button variant="secondary" onClick={downloadBatchCsv} disabled={results.length === 0}>导出 CSV</Button><Button variant="secondary" onClick={retryFailed} disabled={failures.length === 0 || loading}>重试失败项</Button><Link className="btn-secondary flex h-12 items-center justify-center rounded-xl px-6 text-sm font-medium" href={`/backtest?symbols=${selectedSymbols.join(",")}`}>组合回测</Link></div>
       </Card>

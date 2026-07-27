@@ -254,7 +254,7 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div><p className="text-sm text-muted-foreground">{t(language, "common.api")}</p><p className={health?.status === "ok" ? "text-xl font-bold text-success" : "text-xl font-bold text-error"}>{health?.status || t(language, "common.unknown")}</p></div>
           <div><p className="text-sm text-muted-foreground">{t(language, "common.version")}</p><p className="text-xl font-bold">{health?.app_version || health?.version || "-"}</p></div>
-          <div><p className="text-sm text-muted-foreground">{t(language, "common.model")}</p><p className="truncate text-xl font-bold">{health?.model_id || health?.default_model_id || "-"}</p></div>
+          <div><p className="text-sm text-muted-foreground">{t(language, "common.model")}</p><p className="truncate text-xl font-bold">{health?.model_display_name || health?.model_id || health?.default_model_id || "-"}</p></div>
           <div><p className="text-sm text-muted-foreground">{t(language, "settings.device")}</p><p className="text-xl font-bold">{health?.device || "-"}</p></div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">

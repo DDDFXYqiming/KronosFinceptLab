@@ -179,14 +179,17 @@ async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
     try:
         from kronos_fincept.agent import analyze_investment_question
 
-        result = await asyncio.to_thread(
-            analyze_investment_question,
-            req.question,
-            symbol=req.symbol,
-            market=req.market,
-            context=req.context,
-            dry_run=req.dry_run,
-            language=req.language,
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                analyze_investment_question,
+                req.question,
+                symbol=req.symbol,
+                market=req.market,
+                context=req.context,
+                dry_run=req.dry_run,
+                language=req.language,
+            ),
+            timeout=300,
         )
         return AgentAnalyzeResponse(**result.to_dict())
     except Exception as exc:

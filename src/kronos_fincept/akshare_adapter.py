@@ -6,6 +6,7 @@ All callers (CLI, API, backtest) automatically get the fallback without changes.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # AkShare uses Chinese column names — reused by all DataSourceManager sources
@@ -43,11 +44,11 @@ def _convert_row_to_english(row: dict[str, Any]) -> dict[str, Any]:
     """Convert a DataSourceManager result row (Chinese keys) to English keys."""
     out: dict[str, Any] = {}
 
-    dt = row.get("日期", "")
-    if len(str(dt)) == 10:  # "2026-04-29"
+    dt = str(row.get("日期", ""))
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", dt):
         out["timestamp"] = f"{dt}T00:00:00Z"
     else:
-        out["timestamp"] = str(dt)
+        out["timestamp"] = dt
 
     # Numeric fields — BaoStock returns strings, Yahoo returns np.float64
     for cn_key, en_key in [

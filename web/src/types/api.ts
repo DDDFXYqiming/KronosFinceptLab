@@ -281,6 +281,7 @@ export interface HealthResponse {
   build_source: string;
   model_loaded: boolean;
   model_id: string;
+  model_display_name?: string;
   tokenizer_id?: string | null;
   device: string;
   uptime_seconds: number;

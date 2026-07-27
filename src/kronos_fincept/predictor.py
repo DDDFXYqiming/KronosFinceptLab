@@ -572,24 +572,11 @@ class KronosPredictorWrapper:
         pred_len: int,
         historical_volatility: float | None = None,
     ) -> ProbabilisticForecastResult:
-        """Run Monte Carlo sampling and compute probabilistic statistics.
-
-        Args:
-            df: Historical OHLCV data
-            x_timestamp: Timestamps for historical data
-            pred_len: Number of bars to predict
-            historical_volatility: Pre-computed historical volatility (annualized).
-                                   If None, computed from df['close'].
-
-        Returns:
-            ProbabilisticForecastResult with statistics from multiple sample paths.
-        """
         _validate_prediction_inputs(df, x_timestamp, pred_len)
         started = time.perf_counter()
         predictor = self._load()
         y_timestamp = make_future_timestamps(x_timestamp, pred_len)
 
-        # Compute historical volatility if not provided
         if historical_volatility is None:
             returns = df["close"].pct_change().dropna()
             if len(returns) > 1:
@@ -597,7 +584,6 @@ class KronosPredictorWrapper:
             else:
                 historical_volatility = 0.0
 
-        # Run multiple samples
         samples: list[pd.DataFrame] = []
         final_closes: list[float] = []
 
@@ -617,31 +603,24 @@ class KronosPredictorWrapper:
             inference_wait_ms=inference_wait_ms,
         )
         try:
-            # P1 #7: Use batched sample_count instead of sequential loop
-            # The predictor handles batching internally for GPU efficiency.
-            frame = predictor.predict(
-                df=df,
-                x_timestamp=x_timestamp,
-                y_timestamp=y_timestamp,
-                pred_len=pred_len,
-                T=self.temperature,
-                top_k=self.top_k,
-                top_p=self.top_p,
-                sample_count=self.sample_count,
-                verbose=False,
-            )
-            frame = frame.reset_index(drop=False)
-            if "timestamp" not in frame.columns:
-                frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
-
-            # Extract individual samples from the batched result
-            if self.sample_count > 1 and "sample_id" in frame.columns:
-                for sid in range(self.sample_count):
-                    sample_df = frame[frame["sample_id"] == sid].copy()
-                    samples.append(sample_df)
-                    final_closes.append(float(sample_df.iloc[-1]["close"]))
-            else:
-                # Fallback: treat single result as one sample
+            # Upstream KronosPredictor.predict(sample_count=N) already averages
+            # over N samples internally (kronos.py:467). To get individual samples,
+            # we call predict() N times with sample_count=1 and collect results.
+            for _ in range(self.sample_count):
+                frame = predictor.predict(
+                    df=df,
+                    x_timestamp=x_timestamp,
+                    y_timestamp=y_timestamp,
+                    pred_len=pred_len,
+                    T=self.temperature,
+                    top_k=self.top_k,
+                    top_p=self.top_p,
+                    sample_count=1,
+                    verbose=False,
+                )
+                frame = frame.reset_index(drop=False)
+                if "timestamp" not in frame.columns:
+                    frame.insert(0, "timestamp", y_timestamp.reset_index(drop=True))
                 samples.append(frame)
                 final_closes.append(float(frame.iloc[-1]["close"]))
             log_event(

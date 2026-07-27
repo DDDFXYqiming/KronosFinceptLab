@@ -8,6 +8,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
+import { AntDatePicker } from "@/components/antd/AntDatePicker";
 import { PriceLineChart } from "@/components/charts/PriceLineChart";
 import { api, formatApiError } from "@/lib/api";
 import { MARKET_OPTIONS, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
@@ -58,8 +59,10 @@ function DataPageInner() {
   const [searchResults, setSearchResults] = useSessionState<SearchResult[]>("kronos-data-search-results", []);
   const [symbol, setSymbol] = useSessionState("kronos-data-symbol", DEFAULT_SYMBOL);
   const [market, setMarket] = useSessionState<Market>("kronos-data-market", "cn");
-  const [startDate, setStartDate] = useSessionState("kronos-data-start-date", "20250101");
-  const [endDate, setEndDate] = useSessionState("kronos-data-end-date", "20260430");
+  const _dToday = new Date(); const _dYmd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  const _dY1 = new Date(); _dY1.setFullYear(_dY1.getFullYear() - 1);
+  const [startDate, setStartDate] = useSessionState("kronos-data-start-v2", _dYmd(_dY1));
+  const [endDate, setEndDate] = useSessionState("kronos-data-end-v2", _dYmd(_dToday));
   const [adjust, setAdjust] = useSessionState("kronos-data-adjust", "qfq");
   const [rangePreset, setRangePreset] = useSessionState<RangePreset>("kronos-data-range-preset", "1y");
   const [data, setData] = useSessionState<DataResponse | null>("kronos-data-result", null);
@@ -212,8 +215,8 @@ function DataPageInner() {
           <div><label className="field-label">代码</label><input type="text" value={symbol} onChange={(e) => setSymbol(e.target.value)} className="app-input mt-1 font-mono" placeholder={DEFAULT_SYMBOL} /></div>
           <div><label className="field-label">市场</label><AppSelect value={market} onChange={setMarket} options={marketOptions} ariaLabel="市场" className="mt-1" /></div>
           <div><label className="field-label">周期</label><AppSelect value={rangePreset} onChange={applyRangePreset} options={rangeOptions} ariaLabel="周期" className="mt-1" /></div>
-          <div><label className="field-label">开始日期</label><input type="text" value={startDate} onChange={(e) => { setRangePreset("custom"); setStartDate(e.target.value); }} className="app-input mt-1 font-mono" /></div>
-          <div><label className="field-label">结束日期</label><input type="text" value={endDate} onChange={(e) => { setRangePreset("custom"); setEndDate(e.target.value); }} className="app-input mt-1 font-mono" /></div>
+          <div><label className="field-label">开始日期</label><AntDatePicker value={startDate} onChange={(v) => { setRangePreset("custom"); setStartDate(v); }} /></div>
+          <div><label className="field-label">结束日期</label><AntDatePicker value={endDate} onChange={(v) => { setRangePreset("custom"); setEndDate(v); }} /></div>
           <div><label className="field-label">复权 adjust</label><AppSelect value={adjust as AdjustValue} onChange={setAdjust} options={adjustOptions} ariaLabel="复权 adjust" className="mt-1" disabled={market !== "cn"} /></div>
         </div>
         <div className="mt-4 flex flex-col gap-3 md:flex-row">

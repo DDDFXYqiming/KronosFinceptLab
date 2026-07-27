@@ -7,6 +7,7 @@ import { SectionLabel } from "@/components/ui/SectionLabel";
 import { Button } from "@/components/ui/Button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { AppNumberInput, clampNumber } from "@/components/ui/AppNumberInput";
+import { AntDatePicker } from "@/components/antd/AntDatePicker";
 import { BacktestEquityChart } from "@/components/charts/BacktestEquityChart";
 import { api, formatApiError } from "@/lib/api";
 import { downloadTextFile, makeDatedFilename, toCsv, validateDateRange } from "@/lib/exportUtils";
@@ -36,8 +37,10 @@ const BACKTEST_LIMITS = {
 export default function BacktestPage() {
   const queryClient = useQueryClient();
   const [symbols, setSymbols] = useSessionState("kronos-backtest-symbols", DEFAULT_BACKTEST_SYMBOLS);
-  const [startDate, setStartDate] = useSessionState("kronos-backtest-start-date", "20250101");
-  const [endDate, setEndDate] = useSessionState("kronos-backtest-end-date", "20260430");
+  const _btToday = new Date(); const _btYmd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  const _btY1 = new Date(); _btY1.setFullYear(_btY1.getFullYear() - 1);
+  const [startDate, setStartDate] = useSessionState("kronos-backtest-start-v2", _btYmd(_btY1));
+  const [endDate, setEndDate] = useSessionState("kronos-backtest-end-v2", _btYmd(_btToday));
   const [topK, setTopK] = useSessionState("kronos-backtest-top-k", 1);
   const [predLen, setPredLen] = useSessionState("kronos-backtest-pred-len", 5);
   const [windowSize, setWindowSize] = useSessionState("kronos-backtest-window-size", 60);
@@ -184,11 +187,11 @@ export default function BacktestPage() {
           </div>
           <div>
             <label className="field-label">开始日期</label>
-            <input type="text" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="app-input mt-1 font-mono" />
+            <AntDatePicker value={startDate} onChange={setStartDate} />
           </div>
           <div>
             <label className="field-label">结束日期</label>
-            <input type="text" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="app-input mt-1 font-mono" />
+            <AntDatePicker value={endDate} onChange={setEndDate} />
           </div>
           <div>
             <label className="field-label">Top K</label>

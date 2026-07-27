@@ -25,7 +25,7 @@ export function Header() {
   const { data: health } = useQuery({
     queryKey: queryKeys.health(),
     queryFn: ({ signal }) => api.health({ signal }),
-    refetchInterval: 30000,
+    refetchInterval: 120000,
   });
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export function Header() {
     };
   }, [mobileMenuOpen]);
 
-  const modelName = compactModelName(health?.model_id);
+  const modelName = health?.model_display_name || compactModelName(health?.model_id);
   const isHealthy = health?.status === "ok";
 
   return (

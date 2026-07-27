@@ -10,7 +10,8 @@ import { AppSelect, type AppSelectOption } from "@/components/ui/AppSelect";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { demoForecastRows, demoHistoricalRows, DEMO_MARKET, DEMO_SYMBOL } from "@/lib/demoData";
-import { DEFAULT_MODEL_ID } from "@/lib/defaults";
+import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
+import { AntDatePicker } from "@/components/antd/AntDatePicker";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import type { Language } from "@/lib/i18n";
@@ -92,8 +93,12 @@ function ForecastContent() {
     normalizeMarket(marketParam, DEFAULT_MARKET),
     { preferInitial: hasMarketParam }
   );
-  const [startDate, setStartDate] = useSessionState("kronos-forecast-start-date", "20250101");
-  const [endDate, setEndDate] = useSessionState("kronos-forecast-end-date", "20260430");
+  const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10).replace(/-/g, "");
+  const [startDate, setStartDate] = useSessionState("kronos-forecast-start-v2", oneYearAgoStr);
+  const [endDate, setEndDate] = useSessionState("kronos-forecast-end-v2", todayStr);
   const [modelId, setModelId] = useSessionState(
     "kronos-forecast-model-id",
     preferences.defaultModelId || DEFAULT_MODEL_ID
@@ -115,7 +120,7 @@ function ForecastContent() {
     return Array.from(new Set((availableModelIds.length ? availableModelIds : [DEFAULT_MODEL_ID]).filter(Boolean)));
   }, [availableModelIds]);
   const modelSelectOptions: Array<AppSelectOption<string>> = useMemo(
-    () => modelOptions.map((id) => ({ value: id, label: id.replace("NeoQuasar/", "") })),
+    () => modelOptions.map((id) => ({ value: id, label: `${id.replace("NeoQuasar/", "")} \u00b7 ${MODEL_SIZE_MAP[id]?.memory || ""}` })),
     [modelOptions]
   );
 
@@ -426,42 +431,11 @@ function ForecastContent() {
           </div>
           <div>
             <label className="field-label">{tx(language, "开始日期", "Start date")}</label>
-            <input
-              type="text"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="app-input mt-1 font-mono"
-              placeholder="YYYYMMDD"
-            />
+            <AntDatePicker value={startDate} onChange={setStartDate} />
           </div>
           <div>
             <label className="field-label">{tx(language, "结束日期", "End date")}</label>
-            <input
-              type="text"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="app-input mt-1 font-mono"
-              placeholder="YYYYMMDD"
-            />
-          </div>
-          <div>
-            <label className="field-label">{tx(language, "模型", "Model")}</label>
-            {modelSelectOptions.length > 1 ? (
-              <AppSelect
-                value={modelOptions.includes(modelId) ? modelId : modelOptions[0]}
-                onChange={(nextModelId) => {
-                  setModelId(nextModelId);
-                  setPreferences({ defaultModelId: nextModelId });
-                }}
-                options={modelSelectOptions}
-                ariaLabel={tx(language, "模型", "Model")}
-                className="mt-1"
-              />
-            ) : (
-              <div className="mt-1 flex min-h-11 items-center rounded-[10px] border border-slate-700 bg-slate-800 px-3 text-sm text-white">
-                {modelSelectOptions[0]?.label || DEFAULT_MODEL_ID.replace("NeoQuasar/", "")}
-              </div>
-            )}
+            <AntDatePicker value={endDate} onChange={setEndDate} />
           </div>
           <div className="flex items-end">
             <Button

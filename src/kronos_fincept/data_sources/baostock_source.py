@@ -129,7 +129,9 @@ class BaoStockSource(DataSource):
                 start_date = kwargs.get("start_date", "2020-01-01")
                 end_date = kwargs.get("end_date", datetime.now().strftime('%Y-%m-%d'))
                 frequency = kwargs.get("frequency", "d")  # d=daily, w=weekly, m=monthly
-                adjustflag = kwargs.get("adjustflag", "3")  # 1=backward adjusted, 2=forward adjusted, 3=unadjusted
+                adjust = kwargs.get("adjust", "none")
+                _adjust_map = {"qfq": "1", "hfq": "2", "none": "3"}
+                adjustflag = kwargs.get("adjustflag", _adjust_map.get(adjust, "3"))
 
                 # Convert date format (from YYYYMMDD to YYYY-MM-DD)
                 if len(start_date) == 8:

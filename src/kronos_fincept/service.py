@@ -125,11 +125,11 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             request.symbol,
         )
 
-    # Real inference
+    eff_id = _effective_model_id(request.model_id)
     predictor = KronosPredictorWrapper(
-        model_id=_effective_model_id(request.model_id),
-        tokenizer_id=resolve_tokenizer_id(_effective_model_id(request.model_id)),
-        max_context=resolve_max_context(_effective_model_id(request.model_id)),
+        model_id=eff_id,
+        tokenizer_id=resolve_tokenizer_id(eff_id),
+        max_context=resolve_max_context(eff_id),
         temperature=request.temperature,
         top_k=request.top_k,
         top_p=request.top_p,
@@ -220,7 +220,6 @@ def batch_forecast_from_requests(
     # Use batch when all requests are single-sample (not probabilistic)
     use_batch = (
         all(not req.dry_run for req in requests)
-        and all(req.sample_count == 1 for req in requests)
         and all(req.pred_len == requests[0].pred_len for req in requests)
         and all(_effective_model_id(req.model_id) == _effective_model_id(requests[0].model_id) for req in requests)
         and all(req.temperature == requests[0].temperature for req in requests)
