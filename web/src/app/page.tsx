@@ -99,7 +99,7 @@ export default function Dashboard() {
       {/* ── Stats ── */}
       <CardGrid className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 lg:gap-4">
         <Card index={0}><CardStat label={tx(language, "API 状态", "API status")} value={isOnline ? tx(language, "在线", "Online") : tx(language, "离线", "Offline")} color={isOnline ? "text-success" : "text-error"} /></Card>
-        <Card index={1}><CardStat label={tx(language, "部署版本", "Version")} value={deployedVersion} /><p className="mt-1 font-mono text-xs text-muted-foreground">{health?.build_ref || "-"} &middot; {health?.build_source || "-"}</p></Card>
+        <Card index={1}><CardStat label={tx(language, "部署版本", "Version")} value={deployedVersion} />{health?.build_ref && health?.build_ref !== "unknown" && <p className="mt-1 font-mono text-xs text-muted-foreground">{health.build_ref}{health?.build_source && health.build_source !== "unknown" ? ` · ${health.build_source}` : ""}</p>}</Card>
         <Card index={2}><CardStat label={tx(language, "提交", "Commit")} value={shortCommit} /></Card>
         <Card index={3}><CardStat label={tx(language, "模型", "Model")} value={health?.model_display_name || (health?.model_id || health?.default_model_id)?.split("/").pop() || "-"} /></Card>
         <Card index={4}><CardStat label={tx(language, "设备", "Device")} value={health?.device || "-"} /></Card>

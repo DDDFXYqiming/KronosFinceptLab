@@ -158,31 +158,8 @@ SYMBOL_ALIASES: dict[str, tuple[str, str, str]] = {
     "东方财富": ("300059", "cn", "东方财富"),
     "小米": ("1810", "hk", "小米集团"),
     "小米集团": ("1810", "hk", "小米集团"),
-    "aapl": ("AAPL", "us", "Apple"),
-    "apple": ("AAPL", "us", "Apple"),
-    "苹果": ("AAPL", "us", "Apple"),
-    "nvda": ("NVDA", "us", "NVIDIA"),
-    "nvidia": ("NVDA", "us", "NVIDIA"),
-    "英伟达": ("NVDA", "us", "NVIDIA"),
-    "nok": ("NOK", "us", "Nokia"),
-    "nokia": ("NOK", "us", "Nokia"),
-    "诺基亚": ("NOK", "us", "Nokia"),
-    "tsla": ("TSLA", "us", "Tesla"),
-    "tesla": ("TSLA", "us", "Tesla"),
-    "特斯拉": ("TSLA", "us", "Tesla"),
-    "黄金": ("GC=F", "commodity", "黄金期货"),
-    "gold": ("GC=F", "commodity", "黄金期货"),
-    "白银": ("SI=F", "commodity", "白银期货"),
-    "silver": ("SI=F", "commodity", "白银期货"),
-    "原油": ("CL=F", "commodity", "WTI 原油期货"),
-    "wti": ("CL=F", "commodity", "WTI 原油期货"),
-    "crude": ("CL=F", "commodity", "WTI 原油期货"),
-    "铜": ("HG=F", "commodity", "铜期货"),
-    "copper": ("HG=F", "commodity", "铜期货"),
-    "spy": ("SPY", "us", "SPDR S&P 500 ETF"),
-    "qqq": ("QQQ", "us", "Invesco QQQ ETF"),
-    "gld": ("GLD", "us", "SPDR Gold Shares ETF"),
-    "slv": ("SLV", "us", "iShares Silver Trust"),
+    "小米": ("1810", "hk", "小米集团"),
+    "小米集团": ("1810", "hk", "小米集团"),
 }
 
 ALLOWED_SCOPE_PATTERNS = [
@@ -1770,7 +1747,7 @@ JSON schema:
   ]
 }}
 
-market 只能是 cn, hk, us, commodity。港股小米通常是 1810.hk；诺基亚通常是 NOK.us。
+market 只能是 cn（A股）, hk（港股）。招商银行是 600036.cn，小米是 1810.hk。
 {AGENT_SCOPE_DESCRIPTION}"""
         user_prompt = {
             "question": text,
@@ -1903,7 +1880,7 @@ def _normalize_route_decision(
             if not symbol:
                 continue
             market = str(item.get("market") or _infer_market(symbol)).strip().lower()
-            if market not in {"cn", "hk", "us", "commodity"}:
+            if market not in {"cn", "hk"}:
                 market = _infer_market(symbol)
             normalized_symbol = _normalize_resolved_symbol(symbol, market)
             key = f"{market}:{normalized_symbol.upper()}"
@@ -1938,7 +1915,7 @@ def _normalize_macro_route_decision(payload: dict[str, Any], *, source: str) -> 
     raw_provider_ids = payload.get("provider_ids") or []
     provider_ids = _filter_macro_provider_ids(raw_provider_ids)
     raw_market = str(payload.get("market") or "").strip().lower()
-    market = raw_market if raw_market in {"cn", "hk", "us", "commodity", "global"} else None
+    market = raw_market if raw_market in {"cn", "hk", "global"} else None
     symbols = _normalize_macro_symbols(payload.get("symbols") or [])
     allowed = bool(payload.get("allowed"))
     needs_clarification = bool(payload.get("needs_clarification"))
@@ -2039,13 +2016,6 @@ def resolve_symbols(
             if key not in seen:
                 resolved.append(ResolvedSymbol(_normalize_resolved_symbol(symbol, explicit_market or market), explicit_market or market, name))
                 seen.add(key)
-
-    for match in re.finditer(r"\b[A-Z]{1,4}=F\b", question, flags=re.IGNORECASE):
-        symbol = match.group(0).upper()
-        key = symbol.upper()
-        if key not in seen:
-            resolved.append(ResolvedSymbol(symbol, explicit_market or "commodity"))
-            seen.add(key)
 
     for match in re.finditer(r"\b\d{6}\b", question):
         symbol = match.group(0)
@@ -2171,8 +2141,7 @@ def _select_embedded_macro_provider_ids(question: str, *, symbols: list[Resolved
     preferred_by_market: dict[str, tuple[str, ...]] = {
         "cn": (*cn_preferred, "fear_greed", "us_treasury", "yahoo_price"),
         "hk": ("fear_greed", "us_treasury", "yahoo_price", "cftc_cot"),
-        "us": ("us_treasury", "fear_greed", "yfinance_options", "yahoo_price"),
-        "commodity": ("yahoo_price", "stooq", "cftc_cot", "us_treasury", "fear_greed"),
+
     }
     preferred = list(preferred_by_market.get(market or "", ()))
     selected: list[str] = []
@@ -5112,13 +5081,11 @@ def _extract_json_object(text: Any) -> dict[str, Any] | None:
 
 
 def _infer_market(symbol: str) -> str:
-    if re.fullmatch(r"[A-Z]{1,4}=F", str(symbol).strip(), flags=re.IGNORECASE):
-        return "commodity"
     if re.fullmatch(r"\d{6}", symbol):
         return "cn"
     if symbol.upper().endswith(".HK") or re.fullmatch(r"\d{4,5}", symbol):
         return "hk"
-    return "us"
+    return "cn"
 
 
 def _normalize_resolved_symbol(symbol: str, market: str) -> str:
@@ -5127,7 +5094,7 @@ def _normalize_resolved_symbol(symbol: str, market: str) -> str:
         alias = SYMBOL_ALIASES.get(clean.lower()) or SYMBOL_ALIASES.get(clean)
         if alias and alias[1] == "commodity":
             return alias[0].upper()
-    if market in {"us", "commodity"}:
+    if market in {}:
         return clean.upper()
     return clean
 
@@ -5138,7 +5105,7 @@ def _asset_display_name(item: ResolvedSymbol) -> str:
 
 def _asset_class(symbol: str, market: str) -> str:
     normalized = str(symbol or "").strip().upper()
-    if market == "commodity" or re.fullmatch(r"[A-Z]{1,4}=F", normalized):
+    if False:
         return "commodity_future"
     if normalized in {
         "SPY",

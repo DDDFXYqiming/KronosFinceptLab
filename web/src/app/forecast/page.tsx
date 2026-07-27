@@ -520,6 +520,29 @@ function ForecastContent() {
               </p>
             </Card>
           )}
+          {predResult?.probabilistic && (
+            <Card className="col-span-1 md:col-span-3">
+              <p className="text-sm text-muted-foreground mb-2">{tx(language, "概率预测", "Probabilistic Forecast")}</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">{tx(language, "上涨概率", "Upside Prob.")}</p>
+                  <p className="text-lg font-bold">{(predResult.probabilistic.upside_probability * 100).toFixed(0)}%</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{tx(language, "预测区间", "Forecast Range")}</p>
+                  <p className="text-lg font-bold">[{predResult.probabilistic.forecast_range.min.toFixed(2)}, {predResult.probabilistic.forecast_range.max.toFixed(2)}]</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{tx(language, "均值收盘", "Mean Close")}</p>
+                  <p className="text-lg font-bold">{predResult.probabilistic.mean_final_close.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{tx(language, "波动放大", "Vol. Amplif.")}</p>
+                  <p className="text-lg font-bold">{predResult.probabilistic.volatility_amplification.toFixed(2)}x</p>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       )}
 

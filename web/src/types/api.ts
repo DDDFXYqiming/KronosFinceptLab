@@ -22,6 +22,14 @@ export interface ForecastRequest {
   top_p?: number;
 }
 
+export interface ProbabilisticData {
+  sample_count: number;
+  upside_probability: number;
+  volatility_amplification: number;
+  forecast_range: { min: number; max: number };
+  mean_final_close: number;
+}
+
 export interface ForecastResponse {
   ok: boolean;
   symbol: string;
@@ -38,6 +46,7 @@ export interface ForecastResponse {
   };
   error?: string;
   probability?: number;
+  probabilistic?: ProbabilisticData;
   signal?: string;
 }
 
