@@ -1,16 +1,17 @@
 "use client";
 
 import { Table } from "antd";
-import { ColumnsType } from "antd/es/table";
+import type { ColumnsType, TableProps } from "antd/es/table";
 
 interface AntTableProps<T> {
   columns: ColumnsType<T>;
   dataSource: T[];
-  rowKey?: string | ((record: T) => string);
+  rowKey?: TableProps<T>["rowKey"];
   loading?: boolean;
   scroll?: { x?: number; y?: number };
   className?: string;
   pagination?: false | { pageSize?: number; showSizeChanger?: boolean };
+  locale?: { emptyText?: React.ReactNode };
 }
 
 export function AntTable<T extends object>({
@@ -21,6 +22,7 @@ export function AntTable<T extends object>({
   scroll,
   className = "",
   pagination,
+  locale,
 }: AntTableProps<T>) {
   return (
     <Table<T>
@@ -30,6 +32,7 @@ export function AntTable<T extends object>({
       loading={loading}
       scroll={scroll}
       className={className}
+      locale={locale}
       pagination={pagination === false ? false : { pageSize: pagination?.pageSize || 20, showSizeChanger: pagination?.showSizeChanger ?? true, ...(typeof pagination === 'object' ? pagination : {}) }}
       size="middle"
     />

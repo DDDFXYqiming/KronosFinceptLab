@@ -11,6 +11,7 @@ import { clampNumber } from "@/components/ui/AppNumberInput";
 import { api, formatApiError } from "@/lib/api";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
+import { AntTable } from "@/components/antd/AntTable";
 import { t } from "@/lib/i18n";
 import { getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, normalizeSymbol } from "@/lib/symbols";
@@ -230,39 +231,18 @@ export default function AlertsPage() {
 
       <Card>
         <CardTitle>{t(language, "alerts.ruleList")}</CardTitle>
-        <div className="table-scroll">
-          <table className="min-w-[64rem] w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-700 text-gray-400">
-                <th className="py-2 text-left">{t(language, "common.name")}</th>
-                <th className="py-2 text-left">{t(language, "common.symbol")}</th>
-                <th className="py-2 text-left">{t(language, "common.type")}</th>
-                <th className="py-2 text-left">{t(language, "common.contact")}</th>
-                <th className="py-2 text-right">{t(language, "common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rules.map((rule) => (
-                <tr key={rule.id} className="border-b border-gray-800">
-                  <td className="py-2">{rule.name}</td>
-                  <td className="py-2 font-mono">{rule.symbol}</td>
-                  <td className="py-2">{alertTypeLabel(rule.alert_type)}</td>
-                  <td className="py-2 font-mono text-xs">
-                    {showSensitiveFields
-                      ? (rule.webhook_url || rule.email_to || "-")
-                      : (maskContactValue(rule.webhook_url) || maskContactValue(rule.email_to) || "-")}
-                  </td>
-                  <td className="py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" onClick={() => runCheck(rule.id)} disabled={loading}>{t(language, "common.check")}</Button>
-                      <Button variant="danger" onClick={() => deleteRule(rule.id)} disabled={loading}>{t(language, "common.delete")}</Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <AntTable
+          columns={[
+            { title: t(language, "common.name"), dataIndex: "name", key: "name", width: 160 },
+            { title: t(language, "common.symbol"), dataIndex: "symbol", key: "symbol", render: (v: string) => <span className="font-mono">{v}</span>, width: 120 },
+            { title: t(language, "common.type"), key: "type", render: (_: unknown, r: AlertRule) => alertTypeLabel(r.alert_type), width: 120 },
+            { title: t(language, "common.contact"), key: "contact", render: (_: unknown, r: AlertRule) => <span className="font-mono text-xs">{showSensitiveFields ? (r.webhook_url || r.email_to || "-") : (maskContactValue(r.webhook_url) || maskContactValue(r.email_to) || "-")}</span> },
+            { title: t(language, "common.actions"), key: "actions", render: (_: unknown, r: AlertRule) => <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => runCheck(r.id)} disabled={loading}>{t(language, "common.check")}</Button><Button variant="danger" onClick={() => deleteRule(r.id)} disabled={loading}>{t(language, "common.delete")}</Button></div>, align: "right", width: 180 },
+          ]}
+          dataSource={rules}
+          rowKey="id"
+          pagination={false}
+        />
       </Card>
 
       {events.length > 0 && (

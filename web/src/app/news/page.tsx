@@ -8,6 +8,7 @@ import { AntNumberInput as AppNumberInput } from "@/components/antd/AntNumberInp
 import { api, formatApiError } from "@/lib/api";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
+import { AntTable } from "@/components/antd/AntTable";
 import {
   DEFAULT_RSS_FEEDS,
   normalizeRssFeed,
@@ -136,33 +137,16 @@ export default function NewsPage() {
 
       <Card>
         <CardTitle>{tx(language, "最新条目", "Latest Items")} ({items.length})</CardTitle>
-        {items.length === 0 ? (
-          <div className="py-10 text-center text-muted-foreground">{tx(language, "暂无新闻条目", "No news items yet")}</div>
-        ) : (
-          <div className="table-scroll">
-            <table className="min-w-[52rem] w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-700 text-gray-400">
-                  <th className="py-2 text-left">{tx(language, "来源", "Source")}</th>
-                  <th className="py-2 text-left">{tx(language, "标题", "Title")}</th>
-                  <th className="py-2 text-left">{tx(language, "时间", "Time")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={`${item.feed_id}-${item.url}`} className="border-b border-gray-800 hover:bg-surface-overlay/50">
-                    <td className="py-3 align-top text-muted-foreground">{item.feed_title || item.feed_id}</td>
-                    <td className="py-3 align-top">
-                      <a href={item.url} target="_blank" rel="noreferrer" className="font-medium text-primary-light hover:underline">{item.title}</a>
-                      {item.summary && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.summary}</p>}
-                    </td>
-                    <td className="py-3 align-top font-mono text-xs text-muted-foreground">{formatDate(item.published_at, language)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {items.length === 0 ? <div className="py-10 text-center text-muted-foreground">{tx(language, "暂无新闻条目", "No news items yet")}</div> : <AntTable
+          columns={[
+            { title: tx(language, "来源", "Source"), dataIndex: "feed_title", key: "source", render: (v: string, r: typeof items[0]) => r.feed_title || r.feed_id, width: 160 },
+            { title: tx(language, "标题", "Title"), key: "title", render: (_: unknown, r: typeof items[0]) => <><a href={r.url} target="_blank" rel="noreferrer" className="font-medium text-primary-light hover:underline">{r.title}</a>{r.summary && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{r.summary}</p>}</> },
+            { title: tx(language, "时间", "Time"), dataIndex: "published_at", key: "time", render: (v: string) => <span className="font-mono text-xs">{formatDate(v, language)}</span>, width: 160 },
+          ]}
+          dataSource={items}
+          rowKey={(r) => `${r.feed_id}-${r.url}`}
+          pagination={false}
+        />}
       </Card>
     </div>
   );

@@ -8,6 +8,7 @@ import { AntSelect as AppSelect } from "@/components/antd/AntSelect";
 import type { AppSelectOption } from "@/components/ui/AppSelect";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
+import { AntTable } from "@/components/antd/AntTable";
 import { AntNumberInput as AppNumberInput } from "@/components/antd/AntNumberInput";
 import {
   KRONOS_API_KEY_STORAGE_KEY,
@@ -389,35 +390,20 @@ export default function SettingsPage() {
           <Button onClick={() => refreshMacroProviderStatus(macroMode)}>{t(language, "settings.refreshProviderStatus")}</Button>
         </div>
         {macroStatusError && <AntAlert type="error" message={macroStatusError} />}
-        <div className="mt-4 table-scroll">
-          <table className="min-w-[52rem] w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th className="py-2 text-left">{t(language, "settings.providerColumn")}</th>
-                <th className="py-2 text-left">{t(language, "common.status")}</th>
-                <th className="py-2 text-right">{t(language, "settings.failureCount")}</th>
-                <th className="py-2 text-right">{t(language, "settings.cooldownRemaining")}</th>
-                <th className="py-2 text-right">{t(language, "settings.cache")}</th>
-                <th className="py-2 text-right">{t(language, "settings.timeout")}</th>
-                <th className="py-2 text-left">{t(language, "settings.dimension")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(macroStatus?.providers || []).map((row) => (
-                <tr key={row.provider_id} className="border-b border-border last:border-b-0">
-                  <td className="py-2 font-mono font-semibold text-foreground">{row.provider_id}</td>
-                  <td className={row.status === "ready" ? "py-2 text-success" : "py-2 text-error"}>{providerStatusLabel(row.status)}</td>
-                  <td className="py-2 text-right font-mono text-foreground">{row.failure_count}</td>
-                  <td className="py-2 text-right font-mono text-foreground">{row.suspended_remaining_seconds}s</td>
-                  <td className="py-2 text-right font-mono text-foreground">{row.cached_entries}</td>
-                  <td className="py-2 text-right font-mono text-foreground">{row.timeout_seconds}s</td>
-                  <td className="py-2 text-muted-foreground">{row.dimensions?.join(" / ") || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!macroStatus?.providers?.length && <p className="mt-3 text-sm text-muted-foreground">{t(language, "settings.noProviderStatus")}</p>}
-        </div>
+        <AntTable
+          columns={[
+            { title: t(language, "settings.providerColumn"), dataIndex: "provider_id", key: "provider", render: (v: string) => <span className="font-mono font-semibold">{v}</span>, width: 160 },
+            { title: t(language, "common.status"), dataIndex: "status", key: "status", render: (v: string) => <span className={v === "ready" ? "text-success" : "text-error"}>{providerStatusLabel(v)}</span>, width: 100 },
+            { title: t(language, "settings.failureCount"), dataIndex: "failure_count", key: "failures", align: "right", width: 80 },
+            { title: t(language, "settings.cooldownRemaining"), dataIndex: "suspended_remaining_seconds", key: "cooldown", render: (v: number) => `${v}s`, align: "right", width: 120 },
+            { title: t(language, "settings.cache"), dataIndex: "cached_entries", key: "cache", align: "right", width: 80 },
+            { title: t(language, "settings.timeout"), dataIndex: "timeout_seconds", key: "timeout", render: (v: number) => `${v}s`, align: "right", width: 80 },
+            { title: t(language, "settings.dimension"), dataIndex: "dimensions", key: "dimensions", render: (v: string[]) => v?.join(" / ") || "-", width: 160 },
+          ]}
+          dataSource={macroStatus?.providers || []}
+          rowKey="provider_id"
+          pagination={false}
+        />
       </Card>
 
       <Card>

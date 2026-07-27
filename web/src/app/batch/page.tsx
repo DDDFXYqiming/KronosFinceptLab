@@ -15,6 +15,7 @@ import { ReturnComparisonChart } from "@/components/charts/ReturnComparisonChart
 import { ApiError, api, formatApiError } from "@/lib/api";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
+import { AntTable } from "@/components/antd/AntTable";
 import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, type Market } from "@/lib/markets";
 import { DEFAULT_BATCH_SYMBOLS, normalizeSymbols } from "@/lib/symbols";
@@ -314,7 +315,25 @@ function BatchContent() {
 
       {(loading || progress.total > 0) && <Card><CardTitle>执行进度</CardTitle><div className="grid grid-cols-2 gap-3 md:grid-cols-6"><div>total {progress.total}</div><div>completed {progress.completed}</div><div>success {progress.success}</div><div>failed {progress.failed}</div><div>skipped {progress.skipped}</div><div>running {progress.running.join(", ") || "-"}</div></div></Card>}
       {error && <AntAlert type="error" message={error} />}
-      {results.length > 0 && <><Card><CardTitle>预测收益率对比</CardTitle><ReturnComparisonChart data={chartData} /></Card><Card><CardTitle action={<AppSelect value={sortKey} onChange={setSortKey} options={sortOptions} ariaLabel="排序方式" className="w-40" buttonClassName="min-h-10" />}>排名</CardTitle><div className="table-scroll"><table className="min-w-[44rem] w-full text-sm md:min-w-[56rem]"><thead><tr className="border-b border-gray-700 text-gray-400"><th className="py-2 text-left">排名</th><th className="py-2 text-left">代码</th><th className="py-2 text-left">市场</th><th className="py-2 text-right">最新收盘</th><th className="py-2 text-right">预测收盘</th><th className="py-2 text-right">预测收益率</th><th className="py-2 text-left">风险</th><th className="py-2 text-right">操作</th></tr></thead><tbody>{sortedResults.map((result) => <tr key={result.symbol} className="border-b border-gray-800 hover:bg-surface-overlay"><td className="py-2">{result.rank}</td><td className="py-2 font-mono font-bold text-white">{result.symbol}</td><td className="py-2">{getMarketLabel(result.market || market, preferences.language)}</td><td className="py-2 text-right">{result.last_close.toFixed(2)}</td><td className="py-2 text-right">{result.predicted_close.toFixed(2)}</td><td className={result.predicted_return >= 0 ? "py-2 text-right text-accent-green" : "py-2 text-right text-accent-red"}>{(result.predicted_return * 100).toFixed(2)}%</td><td className="py-2">{result.risk_label || riskLabel(result.predicted_return)}</td><td className="py-2 text-right"><div className="flex justify-end gap-2"><button className="rounded bg-surface-overlay px-2 py-1 text-xs" onClick={() => addToWatchlist({ symbol: result.symbol, market: (result.market as Market) || market, addedAt: new Date().toISOString() })}>加入自选</button><Link className="rounded bg-surface-overlay px-2 py-1 text-xs" href={`/forecast?symbol=${result.symbol}&market=${result.market || market}`}>预测</Link><Link className="rounded bg-primary/20 px-2 py-1 text-xs text-primary-light" href={`/analysis?symbol=${result.symbol}&market=${result.market || market}`}>分析</Link></div></td></tr>)}</tbody></table></div></Card></>}
+      {results.length > 0 && <><Card><CardTitle>预测收益率对比</CardTitle><ReturnComparisonChart data={chartData} /></Card><Card><CardTitle action={<AppSelect value={sortKey} onChange={setSortKey} options={sortOptions} ariaLabel="排序方式" className="w-40" buttonClassName="min-h-10" />}>排名</CardTitle><AntTable
+            columns={[
+              { title: "排名", dataIndex: "rank", key: "rank", width: 60 },
+              { title: "代码", dataIndex: "symbol", key: "symbol", render: (v: string) => <span className="font-mono font-bold text-white">{v}</span>, width: 100 },
+              { title: "市场", key: "marketLabel", render: (_: unknown, r: typeof results[0]) => getMarketLabel(r.market || market, preferences.language), width: 80 },
+              { title: "最新收盘", dataIndex: "last_close", key: "last", render: (v: number) => v.toFixed(2), align: "right", width: 100 },
+              { title: "预测收盘", dataIndex: "predicted_close", key: "pred", render: (v: number) => v.toFixed(2), align: "right", width: 100 },
+              { title: "预测收益率", dataIndex: "predicted_return", key: "ret", render: (v: number) => <span className={v >= 0 ? "text-accent-green" : "text-accent-red"}>{(v * 100).toFixed(2)}%</span>, align: "right", width: 100 },
+              { title: "风险", key: "risk", render: (_: unknown, r: typeof results[0]) => r.risk_label || riskLabel(r.predicted_return), width: 80 },
+              { title: "操作", key: "actions", render: (_: unknown, r: typeof results[0]) => <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => addToWatchlist({ symbol: r.symbol, market: (r.market as Market) || market, addedAt: new Date().toISOString() })}>加入自选</Button>
+                <Link className="rounded bg-surface-overlay px-2 py-1 text-xs" href={`/forecast?symbol=${r.symbol}&market=${r.market || market}`}>预测</Link>
+                <Link className="rounded bg-primary/20 px-2 py-1 text-xs text-primary-light" href={`/analysis?symbol=${r.symbol}&market=${r.market || market}`}>分析</Link>
+              </div>, align: "right", width: 200 },
+            ]}
+            dataSource={sortedResults}
+            rowKey="symbol"
+            pagination={false}
+          /></Card></>}
       {failures.length > 0 && <Card><CardTitle>失败项</CardTitle><div className="space-y-2">{failures.map((failure) => <div key={`${failure.symbol}-${failure.stage}`} className="rounded-lg border border-border p-3 text-sm"><span className="font-mono font-bold">{failure.symbol}</span> · {failure.stage} · {failure.message}{failure.requestId ? ` request_id=${failure.requestId}` : ""}</div>)}</div></Card>}
       <Card>
         <CardTitle action={<Button variant="secondary" onClick={refreshJobHistory} loading={historyLoading}>刷新</Button>}>批量任务历史</CardTitle>

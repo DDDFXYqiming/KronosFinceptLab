@@ -15,6 +15,7 @@ import { DEFAULT_MODEL_ID, MODEL_SIZE_MAP } from "@/lib/defaults";
 import { AntDatePicker } from "@/components/antd/AntDatePicker";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
+import { AntTable } from "@/components/antd/AntTable";
 import { DEFAULT_MARKET, getMarketLabel, getMarketOptions, normalizeMarket, type Market } from "@/lib/markets";
 import { DEFAULT_SYMBOL, DEFAULT_SYMBOL_NAME, normalizeSymbol } from "@/lib/symbols";
 import type { Language } from "@/lib/i18n";
@@ -537,53 +538,21 @@ function ForecastContent() {
       {/* Data Table */}
       {data.length > 0 && (
         <Card>
-          <CardTitle>{tx(language, "历史数据", "Historical Data")}</CardTitle>
-          <div className="table-scroll max-h-64 overflow-y-auto">
-            <table className="min-w-[42rem] w-full text-sm">
-              <thead className="sticky top-0 bg-surface-raised">
-                <tr className="border-b border-gray-700 text-gray-400">
-                  <th className="py-2 text-left">{tx(language, "日期", "Date")}</th>
-                  <th className="py-2 text-right">{tx(language, "开盘", "Open")}</th>
-                  <th className="py-2 text-right">{tx(language, "最高", "High")}</th>
-                  <th className="py-2 text-right">{tx(language, "最低", "Low")}</th>
-                  <th className="py-2 text-right">{tx(language, "收盘", "Close")}</th>
-                  <th className="py-2 text-right">{tx(language, "成交量", "Volume")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.slice(-50).map((row) => (
-                  <tr
-                    key={`${symbol}-${row.timestamp}`}
-                    className="border-b border-gray-800 hover:bg-surface-overlay"
-                  >
-                    <td className="py-1.5 font-mono text-xs">
-                      {String(row.timestamp).slice(0, 10)}
-                    </td>
-                    <td className="py-1.5 text-right">
-                      {row.open.toFixed(2)}
-                    </td>
-                    <td className="py-1.5 text-right">
-                      {row.high.toFixed(2)}
-                    </td>
-                    <td className="py-1.5 text-right">
-                      {row.low.toFixed(2)}
-                    </td>
-                    <td className="py-1.5 text-right font-semibold">
-                      {row.close.toFixed(2)}
-                    </td>
-                    <td className="py-1.5 text-right text-gray-400">
-                      {(row.volume || 0).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {data.length > 50 && (
-            <p className="text-xs text-gray-500 mt-2">
-              {tx(language, `显示最近50条，共${data.length}条`, `Showing latest 50 of ${data.length} rows`)}
-            </p>
-          )}
+          <CardTitle>{tx(language, "历史数据", "Historical Data")} ({data.length} {tx(language, "条", "rows")})</CardTitle>
+          <AntTable
+            columns={[
+              { title: tx(language, "日期", "Date"), dataIndex: "timestamp", key: "date", render: (v: string) => <span className="font-mono text-xs">{String(v).slice(0, 10)}</span>, width: 120 },
+              { title: tx(language, "开盘", "Open"), dataIndex: "open", key: "open", render: (v: number) => v.toFixed(2), align: "right", width: 90 },
+              { title: tx(language, "最高", "High"), dataIndex: "high", key: "high", render: (v: number) => v.toFixed(2), align: "right", width: 90 },
+              { title: tx(language, "最低", "Low"), dataIndex: "low", key: "low", render: (v: number) => v.toFixed(2), align: "right", width: 90 },
+              { title: tx(language, "收盘", "Close"), dataIndex: "close", key: "close", render: (v: number) => <span className="font-semibold">{v.toFixed(2)}</span>, align: "right", width: 90 },
+              { title: tx(language, "成交量", "Volume"), dataIndex: "volume", key: "volume", render: (v: number) => <span className="text-gray-400">{(v || 0).toLocaleString()}</span>, align: "right", width: 120 },
+            ]}
+            dataSource={data.slice(-50)}
+            rowKey={(r: { timestamp: string }) => `${symbol}-${r.timestamp}`}
+            scroll={{ y: 260 }}
+            pagination={false}
+          />
         </Card>
       )}
     </div>

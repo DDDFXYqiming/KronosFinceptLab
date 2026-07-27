@@ -12,6 +12,7 @@ import { clampNumber } from "@/components/ui/AppNumberInput";
 import { AntDatePicker } from "@/components/antd/AntDatePicker";
 import { AntInput } from "@/components/antd/AntInput";
 import { AntAlert } from "@/components/antd/AntAlert";
+import { AntTable } from "@/components/antd/AntTable";
 import { BacktestEquityChart } from "@/components/charts/BacktestEquityChart";
 import { api, formatApiError } from "@/lib/api";
 import { downloadTextFile, makeDatedFilename, toCsv, validateDateRange } from "@/lib/exportUtils";
@@ -273,23 +274,18 @@ export default function BacktestPage() {
 
           <Card>
             <CardTitle>持仓明细</CardTitle>
-            <div className="table-scroll max-h-96 overflow-y-auto">
-              <table className="min-w-[44rem] w-full text-sm">
-                <thead className="sticky top-0 bg-surface-raised text-muted-foreground">
-                  <tr><th className="py-2 text-left">日期</th><th className="py-2 text-right">权益</th><th className="py-2 text-right">阶段收益</th><th className="py-2 text-left">持仓</th></tr>
-                </thead>
-                <tbody>
-                  {result.equity_curve.slice(-80).map((point) => (
-                    <tr key={point.date} className="border-b border-gray-800 hover:bg-surface-overlay">
-                      <td className="py-2 font-mono text-xs">{String(point.date).slice(0, 10)}</td>
-                      <td className="py-2 text-right">{formatNumber(point.equity, 2)}</td>
-                      <td className={`py-2 text-right ${point.return >= 0 ? "text-accent-green" : "text-accent-red"}`}>{formatPercent(point.return)}</td>
-                      <td className="py-2 font-mono text-xs">{point.selected.join(", ")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AntTable
+              columns={[
+                { title: "日期", dataIndex: "date", key: "date", render: (v: string) => <span className="font-mono text-xs">{String(v).slice(0, 10)}</span>, width: 120 },
+                { title: "权益", dataIndex: "equity", key: "equity", render: (v: number) => formatNumber(v, 2), align: "right", width: 120 },
+                { title: "阶段收益", dataIndex: "return", key: "return", render: (v: number) => <span className={v >= 0 ? "text-accent-green" : "text-accent-red"}>{formatPercent(v)}</span>, align: "right", width: 120 },
+                { title: "持仓", dataIndex: "selected", key: "selected", render: (v: string[]) => <span className="font-mono text-xs">{v.join(", ")}</span> },
+              ]}
+              dataSource={result.equity_curve.slice(-80)}
+              rowKey="date"
+              scroll={{ y: 400 }}
+              pagination={false}
+            />
             <p className="mt-2 text-xs text-muted-foreground">最新持仓：{latestHolding.join(", ") || "暂无"}</p>
           </Card>
 
