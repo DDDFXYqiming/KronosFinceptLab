@@ -1771,7 +1771,15 @@ class StooqProvider(MacroProvider):
 
 
 def create_default_providers() -> list[MacroProvider]:
+    from kronos_fincept.macro.providers.cboe_vix import CboeVixProvider, CboeOptionsProvider
+    from kronos_fincept.macro.providers.china_bond_yield import ChinaBondYieldProvider
+    from kronos_fincept.macro.providers.economic_calendar import EconomicCalendarProvider
+
     return [
+        EconomicCalendarProvider(),
+        ChinaBondYieldProvider(),
+        CboeVixProvider(),
+        CboeOptionsProvider(),
         PolymarketProvider(),
         KalshiProvider(),
         FredProvider(),

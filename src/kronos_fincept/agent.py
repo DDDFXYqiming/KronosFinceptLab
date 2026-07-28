@@ -262,6 +262,8 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "yfinance_options": "equity_options",
     "fear_greed": "sentiment_news",
     "altme_fng": "sentiment_news",
+    "china_bond_yield": "rates",
+    "cboe_vix": "market_price",
     "rss_news": "sentiment_news",
     "cme_fedwatch": "rates",
     "web_search": "sentiment_news",
@@ -2586,12 +2588,35 @@ def _build_online_research(
 
     result_payloads = []
     seen_urls: set[str] = set()
+    search_texts: list[str] = []
     for response in responses:
         for result in response.results:
             if result.url in seen_urls:
                 continue
             seen_urls.add(result.url)
             result_payloads.append(result.to_dict())
+            title = result.title or ""
+            snippet = result.snippet or ""
+            if title or snippet:
+                search_texts.append(f"{title}. {snippet}".strip())
+
+    nlp_result: dict[str, Any] | None = None
+    if search_texts:
+        try:
+            from kronos_fincept.news_nlp import analyze_sentiment, cluster_semantic, extract_entities
+            nlp_result = {
+                "sentiment": analyze_sentiment(search_texts),
+                "clusters": cluster_semantic(search_texts),
+            }
+            all_entities: dict[str, list[str]] = {"countries": [], "organizations": [], "people": [], "tickers": []}
+            for txt in search_texts:
+                entities = extract_entities(txt)
+                for k in all_entities:
+                    all_entities[k].extend(entities.get(k, []))
+            import collections
+            nlp_result["entities"] = {k: list(collections.Counter(v).keys())[:10] for k, v in all_entities.items() if v}
+        except Exception:
+            pass
 
     counts = {name: sum(len(response.results) for response in source_responses) for name, source_responses in responses_by_source.items()}
     errors_by_source = {name: [response.error for response in source_responses if response.error] for name, source_responses in responses_by_source.items()}
@@ -2600,6 +2625,7 @@ def _build_online_research(
         detail.update({"result_count": counts.get(name, 0), "errors": errors_by_source.get(name, [])})
 
     research["results"] = result_payloads
+    research["nlp"] = nlp_result
     research["responses"] = [response.to_dict() for response in responses]
     if result_payloads:
         active_labels = [detail["source"] for detail in source_details if detail.get("enabled")]

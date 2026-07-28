@@ -1,7 +1,10 @@
 """Macro provider registry."""
 
 from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderError, MacroProviderUnavailable
+from kronos_fincept.macro.providers.cboe_vix import CboeVixProvider, CboeOptionsProvider
+from kronos_fincept.macro.providers.china_bond_yield import ChinaBondYieldProvider
 from kronos_fincept.macro.providers.china_macro import ChinaMacroAkshareProvider
+from kronos_fincept.macro.providers.economic_calendar import EconomicCalendarProvider
 from kronos_fincept.macro.providers.chinalive import ChinaDataLiveProvider
 from kronos_fincept.macro.providers.dbnomics import DBnomicsProvider
 from kronos_fincept.macro.providers.fred import FredProvider
@@ -36,6 +39,10 @@ from kronos_fincept.macro.providers.digital_oracle import (
 __all__ = [
     "AnySearchProvider",
     "AlternativeMeFearGreedProvider",
+    "CboeVixProvider",
+    "CboeOptionsProvider",
+    "ChinaBondYieldProvider",
+    "EconomicCalendarProvider",
     "BisProvider",
     "CMEFedWatchProvider",
     "CftcCotProvider",
