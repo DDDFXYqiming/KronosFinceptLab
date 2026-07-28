@@ -31,7 +31,7 @@ import torch
 from model import Kronos, KronosPredictor, KronosTokenizer
 
 # ── Model paths ──
-HF_HUB = r"E:\AI_Projects\ModelCache\huggingface\hub"
+HF_HUB =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 
 # Cache directory naming: models--NeoQuasar--Kronos-small (ONE dir name, not joined by / or \)
 SNAPSHOTS = os.path.join(HF_HUB, "models--NeoQuasar--Kronos-small", "snapshots", "901c26c1332695a2a8f243eb2f37243a37bea320")

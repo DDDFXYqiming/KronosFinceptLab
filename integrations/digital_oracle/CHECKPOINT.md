@@ -24,6 +24,6 @@
 3. Test end-to-end from web UI
 
 ### Key Files
-- Wrapper: E:\AI_Projects\KronosFinceptLab\integrations\digital_oracle\provider_wrapper.py
-- KFL existing: E:\AI_Projects\KronosFinceptLab\src\kronos_fincept\...\digital_oracle.py (2004 lines)
+- Wrapper: `integrations/digital_oracle/provider_wrapper.py`
+- KFL existing: `src/kronos_fincept/.../digital_oracle.py` (2004 lines)
 - Plan: LOST — need to reconstruct

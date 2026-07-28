@@ -1,4 +1,5 @@
 """Evaluate one pretrained group as a standalone process. Args: pred_len sc T P note."""
+import os
 import json, os, sys, time, gc
 from pathlib import Path
 import numpy as np
@@ -21,7 +22,7 @@ cpu_dev = torch.device("cpu")
 import torch_directml
 dml_dev = torch_directml.device()
 
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 model_path = os.path.join(hub, "models--NeoQuasar--Kronos-small", "snapshots", "901c26c1332695a2a8f243eb2f37243a37bea320")
 tok_path = os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots", "0e0117387f39004a9016484a186a908917e22426")
 

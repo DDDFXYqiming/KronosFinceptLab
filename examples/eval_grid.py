@@ -4,6 +4,7 @@ Tests combinations of pred_len, sample_count, temperature, top_p across pretrain
 and finetuned Kronos-small models through the full KronosPredictor.predict() pipeline.
 """
 
+import os
 import json, os, sys, time, warnings, copy
 from pathlib import Path
 from dataclasses import dataclass, asdict
@@ -26,7 +27,7 @@ print(f"Device: CPU (DirectML hits page file limit)")
 
 # ── Data ──
 DATA_DIR = PROJ / "external" / "Kronos" / "finetune_csv" / "data_v2"
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 
 TOK_PATH = os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots", "0e0117387f39004a9016484a186a908917e22426")
 

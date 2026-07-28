@@ -1,5 +1,6 @@
 """Focused param grid: finetuned model, key combos, correct y_timestamp handling."""
 
+import os
 import json, os, sys, time
 from pathlib import Path
 import numpy as np
@@ -19,7 +20,7 @@ print(f"Device: CPU")
 
 # ── Data ──
 DATA_DIR = PROJ / "external" / "Kronos" / "finetune_csv" / "data_v2"
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 tok_path = os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots", "0e0117387f39004a9016484a186a908917e22426")
 ft_path = str(PROJ / "external" / "Kronos-small")
 

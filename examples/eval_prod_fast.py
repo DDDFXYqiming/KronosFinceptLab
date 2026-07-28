@@ -1,5 +1,6 @@
 """Fast production-path evaluation: 30 stocks, reduced samples."""
 
+import os
 import json, os, sys, time, warnings
 from pathlib import Path
 import numpy as np
@@ -47,7 +48,7 @@ for symbol, df in stocks.items():
         })
 print(f"{len(samples)} test samples")
 
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 models_cfg = {
     "pretrained_small": {
         "path": os.path.join(hub, "models--NeoQuasar--Kronos-small", "snapshots", "901c26c1332695a2a8f243eb2f37243a37bea320"),

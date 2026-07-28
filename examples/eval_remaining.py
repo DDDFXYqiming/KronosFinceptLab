@@ -1,5 +1,6 @@
 """Continue grid eval for remaining groups (A, D done)."""
 
+import os
 import json, os, sys, time
 from pathlib import Path
 import numpy as np
@@ -16,7 +17,7 @@ from model import Kronos, KronosPredictor, KronosTokenizer
 device = torch.device("cpu")
 print(f"Device: CPU")
 
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 tok = KronosTokenizer.from_pretrained(
     os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots",
                  "0e0117387f39004a9016484a186a908917e22426")

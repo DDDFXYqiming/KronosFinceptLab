@@ -44,7 +44,7 @@
 | Python | 3.13 (.venv311) |
 | PyTorch | 2.4.1 + torch-directml (DML) |
 | GPU | AMD Radeon RX 7800 XT (16GB VRAM) |
-| 模型缓存 | `E:\AI_Projects\ModelCache\huggingface\hub\` |
+| 模型缓存 | `~/.cache/huggingface/hub/` (或 `HF_HUB_CACHE`) |
 
 ### 3.2 代码修改记录
 

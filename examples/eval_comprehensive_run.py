@@ -1,4 +1,5 @@
 """Single model eval run: inference + all metrics. Args: model_key label."""
+import os
 import json, os, sys, time, gc
 from pathlib import Path
 import numpy as np
@@ -22,7 +23,7 @@ P = float(sys.argv[6]) if len(sys.argv) > 6 else 0.9
 
 dml_dev = torch_directml.device()
 
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 tok_path = os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots", "0e0117387f39004a9016484a186a908917e22426")
 
 model_paths = {

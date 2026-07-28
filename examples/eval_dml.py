@@ -1,5 +1,6 @@
 """Production pipeline evaluation on DML (GPU). Load on CPU first to avoid pagefile issue."""
 
+import os
 import json, os, sys, time
 from pathlib import Path
 import numpy as np
@@ -19,7 +20,7 @@ dml_dev = torch_directml.device()
 cpu_dev = torch.device("cpu")
 print(f"Device: DML")
 
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 tok_path = os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots", "0e0117387f39004a9016484a186a908917e22426")
 
 print("Loading tokenizer on CPU...", end=" ", flush=True)

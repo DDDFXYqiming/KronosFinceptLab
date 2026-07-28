@@ -1,4 +1,5 @@
 """Test the probabilistic prediction fix with DML."""
+import os
 import sys, os, time
 from pathlib import Path
 import pandas as pd
@@ -15,7 +16,7 @@ import torch_directml
 dml_dev = torch_directml.device()
 cpu_dev = torch.device("cpu")
 
-hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
+hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
 tok_path = os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots", "0e0117387f39004a9016484a186a908917e22426")
 ft_path = str(PROJ / "external" / "Kronos-small")
 
