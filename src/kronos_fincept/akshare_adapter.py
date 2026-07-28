@@ -28,6 +28,21 @@ _OHLCV_KEYS = ["timestamp", "open", "high", "low", "close", "volume", "amount"]
 
 # Lazy-init DataSourceManager
 _manager = None
+_cache: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+
+# Source priority for A-share historical data (BaoStock first — its qfq
+# is consistently correct; East Money / AkShare may return wrong qfq
+# for stocks with bonus issues / stock splits).
+_A_HIST_SOURCE_ORDER = [
+    "baostock",
+    "eastmoney",
+    "akshare",
+    "tdx_local",
+    "tdx_network",
+    "tushare",
+    "yahoo_finance",
+    "stooq",
+]
 
 
 def _get_manager():
@@ -38,6 +53,20 @@ def _get_manager():
 
         _manager = init_data_sources()
     return _manager
+
+
+def _post_process_rows(rows: list[dict[str, Any]], source_name: str) -> list[dict[str, Any]]:
+    """Validate and normalize OHLCV rows.
+
+    Shared logic used by fetch functions after obtaining raw data.
+    """
+    conv = [_convert_row_to_english(r) for r in rows]
+    conv.sort(key=lambda r: r["timestamp"])
+    for r in conv:
+        missing = [k for k in _OHLCV_KEYS if k not in r]
+        if missing:
+            raise ValueError(f"Missing columns in data from {source_name}: {missing}")
+    return conv
 
 
 def _convert_row_to_english(row: dict[str, Any]) -> dict[str, Any]:
@@ -77,23 +106,31 @@ def fetch_a_stock_ohlcv(
     end_date: str = "20261231",
     adjust: str = "qfq",
 ) -> list[dict[str, Any]]:
-    """Fetch A-stock daily OHLCV data with automatic multi-source fallback.
+    """Fetch A-stock daily OHLCV data with deterministic multi-source fallback.
 
-    Tries DataSourceManager sources in priority order:
-      1. AkShare  (eastmoney, may be blocked by anti-scraping)
-      2. BaoStock (stable, login-based)
-      3. Yahoo Finance (global, no registration needed)
+    Tries DataSourceManager sources in a fixed order that prioritises
+    *data correctness over speed*.  Sequence (sequential, NOT parallel):
+
+      1. BaoStock      (qfq verified correct; login-based, stable)
+      2. East Money    (Push2 direct, fast but qfq may be wrong for some stocks)
+      3. AkShare       (East Money API wrapper)
+      4. TDX local     (no adjust support → skipped when adjust is set)
+      5. TDX network
+      6. Tushare Pro   (if TUSHARE_TOKEN configured)
+      7. Yahoo Finance (global fallback)
+      8. Stooq
 
     Returns:
         List of dicts sorted by timestamp ascending, each with keys:
         timestamp, open, high, low, close, volume, amount.
     """
-    manager = _get_manager()
+    cache_key = (symbol, start_date, end_date, adjust)
+    if cache_key in _cache:
+        return _cache[cache_key][:]
 
-    result = manager.fetch(
-        endpoint="stock_zh_a_hist",
-        use_cache=True,
-        cache_ttl=3600,  # 1-hour cache
+    manager = _get_manager()
+    sources = {s.config.name: s for s in manager.get_sorted_sources()}
+    kwargs = dict(
         symbol=symbol,
         period="daily",
         start_date=start_date,
@@ -101,31 +138,30 @@ def fetch_a_stock_ohlcv(
         adjust=adjust,
     )
 
-    if not result.get("success"):
-        err = result.get("error", "Unknown error")
-        raise ValueError(
-            f"All data sources failed for {symbol}: {err}"
-        )
+    last_error: str | None = None
+    for name in _A_HIST_SOURCE_ORDER:
+        src = sources.get(name)
+        if src is None or not src.supports_endpoint("stock_zh_a_hist"):
+            continue
+        try:
+            result = src.fetch(endpoint="stock_zh_a_hist", **kwargs)
+            if not result.get("success"):
+                last_error = f"{name}: {result.get('error', 'unknown')}"
+                continue
+            data = result.get("data", [])
+            if not data:
+                last_error = f"{name}: empty data"
+                continue
+            rows = _post_process_rows(data, name)
+            _cache[cache_key] = rows
+            return rows[:]
+        except Exception as exc:
+            last_error = f"{name}: {exc}"
+            continue
 
-    data = result.get("data", [])
-    if not data:
-        raise ValueError(
-            f"No data returned for symbol {symbol} ({start_date}~{end_date})"
-        )
-
-    # Convert Chinese keys → English keys
-    rows = [_convert_row_to_english(r) for r in data]
-
-    # Ensure sorted ascending by timestamp
-    rows.sort(key=lambda r: r["timestamp"])
-
-    # Validate required columns
-    for r in rows:
-        missing = [k for k in _OHLCV_KEYS if k not in r]
-        if missing:
-            raise ValueError(f"Missing columns in data source output: {missing}")
-
-    return rows
+    raise ValueError(
+        f"All data sources failed for {symbol} ({start_date}~{end_date}): {last_error}"
+    )
 
 
 def fetch_crypto_ohlcv(
