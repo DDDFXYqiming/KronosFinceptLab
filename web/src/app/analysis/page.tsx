@@ -422,7 +422,7 @@ function MacroMonitoringTable({ monitoring }: { monitoring: MacroMonitoringSigna
   );
 }
 
-function MacroBackgroundDetails({ report }: { report?: AgentReport }) {
+function MacroBackgroundDetails({ report }: { report?: AgentReport | null }) {
   const macroAnalysis = report?.macro_analysis?.trim() || "";
   const crossValidation = report?.cross_validation?.trim() || "";
   const contradictions = report?.contradictions?.trim() || "";
@@ -461,7 +461,7 @@ function getAssetResults(result: AgentAnalyzeResponse): AgentAssetResult[] {
       symbol: result.symbol,
       market: result.market || "",
       name: null,
-      report: result.report,
+      report: null,
       final_report: result.final_report,
       recommendation: result.recommendation,
       confidence: result.confidence,
@@ -620,7 +620,7 @@ function KronosForecastPanel({ asset }: { asset: AgentAssetResult }) {
   );
 }
 
-function AssetAnalysisCard({ asset }: { asset: AgentAssetResult }) {
+function AssetAnalysisCard({ asset, hideTextSections }: { asset: AgentAssetResult; hideTextSections?: boolean }) {
   const report = asset.report;
   return (
     <Card>
@@ -675,15 +675,17 @@ function AssetAnalysisCard({ asset }: { asset: AgentAssetResult }) {
         </div>
       </div>
 
-      <div className="mb-5">
-        <ReportSection title="结论" value={report?.conclusion} />
-        <ReportSection title="短期预测" value={report?.short_term_prediction} />
-        <ReportSection title="技术面" value={report?.technical} />
-        <ReportSection title="基本面" value={report?.fundamentals} />
-        <ReportSection title="风险指标" value={report?.risk} />
-        <ReportSection title="关键不确定性" value={report?.uncertainties} />
-      </div>
-      <MacroBackgroundDetails report={report} />
+      {!hideTextSections && (
+        <div className="mb-5">
+          <ReportSection title="结论" value={report?.conclusion} />
+          <ReportSection title="短期预测" value={report?.short_term_prediction} />
+          <ReportSection title="技术面" value={report?.technical} />
+          <ReportSection title="基本面" value={report?.fundamentals} />
+          <ReportSection title="风险指标" value={report?.risk} />
+          <ReportSection title="关键不确定性" value={report?.uncertainties} />
+        </div>
+      )}
+      {!hideTextSections && <MacroBackgroundDetails report={report} />}
 
       {asset.risk_metrics && (
         <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -1090,7 +1092,7 @@ function AnalysisContent() {
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-foreground">{tx(language, "各标的分析", "Asset-Level Analysis")}</h2>
               {assetResults.map((asset) => (
-                <AssetAnalysisCard key={`${asset.market}-${asset.symbol}`} asset={asset} />
+                <AssetAnalysisCard key={`${asset.market}-${asset.symbol}`} asset={asset} hideTextSections={assetResults.length <= 1} />
               ))}
             </div>
           )}

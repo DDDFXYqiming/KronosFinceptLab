@@ -485,7 +485,7 @@ export interface AgentAssetResult {
   symbol: string;
   market: string;
   name?: string | null;
-  report: AgentReport;
+  report: AgentReport | null;
   final_report: string;
   recommendation: string;
   confidence: number;
