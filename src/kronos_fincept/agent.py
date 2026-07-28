@@ -4189,7 +4189,7 @@ asset_reports: [
                 {"role": "user", "content": user_content},
             ],
             temperature=0.2,
-            max_tokens=3200,
+            max_tokens=6400,
             timeout=_llm_report_timeout_seconds(context),
             purpose="report",
             provider_timeouts=_report_provider_timeouts(context),
