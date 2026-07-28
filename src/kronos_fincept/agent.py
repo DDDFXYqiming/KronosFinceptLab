@@ -229,6 +229,8 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "china_macro_akshare",
         "china_macro_chinalive",
         "china_nbs_live",
+        "china_bond_yield",
+        "cboe_vix",
     }
 )
 MACRO_REQUIRED_DIMENSION_COUNT = 3
@@ -2767,11 +2769,13 @@ def _ensure_macro_provider_dimension_floor(
     *,
     question: str,
     symbols: list[str] | None = None,
-    max_providers: int = 5,
+    max_providers: int = 8,
 ) -> list[str]:
     """Expand auto-routed provider choices so web macro has enough independent dimensions."""
     selected = _filter_macro_provider_ids(provider_ids)
     candidates = [
+        "china_bond_yield",
+        "cboe_vix",
         "us_treasury",
         "cftc_cot",
         "source_project_macro_cache",
@@ -2853,7 +2857,7 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
     selected: list[str] = []
     local_first: tuple[str, ...] = ()
     if re.search(r"A股|港股|中国|人民币|上证|深证|沪深|创业板|科创|恒生|社融|北向|南向|pmi|cpi|ppi", question, re.IGNORECASE):
-        local_first = ("source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive")
+        local_first = ("source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive", "china_bond_yield")
         if _optional_provider_enabled("KRONOS_ENABLE_NBS_LIVE"):
             local_first = (*local_first, "china_nbs_live")
     elif re.search(r"美联储|美国|美元|美债|fed|treasury|cpi|gdp|pmi|unemployment|inflation|yield", text, re.IGNORECASE):
@@ -2977,7 +2981,7 @@ def _macro_context_from_gather(
     result: MacroGatherResult,
 ) -> dict[str, Any]:
     payload = result.to_dict()
-    dimension_coverage = _macro_dimension_coverage(payload["signals"], payload["provider_results"])
+    dimension_coverage = _macro_dimension_coverage(payload["signals"], payload["provider_results"], selected_provider_ids=provider_ids)
     local_data_assets = _macro_local_data_assets(payload["signals"])
     return {
         "question": question,
@@ -3055,6 +3059,7 @@ def _macro_signal_dimension(signal: dict[str, Any]) -> str:
 def _macro_dimension_coverage(
     signals: list[dict[str, Any]],
     provider_results: dict[str, Any] | None = None,
+    selected_provider_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     counts: dict[str, int] = {}
     sources: dict[str, list[str]] = {}
@@ -3066,6 +3071,13 @@ def _macro_dimension_coverage(
         source = str(signal.get("source") or "").strip()
         if source and source not in sources.setdefault(dimension, []):
             sources[dimension].append(source)
+
+    # Count intended dimensions from selected providers even if they returned no data
+    if selected_provider_ids:
+        for pid in selected_provider_ids:
+            dimension = MACRO_PROVIDER_DIMENSIONS.get(pid, "official_macro")
+            counts.setdefault(dimension, 0)
+            sources.setdefault(dimension, [])
 
     dimensions = sorted(counts)
     missing_dimensions = [dimension for dimension in MACRO_DIMENSION_LABELS if dimension not in counts]
@@ -3103,7 +3115,8 @@ def _macro_dimension_coverage_from_context(
     provider_results = macro_context.get("provider_results")
     if not isinstance(provider_results, dict):
         provider_results = {}
-    return _macro_dimension_coverage(signals or _normalize_macro_signals(macro_context.get("signals")), provider_results)
+    selected_ids = macro_context.get("selected_provider_ids")
+    return _macro_dimension_coverage(signals or _normalize_macro_signals(macro_context.get("signals")), provider_results, selected_provider_ids=selected_ids)
 
 
 def _macro_response_fields(
