@@ -3,6 +3,8 @@ Derivatives pricing module.
 """
 from typing import Optional
 from dataclasses import dataclass
+from datetime import date, timedelta
+import math
 import numpy as np
 from scipy.stats import norm
 
@@ -311,8 +313,224 @@ class DerivativesPricer:
             
             if abs(diff) < tolerance:
                 return sigma
-            
-            # Newton-Raphson update
-            sigma -= diff / (result.vega * 100)  # vega is per 1% change
-        
-        return sigma
+
+
+# ── Bond Pricing ────────────────────────────────────────────────────
+
+@dataclass
+class BondResult:
+    clean_price: float
+    dirty_price: float
+    accrued_interest: float
+    duration: float       # Modified duration
+    convexity: float
+    ytm: float | None = None
+
+
+def price_bond(
+    issue_date: date,
+    settle_date: date,
+    maturity_date: date,
+    coupon_rate: float,
+    ytm: float,
+    freq: int = 2,
+    face: float = 100.0,
+) -> BondResult:
+    """Price a fixed-rate bond. Returns clean/dirty price, duration, convexity."""
+    if settle_date >= maturity_date:
+        raise ValueError("Settlement date must be before maturity")
+
+    def _year_frac(d1: date, d2: date) -> float:
+        return (d2 - d1).days / 365.0
+
+    # Calculate periods
+    remaining = _year_frac(settle_date, maturity_date)
+    n = max(1, round(remaining * freq))
+    period = 1.0 / freq
+    rate = ytm / freq
+    coupon = coupon_rate / freq * face
+
+    # Dirty price: PV of coupons + PV of face
+    pv_coupons = sum(coupon / (1 + rate) ** t for t in range(1, n + 1))
+    pv_face = face / (1 + rate) ** n
+    dirty_price = pv_coupons + pv_face
+
+    # Accrued interest
+    last_coupon_date = settle_date
+    while last_coupon_date > issue_date:
+        candidate = last_coupon_date - timedelta(days=int(365 / freq))
+        if candidate < issue_date:
+            break
+        last_coupon_date = candidate
+    accrued = coupon * _year_frac(last_coupon_date, settle_date) / period if period > 0 else 0.0
+    clean_price = dirty_price - accrued
+
+    # Duration (modified)
+    macaulay = sum(t * period * coupon / (1 + rate) ** t for t in range(1, n + 1)) / dirty_price
+    macaulay += n * period * face / (1 + rate) ** n / dirty_price
+    modified_duration = macaulay / (1 + ytm / freq)
+
+    # Convexity
+    convexity = sum(t * period * (t * period + period) * coupon / (1 + rate) ** t for t in range(1, n + 1))
+    convexity += n * period * (n * period + period) * face / (1 + rate) ** n
+    convexity = convexity / dirty_price / (1 + ytm / freq) ** 2
+
+    return BondResult(
+        clean_price=round(clean_price, 4),
+        dirty_price=round(dirty_price, 4),
+        accrued_interest=round(accrued, 4),
+        duration=round(modified_duration, 4),
+        convexity=round(convexity, 4),
+        ytm=ytm,
+    )
+
+
+def bond_ytm(
+    issue_date: date,
+    settle_date: date,
+    maturity_date: date,
+    coupon_rate: float,
+    clean_price: float,
+    freq: int = 2,
+    face: float = 100.0,
+    guess: float = 0.05,
+) -> float:
+    """Solve for YTM given clean price using Newton's method."""
+    from scipy.optimize import newton
+    def f(ytm: float) -> float:
+        result = price_bond(issue_date, settle_date, maturity_date, coupon_rate, ytm, freq, face)
+        return result.clean_price - clean_price
+    try:
+        return round(float(newton(f, guess, maxiter=100, tol=1e-8)), 6)
+    except Exception:
+        raise ValueError("YTM solver did not converge")
+
+
+# ── CDS Pricing (Reduced-Form) ──────────────────────────────────────
+
+@dataclass
+class CdsResult:
+    upfront: float        # Upfront premium (per notional)
+    hazard_rate: float    # Implied hazard rate
+    survival_prob: float  # Survival probability to maturity
+    spread_bps: float     # CDS spread in bps
+
+
+def price_cds(
+    maturity_date: date,
+    recovery_rate: float,
+    spread_bps: float,
+    risk_free_rate: float = 0.03,
+    notional: float = 1.0,
+) -> CdsResult:
+    """Simple reduced-form CDS pricing model."""
+    today = date.today()
+    if maturity_date <= today:
+        raise ValueError("Maturity must be in the future")
+    T = (maturity_date - today).days / 365.0
+    # Hazard rate from spread approximation: h ≈ s / (1 - R)
+    hazard = spread_bps / 10000.0 / (1 - recovery_rate) if recovery_rate < 1 else 0.0
+    survival = math.exp(-hazard * T)
+    # Present value of premium leg
+    dt = 0.25
+    n = max(1, int(T / dt))
+    premium_pv = sum(spread_bps / 10000.0 * notional * dt * math.exp(-risk_free_rate * t * dt) * math.exp(-hazard * t * dt) for t in range(1, n + 1))
+    # Present value of protection leg
+    protection_pv = (1 - recovery_rate) * notional * sum(
+        math.exp(-risk_free_rate * t * dt) * (math.exp(-hazard * (t - 1) * dt) - math.exp(-hazard * t * dt))
+        for t in range(1, n + 1)
+    )
+    upfront = protection_pv - premium_pv
+    return CdsResult(
+        upfront=round(upfront, 4),
+        hazard_rate=round(hazard, 6),
+        survival_prob=round(survival, 4),
+        spread_bps=spread_bps,
+    )
+
+
+# ── Interest Rate Swap (IRS) Pricing ────────────────────────────────
+
+@dataclass
+class SwapResult:
+    swap_value: float
+    fixed_leg_pv: float
+    floating_leg_pv: float
+    par_rate: float  # Fair swap rate
+
+
+def price_irs(
+    notional: float,
+    fixed_rate: float,
+    tenor_years: int,
+    freq: int = 2,
+    discount_curve: list[float] | None = None,
+) -> SwapResult:
+    """Simple IRS pricing with flat or custom discount curve."""
+    n = tenor_years * freq
+    period = 1.0 / freq
+    if discount_curve is None:
+        discount_curve = [0.03] * n  # flat 3%
+    fixed_leg = sum(notional * fixed_rate * period * math.exp(-discount_curve[t] * (t + 1) * period) for t in range(n))
+    floating_leg = sum(notional * discount_curve[t] * period * math.exp(-discount_curve[t] * (t + 1) * period) for t in range(n))
+    swap_value = floating_leg - fixed_leg
+    par_rate = sum(discount_curve[t] * period * math.exp(-discount_curve[t] * (t + 1) * period) for t in range(n))
+    par_rate /= sum(period * math.exp(-discount_curve[t] * (t + 1) * period) for t in range(n))
+    return SwapResult(
+        swap_value=round(swap_value, 4),
+        fixed_leg_pv=round(fixed_leg, 4),
+        floating_leg_pv=round(floating_leg, 4),
+        par_rate=round(par_rate, 6),
+    )
+
+
+# ── FX Option (Garman-Kohlhagen) ────────────────────────────────────
+
+@dataclass
+class FxOptionResult:
+    premium: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+    rho: float
+    implied_vol: float | None = None
+
+
+def price_fx_option(
+    spot: float,
+    strike: float,
+    time_years: float,
+    vol: float,
+    domestic_rate: float,
+    foreign_rate: float,
+    option_type: str = "call",
+) -> FxOptionResult:
+    """Price FX option using Garman-Kohlhagen model."""
+    if time_years <= 0 or vol <= 0 or spot <= 0 or strike <= 0:
+        raise ValueError("All parameters must be positive")
+    d1 = (math.log(spot / strike) + (domestic_rate - foreign_rate + 0.5 * vol * vol) * time_years) / (vol * math.sqrt(time_years))
+    d2 = d1 - vol * math.sqrt(time_years)
+    from scipy.stats import norm
+    if option_type == "call":
+        premium = spot * math.exp(-foreign_rate * time_years) * norm.cdf(d1) - strike * math.exp(-domestic_rate * time_years) * norm.cdf(d2)
+        delta = math.exp(-foreign_rate * time_years) * norm.cdf(d1)
+    else:
+        premium = strike * math.exp(-domestic_rate * time_years) * norm.cdf(-d2) - spot * math.exp(-foreign_rate * time_years) * norm.cdf(-d1)
+        delta = -math.exp(-foreign_rate * time_years) * norm.cdf(-d1)
+    gamma = math.exp(-foreign_rate * time_years) * norm.pdf(d1) / (spot * vol * math.sqrt(time_years))
+    vega = spot * math.exp(-foreign_rate * time_years) * norm.pdf(d1) * math.sqrt(time_years) / 100.0
+    theta = -(
+        spot * math.exp(-foreign_rate * time_years) * norm.pdf(d1) * vol / (2 * math.sqrt(time_years))
+        + domestic_rate * strike * math.exp(-domestic_rate * time_years) * norm.cdf(d2 if option_type == "call" else -d2)
+        - foreign_rate * spot * math.exp(-foreign_rate * time_years) * norm.cdf(d1 if option_type == "call" else -d1)
+    ) / 365.0
+    rho = strike * time_years * math.exp(-domestic_rate * time_years) * (norm.cdf(d2) if option_type == "call" else -norm.cdf(-d2)) / 100.0
+    return FxOptionResult(
+        premium=round(premium, 4),
+        delta=round(delta, 4),
+        gamma=round(gamma, 4),
+        vega=round(vega, 4),
+        theta=round(theta, 4),
+        rho=round(rho, 4),
+    )

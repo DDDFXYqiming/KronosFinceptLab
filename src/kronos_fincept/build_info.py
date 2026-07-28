@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import os
+import subprocess
 
 
 DEFAULT_APP_VERSION = "v10.9.0"
@@ -39,22 +40,34 @@ def _first_env(names: tuple[str, ...]) -> str | None:
     return None
 
 
+def _git_commit() -> str | None:
+    """Fallback: read current git commit hash."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+        ).decode("utf-8", errors="replace").strip()
+    except Exception:
+        return None
+
+
 def get_build_info() -> BuildInfo:
     """Return safe build metadata from an explicit environment-variable allowlist."""
+    commit = _first_env(
+        (
+            "KRONOS_BUILD_COMMIT",
+            "KRONOS_GIT_COMMIT",
+            "ZEABUR_GIT_COMMIT_SHA",
+            "VERCEL_GIT_COMMIT_SHA",
+            "GITHUB_SHA",
+            "COMMIT_SHA",
+            "SOURCE_COMMIT",
+        )
+    )
     return BuildInfo(
         app_version=_first_env(("KRONOS_APP_VERSION",)) or DEFAULT_APP_VERSION,
-        build_commit=_first_env(
-            (
-                "KRONOS_BUILD_COMMIT",
-                "KRONOS_GIT_COMMIT",
-                "ZEABUR_GIT_COMMIT_SHA",
-                "VERCEL_GIT_COMMIT_SHA",
-                "GITHUB_SHA",
-                "COMMIT_SHA",
-                "SOURCE_COMMIT",
-            )
-        )
-        or UNKNOWN,
+        build_commit=commit or _git_commit() or UNKNOWN,
         build_ref=_first_env(
             (
                 "KRONOS_BUILD_REF",

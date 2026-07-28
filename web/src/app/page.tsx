@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Card, CardTitle, CardStat, CardGrid } from "@/components/ui/Card";
 import { SectionLabel } from "@/components/ui/SectionLabel";
 import { ApiKeyNotice } from "@/components/ui/ApiKeyNotice";
 import { api } from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
 import { useAppStore } from "@/stores/app";
 import type { Language } from "@/lib/i18n";
 import { formatDuration } from "@/lib/utils";
@@ -32,14 +34,16 @@ function quickLinks(language: Language) {
 }
 
 export default function Dashboard() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health(),
+    queryFn: ({ signal }) => api.health({ signal }),
+    refetchInterval: 120000,
+  });
   const [recentResults, setRecentResults] = useState<string[]>([]);
   const { watchlist, preferences } = useAppStore();
   const language = preferences.language;
   const links = useMemo(() => quickLinks(language), [language]);
   const watchlistQuotes = useMemo(() => watchlist.slice(0, 6), [watchlist]);
-
-  useEffect(() => { api.health().then(setHealth).catch(() => {}); }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const keys = Object.keys(window.sessionStorage)

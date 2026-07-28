@@ -544,7 +544,7 @@ function KronosMiniKline({ forecast }: { forecast: ForecastRow[] }) {
           const openY = toY(row.open);
           const closeY = toY(row.close);
           const rising = row.close >= row.open;
-          const color = rising ? "#10B981" : "#EF4444";
+          const color = rising ? "#EF4444" : "#10B981";
           const bodyTop = Math.min(openY, closeY);
           const bodyHeight = Math.max(Math.abs(openY - closeY), 1.6);
           return (

@@ -259,12 +259,12 @@ function ForecastContent() {
     chartRef.current = chart;
 
     const candlestickSeries = chart.addCandlestickSeries({
-      upColor: "#10B981",
-      downColor: "#EF4444",
-      borderDownColor: "#EF4444",
-      borderUpColor: "#10B981",
-      wickDownColor: "#EF4444",
-      wickUpColor: "#10B981",
+      upColor: "#EF4444",
+      downColor: "#10B981",
+      borderDownColor: "#10B981",
+      borderUpColor: "#EF4444",
+      wickDownColor: "#10B981",
+      wickUpColor: "#EF4444",
     });
     candlestickSeriesRef.current = candlestickSeries;
 

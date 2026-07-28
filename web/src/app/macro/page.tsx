@@ -832,6 +832,7 @@ function MacroContent() {
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); (e.target as HTMLFormElement).closest("form")?.requestSubmit(); } }}
             rows={4}
             className="app-input min-h-36 resize-none px-4 py-3"
             placeholder={tx(language, "例如：现在适合买黄金吗？", "Example: is now a good time to buy gold?")}

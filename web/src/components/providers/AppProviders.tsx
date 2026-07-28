@@ -1,10 +1,38 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ConfigProvider, theme } from "antd";
+import {
+  Alert, Button, Card, ConfigProvider, Modal, Select, Spin, Tag, theme,
+} from "antd";
 import { StyleProvider, createCache } from "@ant-design/cssinjs";
 import zhCN from "antd/locale/zh_CN";
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+
+const preWarmStyle: React.CSSProperties = {
+  display: "none",
+  position: "fixed",
+  pointerEvents: "none",
+  opacity: 0,
+  zIndex: -1,
+};
+
+function CSSCachePreWarm() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+  return (
+    <div style={preWarmStyle} aria-hidden="true">
+      <Button />
+      <Button type="primary" />
+      <Select />
+      <Tag />
+      <Alert message="" type="info" />
+      <Card />
+      <Spin />
+      <Modal open={false} />
+    </div>
+  );
+}
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -66,6 +94,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       }}
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <CSSCachePreWarm />
     </ConfigProvider>
     </StyleProvider>
   );
