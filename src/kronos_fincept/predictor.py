@@ -29,7 +29,7 @@ os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
 _PREDICTOR_CACHE_LOCK = threading.RLock()
 _INFERENCE_LOCKS: dict[str, threading.Lock] = {}
 _INFERENCE_LOCKS_GUARD = threading.Lock()
-_LOCK_ACQUIRE_TIMEOUT_SECONDS = 60.0
+_LOCK_ACQUIRE_TIMEOUT_SECONDS = 300.0
 
 
 def _acquire_lock_or_timeout(lock: threading.Lock | threading.RLock, *, name: str, cache_key: str) -> None:
