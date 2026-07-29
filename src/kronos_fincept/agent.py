@@ -3484,7 +3484,7 @@ def _forecast_request_for_rows(symbol: str, rows: list[dict[str, Any]], *, dry_r
         tokenizer_id=resolve_tokenizer_id(effective_id),
         max_context=resolve_max_context(effective_id),
         dry_run=dry_run,
-        sample_count=1,
+        sample_count=16,
     )
 
 
