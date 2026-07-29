@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,10 +28,23 @@ from kronos_fincept.schemas import (
 from kronos_fincept.security_utils import safe_configured_model_id, validate_kronos_model_id
 
 
+logger = logging.getLogger(__name__)
+
+
 def _effective_model_id(model_id: str) -> str:
     if model_id == DEFAULT_MODEL_ID and settings.kronos.model_id:
         return safe_configured_model_id(settings.kronos.model_id, DEFAULT_MODEL_ID)
     return validate_kronos_model_id(model_id)
+
+
+def _configured_device() -> str | None:
+    value = str(getattr(settings.kronos, "device", "") or "").strip()
+    return value or None
+
+
+def _predictor_device_kwargs() -> dict[str, str]:
+    device = _configured_device()
+    return {"device": device} if device else {}
 
 
 def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
@@ -134,6 +148,7 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
         top_k=request.top_k,
         top_p=request.top_p,
         sample_count=request.sample_count,
+        **_predictor_device_kwargs(),
     )
 
     if request.sample_count > 1:
@@ -181,7 +196,84 @@ def prewarm_default_predictor() -> dict[str, Any]:
         model_id=effective_id,
         tokenizer_id=tokenizer_id,
         max_context=resolve_max_context(effective_id),
+        **_predictor_device_kwargs(),
     )
+
+
+@log_perf(event="svc.batch_forecast_responses", level=20)
+def forecast_batch_responses(requests: list[ForecastRequest]) -> list[dict[str, Any]]:
+    """Return standard forecast responses while batching compatible real-model requests.
+
+    Kronos' upstream ``predict_batch`` accepts ``sample_count`` and performs the
+    stochastic samples inside one batched inference call. This keeps the normal
+    response contract while avoiding one model invocation per asset.
+    """
+    if not requests:
+        return []
+
+    first = requests[0]
+    compatible = (
+        len(requests) > 1
+        and all(not req.dry_run for req in requests)
+        and settings.kronos.enable_real_model
+        and all(req.pred_len == first.pred_len for req in requests)
+        and all(_effective_model_id(req.model_id) == _effective_model_id(first.model_id) for req in requests)
+        and all(req.temperature == first.temperature for req in requests)
+        and all(req.top_k == first.top_k for req in requests)
+        and all(req.top_p == first.top_p for req in requests)
+        and all(req.sample_count == first.sample_count for req in requests)
+    )
+    if not compatible:
+        return [forecast_from_request(req) for req in requests]
+
+    effective_id = _effective_model_id(first.model_id)
+    predictor = KronosPredictorWrapper(
+        model_id=effective_id,
+        tokenizer_id=resolve_tokenizer_id(effective_id),
+        max_context=resolve_max_context(effective_id),
+        temperature=first.temperature,
+        top_k=first.top_k,
+        top_p=first.top_p,
+        sample_count=first.sample_count,
+        **_predictor_device_kwargs(),
+    )
+    frames: list[pd.DataFrame] = []
+    timestamps: list[pd.Series] = []
+    for request in requests:
+        frame, series = rows_to_dataframe(request.rows_as_dicts())
+        frames.append(frame)
+        timestamps.append(series)
+
+    try:
+        results = predictor.predict_batch(frames, timestamps, first.pred_len)
+    except Exception as exc:
+        log_event(
+            logger,
+            logging.WARNING,
+            "svc.batch_forecast.fallback",
+            "Batch forecast failed; falling back to sequential forecasts",
+            error_type=type(exc).__name__,
+            batch_size=len(requests),
+        )
+        return [forecast_from_request(req) for req in requests]
+
+    responses: list[dict[str, Any]] = []
+    for request, result in zip(requests, results):
+        response = _build_forecast_response(
+            request,
+            result.frame,
+            result.device,
+            result.elapsed_ms,
+            result.backend,
+            model_cached=result.model_cached,
+            cache_key=result.cache_key,
+            load_wait_ms=result.load_wait_ms,
+            inference_wait_ms=result.inference_wait_ms,
+        )
+        response["metadata"]["batch_size"] = len(requests)
+        response["metadata"]["sample_count"] = request.sample_count
+        responses.append(response)
+    return responses
 
 
 @dataclass
@@ -239,6 +331,7 @@ def batch_forecast_from_requests(
             top_k=requests[0].top_k,
             top_p=requests[0].top_p,
             sample_count=requests[0].sample_count,
+            **_predictor_device_kwargs(),
         )
 
         dfs = []

@@ -39,6 +39,7 @@ def get_predictor(
         top_k=top_k,
         top_p=top_p,
         sample_count=sample_count,
+        device=str(getattr(settings.kronos, "device", "") or "").strip() or None,
     )
 
 
@@ -60,7 +61,10 @@ def get_model_info(deep: bool = False) -> dict[str, Any]:
     does not import torch or upstream Kronos code. Use deep=True for an explicit
     operator diagnostic that validates heavyweight imports.
     """
-    device = "cpu"
+    configured_device = str(
+        getattr(settings.kronos, "device", "") or os.environ.get("KRONOS_DEVICE") or ""
+    ).strip().lower()
+    device = configured_device or "cpu"
     model_enabled = settings.kronos.enable_real_model
     capabilities: dict[str, bool] = {
         "akshare": _has_module("akshare"),
@@ -78,7 +82,7 @@ def get_model_info(deep: bool = False) -> dict[str, Any]:
 
     # Check for AMD ROCm
     rocm = os.environ.get("ROCR_VISIBLE_DEVICES")
-    if rocm:
+    if rocm and not configured_device:
         device = "rocm"
 
     repo = _resolve_kronos_repo()
@@ -91,7 +95,7 @@ def get_model_info(deep: bool = False) -> dict[str, Any]:
     elif deep:
         try:
             import torch
-            if torch.cuda.is_available():
+            if torch.cuda.is_available() and not configured_device:
                 device = "cuda:0"
         except Exception as exc:
             model_error = f"torch unavailable: {exc}"

@@ -116,7 +116,10 @@ export type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 const DEFAULT_TIMEOUT_MS = 45000;
-const AGENT_ANALYZE_TIMEOUT_MS = 120000;
+// Keep the browser budget slightly above the API's 300 s ceiling. The analysis
+// pages already reject concurrent clicks; aborting earlier releases that guard
+// while the server-side worker is still running and can create duplicate work.
+const AGENT_ANALYZE_TIMEOUT_MS = 310000;
 // Legacy diagnostics anchors for tests: Agent 分析包含行情、Kronos、网页检索和 LLM 汇总；Zeabur 网关；容器重启；推理超时；内存压力。
 export const KRONOS_API_KEY_STORAGE_KEY = "kronos-api-key";
 

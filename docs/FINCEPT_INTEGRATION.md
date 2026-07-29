@@ -1,6 +1,8 @@
 # FinceptTerminal 集成指南
 
 > 本文档描述 KronosFinceptLab 与 FinceptTerminal 的集成方式。
+>
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
 
 ---
 
@@ -57,15 +59,14 @@ graph TB
 
 | 组件 | 状态 | 说明 |
 |------|------|------|
-| 桥接脚本 | 已部署 | kronos_forecast.py 位于 fincept-qt/scripts/ |
-| PythonWorker 协议 | 兼容 | 4字节长度前缀帧已测试 |
-| 预测（干运行） | 通过 | 单资产预测正确返回 |
-| 批量预测 | 通过 | 多资产排名正确返回 |
-| 关闭 | 通过 | 干净退出 |
-| 错误处理 | 通过 | 错误返回不崩溃 |
-| C++ 服务层 | 已编写 | KronosForecastService.h/.cpp |
+| 桥接脚本 | 仓库内已提供 | `integrations/fincept_terminal/scripts/kronos_forecast.py` |
+| PythonWorker 协议 | 有测试覆盖 | 4 字节长度前缀帧 |
+| 预测（干运行） | 有测试覆盖 | 单资产预测响应 |
+| 批量预测 | 有测试覆盖 | 多资产排名响应 |
+| 关闭与错误处理 | 有测试覆盖 | 干净退出和结构化错误 |
+| C++ 服务层 | 仓库内已提供 | `KronosForecastService.h/.cpp` |
 
-### 待完成（需 FinceptTerminal 编译）
+### 外部 FinceptTerminal 仍需完成
 
 - [ ] 将 C++ 文件添加到 FinceptTerminal CMakeLists.txt
 - [ ] 在 ServiceManager 中注册 KronosForecastService

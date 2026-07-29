@@ -45,6 +45,24 @@ def _supported_model_ids(active_model_id: str) -> list[str]:
     return ids
 
 
+def _merge_runtime_model_info(model_info: dict) -> dict:
+    """Overlay live predictor-cache state without triggering a model load."""
+    merged = dict(model_info)
+    try:
+        from kronos_fincept.predictor import predictor_cache_stats
+
+        cache = predictor_cache_stats()
+    except Exception:
+        return merged
+    if int(cache.get("size") or 0) > 0:
+        merged["model_loaded"] = True
+        devices = cache.get("devices") or []
+        if devices:
+            merged["device"] = str(devices[0])
+        merged["model_error"] = None
+    return merged
+
+
 @router.get("/health", response_model=HealthResponseOut)
 async def health_check(request: Request) -> HealthResponseOut:
     """Return lightweight service health status."""
@@ -60,7 +78,7 @@ async def deep_health_check(request: Request) -> HealthResponseOut:
 def _build_health_response(request: Request, deep: bool) -> HealthResponseOut:
     start_time = getattr(request.app.state, "start_time", time.time())
     uptime = time.time() - start_time
-    model_info = get_model_info(deep=deep)
+    model_info = _merge_runtime_model_info(get_model_info(deep=deep))
     build_info = get_build_info()
 
     model_id = model_info["model_id"]

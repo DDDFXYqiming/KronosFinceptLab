@@ -26,7 +26,7 @@ function CSSCachePreWarm() {
       <Button type="primary" />
       <Select />
       <Tag />
-      <Alert message="" type="info" />
+      <Alert title="" type="info" />
       <Card />
       <Spin />
       <Modal open={false} />

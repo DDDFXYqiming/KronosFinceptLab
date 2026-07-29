@@ -224,6 +224,7 @@ class KronosConfig:
     hf_home: str = field(default_factory=lambda: _get("HF_HOME"))
     model_id: str = field(default_factory=lambda: _resolve_kronos_model_id())
     tokenizer_id: str = "NeoQuasar/Kronos-Tokenizer-base"
+    device: str = field(default_factory=lambda: _get("KRONOS_DEVICE"))
     enable_real_model: bool = field(default_factory=lambda: _get_bool("KRONOS_ENABLE_REAL_MODEL", True))
     allow_dry_run: bool = field(default_factory=lambda: _get_bool("KRONOS_ALLOW_DRY_RUN", True))
     prewarm_on_startup: bool = field(default_factory=lambda: _get_bool("KRONOS_PREWARM_ON_STARTUP", False))

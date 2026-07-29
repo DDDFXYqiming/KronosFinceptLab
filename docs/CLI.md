@@ -1,6 +1,8 @@
 # KronosFinceptLab CLI 命令文档
 
 > 本文档描述所有 CLI 命令、参数和用法示例。
+>
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
 
 ---
 
@@ -388,7 +390,7 @@ kronos watchlist research --id {id}
 
 | 变量 | 说明 | CLI 影响 |
 |------|------|----------|
-| `KRONOS_MODEL_ID` | 模型 ID | 预测命令 |
+| `KRONOS_MODEL_ID` | 模型 ID（mini/small/base） | 预测命令 |
 | `KRONOS_DEVICE` | cpu/cuda/rocm | 预测命令 |
 | `KRONOS_ENABLE_REAL_MODEL` | 启用真实推理 | 预测命令 |
 | `KRONOS_ALLOW_DRY_RUN` | 允许干运行 | 预测命令 |

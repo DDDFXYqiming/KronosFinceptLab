@@ -43,10 +43,10 @@ for (const needle of [
   "/jobs/forecast",
   "securitySummary",
   "/admin/security/summary",
-  "errors.apiKeyRequired",
 ]) {
   assertIncludes(api, needle, "api client contract");
 }
+assertNotIncludes(api, "errors.apiKeyRequired", "auth-disabled API client contract");
 
 const demoData = read("src/lib/demoData.ts");
 for (const needle of ["demoHistoricalRows", "demoForecastRows", "demoAgentResult", "demoMacroResult", "演示数据，不构成投资建议"]) {

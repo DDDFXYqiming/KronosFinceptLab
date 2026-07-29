@@ -1,4 +1,8 @@
-# KFL Upstream Enhancement — Progress Checkpoint
+# KFL Upstream Enhancement — Historical Progress Checkpoint
+
+> Status: Historical / Archived
+> Purpose: point-in-time implementation checkpoint.
+> Current status: see [`../../../integrations/digital_oracle/README.md`](../../../integrations/digital_oracle/README.md).
 ## Date: 2026-07-23
 ## Phase: Wave 1A - DO Provider Wrapper (COMPLETE)
 

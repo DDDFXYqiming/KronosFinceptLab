@@ -11,7 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 
 from kronos_fincept.api.models import ForecastMetadataOut
-from kronos_fincept.api.routes.news import DEFAULT_RSS_FEEDS
+from kronos_fincept.api.routes.news import DEFAULT_RSS_FEEDS, validate_rss_feed_url
 from kronos_fincept.logging_config import log_event, log_perf
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class MacroRssFeedIn(BaseModel):
     @field_validator("url")
     @classmethod
     def _validate_url(cls, value: str) -> str:
-        return validate_public_https_url(value, dns_env_key="KRONOS_RSS_VALIDATE_DNS")
+        return validate_rss_feed_url(value)
 
 
 class MacroAnalyzeRequest(BaseModel):

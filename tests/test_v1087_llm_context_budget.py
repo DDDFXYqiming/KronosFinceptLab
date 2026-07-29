@@ -189,3 +189,43 @@ def test_v1087_web_report_uses_single_llm_budget(monkeypatch):
     timeouts = agent._report_provider_timeouts({"entry": "web-analysis"})
 
     assert timeouts == {"llm": agent.WEB_REPORT_SINGLE_PROVIDER_TIMEOUT_SECONDS}
+
+
+def test_multi_asset_llm_context_uses_tighter_research_and_macro_budget():
+    from kronos_fincept import agent
+
+    context = {
+        "assets": [
+            {
+                "symbol": symbol,
+                "market": "cn",
+                "online_research": {
+                    "enabled": True,
+                    "results": [
+                        {
+                            "title": f"{symbol}-{index}",
+                            "snippet": "x" * 1000,
+                            "url": f"https://example.com/{symbol}/{index}",
+                        }
+                        for index in range(12)
+                    ],
+                },
+            }
+            for symbol in ("600036", "600519", "000858")
+        ],
+        "macro_data": {
+            "signals": [{"name": f"signal-{index}", "summary": "m" * 500} for index in range(20)],
+            "provider_results": [{"raw": "z" * 5000}],
+            "errors": ["slow provider"],
+            "dimension_coverage": {"growth": True},
+        },
+    }
+
+    compact = agent._compact_llm_report_context(context)
+    encoded = json.dumps(compact, ensure_ascii=False)
+
+    assert all(len(asset["online_research"]["results"]) == 4 for asset in compact["assets"])
+    assert all(len(asset["online_research"]["results"][0]["snippet"]) < 400 for asset in compact["assets"])
+    assert len(compact["macro_data"]["signals"]) == 8
+    assert "provider_results" not in compact["macro_data"]
+    assert len(encoded) < 18000

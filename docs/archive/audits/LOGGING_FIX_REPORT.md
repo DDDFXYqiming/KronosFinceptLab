@@ -1,4 +1,7 @@
-# Logging System 4-Blind-Spot Fix Report
+# Logging System 4-Blind-Spot Historical Fix Report
+
+> Status: Historical / Archived
+> Purpose: point-in-time repair record; not a current quality report.
 **Date**: 2026-07-23 | **Tests**: 151 passed / 152 (1 pre-existing failure)
 
 ---

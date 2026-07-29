@@ -2,6 +2,8 @@
 
 This document describes the bridge path. It does not require C++ UI changes. Forecast/batch still use the Python bridge; richer research functions such as money flow, sector flow, source-market cache, macro, agent analysis, alerts, and watchlist research are available through the project REST API or MCP server.
 
+Document status: Current | Project version: 10.9.0 | Last reviewed: 2026-07-29
+
 ## 1. Install the integration package
 
 From this repository:
@@ -62,7 +64,7 @@ KRONOS_REPO_PATH=/path/to/Kronos python3 kronos_forecast.py --input request.real
 | timeframe | string | "unknown" | Candle interval |
 | pred_len | int | required | Number of future candles to predict |
 | dry_run | bool | false | Use deterministic dry-run predictor |
-| model_id | string | NeoQuasar/Kronos-base | HuggingFace model ID or local path |
+| model_id | string | NeoQuasar/Kronos-base | Supported public Kronos model ID |
 | tokenizer_id | string | NeoQuasar/Kronos-Tokenizer-base | HuggingFace tokenizer ID or local path |
 | max_context | int | 512 | Max context length for Kronos |
 | temperature | float | 1.0 | Sampling temperature |

@@ -23,7 +23,7 @@ export function AntAlert({
   return (
     <Alert
       type={type}
-      message={message}
+      title={message}
       description={description}
       closable={closable}
       showIcon={showIcon}

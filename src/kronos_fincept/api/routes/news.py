@@ -28,6 +28,20 @@ DEFAULT_RSS_FEEDS: tuple[dict[str, str], ...] = (
     {"id": "sec", "title": "SEC", "url": "https://www.sec.gov/news/pressreleases.rss"},
     {"id": "ecb", "title": "ECB", "url": "https://www.ecb.europa.eu/rss/press.html"},
 )
+DEFAULT_RSS_FEED_URLS = frozenset(feed["url"] for feed in DEFAULT_RSS_FEEDS)
+
+
+def validate_rss_feed_url(value: str) -> str:
+    """Validate an RSS URL while allowing the app's fixed public feeds.
+
+    Some local proxy/DNS environments resolve public hosts to synthetic private
+    addresses. The built-in URLs are fixed application constants, so they do
+    not need user-target DNS validation; custom feeds remain fully protected.
+    """
+    text = str(value or "").strip()
+    if text in DEFAULT_RSS_FEED_URLS:
+        return text
+    return validate_public_https_url(text, dns_env_key="KRONOS_RSS_VALIDATE_DNS")
 
 
 class RssFeedIn(BaseModel):
@@ -38,7 +52,7 @@ class RssFeedIn(BaseModel):
     @field_validator("url")
     @classmethod
     def _validate_url(cls, value: str) -> str:
-        return validate_public_https_url(value, dns_env_key="KRONOS_RSS_VALIDATE_DNS")
+        return validate_rss_feed_url(value)
 
 
 class RssFetchRequest(BaseModel):

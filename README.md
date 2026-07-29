@@ -3,6 +3,9 @@
 > 本地优先的量化金融分析驾驶舱  
 > 版本：10.9.0 | Python >= 3.11 | Node >= 18
 
+> 文档状态：Current | 最后核对：2026-07-29
+> 当前文档以代码、运行配置和完整生产推理链路为准；历史计划与旧评测统一存放在 `docs/archive/`。
+
 ---
 
 ## 简介
@@ -156,7 +159,11 @@ KronosFinceptLab/
 │   ├── CLI.md                   # CLI 命令参考
 │   ├── DEPLOYMENT.md            # 本地与 Docker 部署
 │   ├── START_GUIDE.md           # 快速启动指南
-│   └── FINCEPT_INTEGRATION.md   # FinceptTerminal 集成
+│   ├── FINCEPT_INTEGRATION.md   # FinceptTerminal 集成
+│   ├── FINETUNE_DATA_PREP.md    # 当前微调数据规范
+│   ├── FINETUNE_REPORT.md       # 最新生产链路评测
+│   ├── EVALUATION_PROTOCOL.md   # 滚动评测、数据隔离和 Bootstrap 协议
+│   └── archive/                 # 历史计划、旧评测与一次性审计
 ├── examples/                    # 使用示例
 ├── integrations/                # 外部集成（FinceptTerminal）
 └── scripts/                     # 工具脚本
@@ -174,7 +181,13 @@ KronosFinceptLab/
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 本地、Docker、Zeabur 部署 |
 | [docs/START_GUIDE.md](docs/START_GUIDE.md) | 逐步首次运行指南 |
 | [docs/FINCEPT_INTEGRATION.md](docs/FINCEPT_INTEGRATION.md) | FinceptTerminal C++/Python 桥接 |
+| [docs/FINETUNE_DATA_PREP.md](docs/FINETUNE_DATA_PREP.md) | 当前日线微调数据规范 |
+| [docs/FINETUNE_REPORT.md](docs/FINETUNE_REPORT.md) | 最新完整生产链路评测 |
+| [docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md) | 当前滚动评测、训练/验证/封存测试和统计规范 |
 | [kronos_mcp/README.md](kronos_mcp/README.md) | MCP 服务工具与客户端配置 |
+| [docs/archive/README.md](docs/archive/README.md) | 历史计划、旧评测与一次性审计 |
+
+`external/Kronos/` 是上游 Kronos 项目副本，其 README 和示例仅作为上游参考，不定义 KronosFinceptLab 的当前运行或训练标准。
 
 ---
 

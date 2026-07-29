@@ -208,6 +208,7 @@ def predictor_cache_stats() -> dict[str, Any]:
         return {
             "size": len(_PREDICTOR_CACHE),
             "keys": ["|".join(str(part) for part in key) for key in _PREDICTOR_CACHE],
+            "devices": sorted({entry.device for entry in _PREDICTOR_CACHE.values()}),
         }
 
 

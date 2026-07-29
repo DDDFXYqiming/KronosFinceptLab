@@ -1,4 +1,8 @@
-# 数据质量优化计划
+# 数据质量历史优化计划
+
+> 状态：Historical / Archived
+> 用途：保留旧的数据扩展预测与执行思路，不代表当前结论。
+> 当前标准：以 [`../../FINETUNE_DATA_PREP.md`](../../FINETUNE_DATA_PREP.md) 和 [`../../FINETUNE_REPORT.md`](../../FINETUNE_REPORT.md) 为准。
 
 > 基于现有数据源能力：AKShare（A 股）+ yfinance（港股），制定可落地的改进方案。
 
@@ -99,7 +103,7 @@ Phase 2: 质量过滤（中等收益，低风险）             ≈ 2 小时
   ├── 新增异常值清洗逻辑
   └── 重新微调 + 验证
 
-Phase 3: 仅当 Phase 1+2 成功后              
+Phase 3: 仅当 Phase 1+2 成功后
   └── 尝试 Kronos-base 微调（预估 4x 训练时间）
 ```
 

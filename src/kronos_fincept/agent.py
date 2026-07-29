@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import date, datetime, timedelta
 from io import StringIO
+from functools import lru_cache
 from typing import Any
 
 from kronos_fincept.config import settings
@@ -55,10 +56,16 @@ WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 60}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 60
 WEB_MACRO_TIMEOUT_SECONDS = 60.0
 WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 30.0
+EMBEDDED_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 8.0
 DEFAULT_LLM_PROVIDER_ORDER = ("llm",)
 LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
 LLM_CONTEXT_MAX_TEXT_CHARS = 600
 LLM_CONTEXT_RECENT_MARKET_ROWS = 5
+LLM_MULTI_ASSET_MAX_RESEARCH_RESULTS = 4
+LLM_MULTI_ASSET_MAX_TEXT_CHARS = 300
+LLM_MULTI_ASSET_MAX_MACRO_SIGNALS = 8
+AGENT_MULTI_ASSET_SAMPLE_COUNT = max(1, env_int("KRONOS_AGENT_MULTI_ASSET_SAMPLE_COUNT", 8))
+ASSET_DATA_WAVE_TIMEOUT_SECONDS = max(5, env_int("KRONOS_AGENT_DATA_TIMEOUT_SECONDS", 20))
 DEFAULT_OUTPUT_LANGUAGE = "zh-CN"
 
 
@@ -959,6 +966,35 @@ class AgentAnalysisResult:
         return payload
 
 
+def _analysis_worker_count(*, asset_count: int, needs_macro: bool) -> int:
+    task_count = max(1, asset_count) + (1 if needs_macro else 0)
+    return min(6, task_count)
+
+
+def _collect_futures_with_deadline(
+    futures: dict[str, concurrent.futures.Future],
+    *,
+    defaults: dict[str, Any],
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    done, _ = concurrent.futures.wait(
+        futures.values(),
+        timeout=timeout_seconds,
+        return_when=concurrent.futures.ALL_COMPLETED,
+    )
+    results: dict[str, Any] = {}
+    for name, future in futures.items():
+        if future not in done:
+            future.cancel()
+            results[name] = defaults[name]
+            continue
+        try:
+            results[name] = future.result()
+        except Exception:
+            results[name] = defaults[name]
+    return results
+
+
 @log_perf(event="agent.analyze", level=20, log_args=True, log_result=True, max_result_len=2000)
 def analyze_investment_question(
     question: str,
@@ -1118,8 +1154,9 @@ def analyze_investment_question(
             provider_ids=selected_provider_ids,
         )
 
-    # Run asset building and macro building in parallel
-    max_workers = min(5, len(resolved))
+    # Run every asset build and the optional macro build concurrently. Reserving
+    # only ``len(resolved)`` workers serialized one asset whenever macro was on.
+    max_workers = _analysis_worker_count(asset_count=len(resolved), needs_macro=needs_macro)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="kronos-agent") as executor:
         if needs_macro:
             # Submit macro build alongside asset builds for parallelism
@@ -2291,28 +2328,62 @@ def _build_asset_context(
     def _fetch_review_wrapper() -> Any:
         return _call_quietly(_build_local_market_review_context, item.symbol, item.market)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kronos-asset") as pool:
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kronos-asset")
+    try:
         f_price = pool.submit(_fetch_price_wrapper)
         f_fin = pool.submit(_fetch_financial_wrapper)
         f_review = pool.submit(_fetch_review_wrapper)
         f_research = pool.submit(_build_online_research, item, question=question, query_limit=search_query_limit)
+        research_timeout = (
+            {
+                "enabled": True,
+                "provider": None,
+                "providers": [],
+                "queries": [],
+                "results": [],
+                "errors": [f"research timed out after {ASSET_DATA_WAVE_TIMEOUT_SECONDS}s"],
+            },
+            AgentToolCall(
+                name="online_research",
+                status="failed",
+                summary=f"{item.symbol} 在线研究超过 {ASSET_DATA_WAVE_TIMEOUT_SECONDS} 秒预算，已跳过。",
+                metadata=_tool_metadata(symbol=item.symbol, market=item.market),
+            ),
+        )
+        wave1 = _collect_futures_with_deadline(
+            {
+                "price": f_price,
+                "financial": f_fin,
+                "review": f_review,
+                "research": f_research,
+            },
+            defaults={
+                "price": [],
+                "financial": (None, f"财务摘要超过 {ASSET_DATA_WAVE_TIMEOUT_SECONDS} 秒预算，已跳过。"),
+                "review": {},
+                "research": research_timeout,
+            },
+            timeout_seconds=ASSET_DATA_WAVE_TIMEOUT_SECONDS,
+        )
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
-        rows = f_price.result()
-        if rows:
-            asset["market_data"] = _build_market_data(rows)
+    rows = wave1["price"]
+    if rows:
+        asset["market_data"] = _build_market_data(rows)
 
-        fin_result = f_fin.result()
-        if isinstance(fin_result, tuple) and len(fin_result) == 2:
-            asset["financial_data"], financial_summary = fin_result
-        else:
-            asset["financial_data"] = None
-            financial_summary = "财务摘要获取失败。"
+    fin_result = wave1["financial"]
+    if isinstance(fin_result, tuple) and len(fin_result) == 2:
+        asset["financial_data"], financial_summary = fin_result
+    else:
+        asset["financial_data"] = None
+        financial_summary = "财务摘要获取失败。"
 
-        local_market_review = f_review.result()
-        asset["local_market_review"] = local_market_review
+    local_market_review = wave1["review"]
+    asset["local_market_review"] = local_market_review
 
-        research, research_call = f_research.result()
-        asset["online_research"] = research
+    research, research_call = wave1["research"]
+    asset["online_research"] = research
 
     # Build tool calls for wave 1 results
     started_price = time.perf_counter()
@@ -2708,8 +2779,17 @@ def _create_cninfo_client() -> CninfoDisclosureClient:
 
 
 def _create_macro_data_manager(*, fast_mode: bool = False) -> MacroDataManager:
+    return _shared_macro_data_manager(fast_mode)
+
+
+@lru_cache(maxsize=2)
+def _shared_macro_data_manager(fast_mode: bool) -> MacroDataManager:
     timeout_seconds = WEB_MACRO_TIMEOUT_SECONDS if fast_mode else 20.0
-    per_provider_timeout_seconds = WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS if fast_mode else 12.0
+    per_provider_timeout_seconds = (
+        WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
+        if fast_mode
+        else EMBEDDED_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
+    )
     return MacroDataManager(
         timeout_seconds=timeout_seconds,
         per_provider_timeout_seconds=per_provider_timeout_seconds,
@@ -3479,7 +3559,13 @@ def _build_risk_metrics(symbol: str, rows: list[dict[str, Any]]) -> dict[str, An
         return None
 
 
-def _forecast_request_for_rows(symbol: str, rows: list[dict[str, Any]], *, dry_run: bool) -> ForecastRequest:
+def _forecast_request_for_rows(
+    symbol: str,
+    rows: list[dict[str, Any]],
+    *,
+    dry_run: bool,
+    sample_count: int = 16,
+) -> ForecastRequest:
     if len(rows) < 3:
         raise ValueError("Kronos prediction requires at least 3 OHLCV rows.")
 
@@ -3505,7 +3591,7 @@ def _forecast_request_for_rows(symbol: str, rows: list[dict[str, Any]], *, dry_r
         tokenizer_id=resolve_tokenizer_id(effective_id),
         max_context=resolve_max_context(effective_id),
         dry_run=dry_run,
-        sample_count=16,
+        sample_count=sample_count,
     )
 
 
@@ -3552,7 +3638,12 @@ def _build_batch_predictions(
         if not rows:
             continue
         try:
-            request = _forecast_request_for_rows(item.symbol, rows, dry_run=dry_run)
+            request = _forecast_request_for_rows(
+                item.symbol,
+                rows,
+                dry_run=dry_run,
+                sample_count=AGENT_MULTI_ASSET_SAMPLE_COUNT if len(asset_contexts) > 1 else 16,
+            )
         except Exception as exc:
             error_summary = _short_error(exc)
             asset["kronos_prediction_error"] = error_summary
@@ -3613,9 +3704,30 @@ def _build_batch_predictions(
                 )
             ]
 
-    for item, asset, _ in eligible:
+    from kronos_fincept.service import forecast_batch_responses
+
+    try:
+        responses = forecast_batch_responses([request for _, _, request in eligible])
+    except Exception as exc:
+        responses = [
+            {"ok": False, "error": f"Batch forecast failed: {_short_error(exc)}"}
+            for _ in eligible
+        ]
+
+    for (item, asset, _), response in zip(eligible, responses):
         try:
-            prediction = _build_prediction(item.symbol, (asset.get("market_data") or {}).get("rows") or [], dry_run=dry_run)
+            if not response.get("ok"):
+                raise RuntimeError(str(response.get("error") or "Kronos batch forecast returned ok=false."))
+            forecast = response.get("forecast") or []
+            if not forecast:
+                raise RuntimeError("Kronos batch forecast returned no forecast rows.")
+            prediction = {
+                "model": response.get("model_id", _active_kronos_model_id()),
+                "prediction_days": response.get("pred_len", 5),
+                "forecast": forecast,
+                "probabilistic": response.get("probabilistic"),
+                "metadata": response.get("metadata"),
+            }
         except Exception as exc:
             error_summary = _short_error(exc)
             asset["kronos_prediction_error"] = error_summary
@@ -3885,11 +3997,20 @@ def _compact_llm_report_context(context: dict[str, Any]) -> dict[str, Any]:
     compact = dict(context)
     assets = context.get("assets")
     if isinstance(assets, list):
-        compact["assets"] = [_compact_llm_asset_context(asset) for asset in assets if isinstance(asset, dict)]
+        multi_asset = len(assets) > 1
+        compact["assets"] = [
+            _compact_llm_asset_context(asset, multi_asset=multi_asset)
+            for asset in assets
+            if isinstance(asset, dict)
+        ]
+        if multi_asset:
+            for key in ("macro", "macro_data"):
+                if isinstance(context.get(key), dict):
+                    compact[key] = _compact_macro_context_for_llm(context[key])
     return compact
 
 
-def _compact_llm_asset_context(asset: dict[str, Any]) -> dict[str, Any]:
+def _compact_llm_asset_context(asset: dict[str, Any], *, multi_asset: bool = False) -> dict[str, Any]:
     compact: dict[str, Any] = {}
     for key in (
         "symbol",
@@ -3909,7 +4030,19 @@ def _compact_llm_asset_context(asset: dict[str, Any]) -> dict[str, Any]:
     if "technical_indicators" in asset:
         compact["technical_indicators"] = _compact_technical_indicators_for_llm(asset.get("technical_indicators"))
     if "online_research" in asset:
-        compact["online_research"] = _compact_online_research_for_llm(asset.get("online_research"))
+        compact["online_research"] = _compact_online_research_for_llm(
+            asset.get("online_research"),
+            result_limit=(
+                LLM_MULTI_ASSET_MAX_RESEARCH_RESULTS
+                if multi_asset
+                else LLM_CONTEXT_MAX_RESEARCH_RESULTS
+            ),
+            text_limit=(
+                LLM_MULTI_ASSET_MAX_TEXT_CHARS
+                if multi_asset
+                else LLM_CONTEXT_MAX_TEXT_CHARS
+            ),
+        )
     return compact
 
 
@@ -3998,7 +4131,12 @@ def _compact_series_for_llm(name: str, series: list[Any] | tuple[Any, ...]) -> d
     return compact
 
 
-def _compact_online_research_for_llm(value: Any) -> Any:
+def _compact_online_research_for_llm(
+    value: Any,
+    *,
+    result_limit: int = LLM_CONTEXT_MAX_RESEARCH_RESULTS,
+    text_limit: int = LLM_CONTEXT_MAX_TEXT_CHARS,
+) -> Any:
     if not isinstance(value, dict):
         return value
 
@@ -4010,22 +4148,51 @@ def _compact_online_research_for_llm(value: Any) -> Any:
     results = value.get("results")
     if isinstance(results, list):
         compact["results"] = [
-            _compact_research_result_for_llm(item)
-            for item in results[:LLM_CONTEXT_MAX_RESEARCH_RESULTS]
+            _compact_research_result_for_llm(item, text_limit=text_limit)
+            for item in results[:result_limit]
             if isinstance(item, dict)
         ]
         compact["result_count"] = len(results)
-        compact["results_truncated"] = len(results) > LLM_CONTEXT_MAX_RESEARCH_RESULTS
+        compact["results_truncated"] = len(results) > result_limit
     return compact
 
 
-def _compact_research_result_for_llm(item: dict[str, Any]) -> dict[str, Any]:
+def _compact_research_result_for_llm(
+    item: dict[str, Any],
+    *,
+    text_limit: int = LLM_CONTEXT_MAX_TEXT_CHARS,
+) -> dict[str, Any]:
     compact: dict[str, Any] = {}
     for key in ("title", "snippet", "summary", "url", "source", "provider", "published_at", "timestamp"):
         if key not in item:
             continue
         value = item.get(key)
-        compact[key] = _trim_llm_text(value) if isinstance(value, str) else value
+        compact[key] = _trim_llm_text(value, limit=text_limit) if isinstance(value, str) else value
+    return compact
+
+
+def _compact_macro_context_for_llm(value: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "question",
+        "selected_provider_ids",
+        "errors",
+        "ok",
+        "dimension_coverage",
+        "local_data_assets",
+        "policy",
+    ):
+        if key in value:
+            compact[key] = _json_safe(value[key])
+    signals = value.get("signals")
+    if isinstance(signals, list):
+        compact["signals"] = [
+            _json_safe(signal)
+            for signal in signals[:LLM_MULTI_ASSET_MAX_MACRO_SIGNALS]
+            if isinstance(signal, dict)
+        ]
+        compact["signal_count"] = len(signals)
+        compact["signals_truncated"] = len(signals) > LLM_MULTI_ASSET_MAX_MACRO_SIGNALS
     return compact
 
 

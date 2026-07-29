@@ -1,6 +1,8 @@
 # KronosFinceptLab 快速启动指南
 
 > 本文档提供首次运行 KronosFinceptLab 的逐步指引。
+>
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
 
 ---
 
@@ -165,7 +167,14 @@ kronos news rss --feed "fed|Federal Reserve|https://www.federalreserve.gov/feeds
 
 ## 低内存启动
 
-本地和 Zeabur 部署默认保守启动行为：除非 `KRONOS_API_RELOAD=1` 否则 API 重载关闭，重导入延迟，TDX 网络、TickFlow、NBS 实时等可选源默认跳过（除非显式启用）。小容器使用 `KRONOS_MODEL_ID=NeoQuasar/Kronos-mini` 并保持 `KRONOS_PREWARM_ON_STARTUP=0` 直到实例有足够内存。
+本地配置默认不预热模型；当前 Docker 镜像默认启用预热。对于小内存容器，建议显式设置：
+
+```bash
+KRONOS_MODEL_ID=NeoQuasar/Kronos-mini
+KRONOS_PREWARM_ON_STARTUP=0
+```
+
+除非设置 `KRONOS_API_RELOAD=1`，API 重载保持关闭。TDX 网络、TickFlow、NBS 实时等可选源仅在显式启用并且依赖可用时加载。
 
 ---
 

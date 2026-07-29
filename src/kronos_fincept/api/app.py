@@ -334,15 +334,19 @@ async def _check_streamed_body_size(request: Request, request_id: str) -> JSONRe
     )
 
 
+def _api_worker_count(*, reload_enabled: bool) -> int:
+    if reload_enabled:
+        return 1
+    configured = int(os.environ.get("KRONOS_WORKERS", "0"))
+    return configured if configured > 0 else 1
+
+
 def main():
     """Entry point for `kronos-api` command."""
     import uvicorn
 
     reload_enabled = os.environ.get("KRONOS_API_RELOAD", "0").strip().lower() in {"1", "true", "yes", "on"}
-    if reload_enabled:
-        workers = 1  # uvicorn does not support workers+reload together
-    else:
-        workers = int(os.environ.get("KRONOS_WORKERS", "0")) or max(1, os.cpu_count() or 1)
+    workers = _api_worker_count(reload_enabled=reload_enabled)
     uvicorn.run(
         "kronos_fincept.api.app:app",
         host=os.environ.get("API_HOST", "0.0.0.0"),

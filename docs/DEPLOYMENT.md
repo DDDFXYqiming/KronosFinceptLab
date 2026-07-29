@@ -1,6 +1,8 @@
 # KronosFinceptLab 部署指南
 
 > 本文档描述本地开发、Docker、Zeabur 等部署方式。
+>
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
 
 ---
 
@@ -160,7 +162,7 @@ node /app/web/server.js on $PORT
 | `API_HOST` | 内部 API 绑定主机，默认 127.0.0.1 |
 | `API_PORT` | 内部 API 端口，默认 8000 |
 | `INTERNAL_API_URL` | 前端到后端 URL，默认 http://127.0.0.1:8000 |
-| `KRONOS_MODEL_ID` | 默认 NeoQuasar/Kronos-base |
+| `KRONOS_MODEL_ID` | 运行时模型 ID；镜像当前配置为 NeoQuasar/Kronos-base |
 | `KRONOS_ENABLE_REAL_MODEL` | Docker 默认启用真实模型推理 |
 | `KRONOS_ALLOW_DRY_RUN` | Docker 默认禁用干运行降级 |
 | `KRONOS_PREWARM_ON_STARTUP` | Docker 默认预加载模型 |
@@ -174,7 +176,7 @@ node /app/web/server.js on $PORT
 
 | 变量 | 说明 |
 |------|------|
-| `KRONOS_MODEL_ID` | 模型 ID，默认 NeoQuasar/Kronos-base |
+| `KRONOS_MODEL_ID` | 模型 ID；支持 Kronos-mini、Kronos-small、Kronos-base |
 | `KRONOS_DEVICE` | cpu、cuda 或 rocm |
 | `KRONOS_REPO_PATH` | 上游 Kronos 仓库路径 |
 | `HF_HOME` / `HF_HUB_CACHE` | HuggingFace 缓存/模型权重目录 |
@@ -216,6 +218,7 @@ node /app/web/server.js on $PORT
 - 公共部署不要启用 `KRONOS_AUTH_DISABLED=1`
 - 至少配置一个用户 API 密钥用于正常 Web/API 使用，一个管理密钥用于预警/管理诊断
 - API 文档在公共部署中应保持关闭，除非明确需要
+- 当前 Docker 镜像默认预热模型；小内存实例应设置 `KRONOS_PREWARM_ON_STARTUP=0`，并按需选择 Kronos-mini
 - 真实模型推理需要上游 Kronos 仓库和 HuggingFace 模型缓存对运行时可用
 - 外部数据源按需配置；未配置时返回正常错误，不阻塞启动
 

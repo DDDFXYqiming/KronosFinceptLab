@@ -122,8 +122,9 @@ def test_v1052_multi_asset_agent_defers_to_shared_batch_prediction(monkeypatch):
     ]
 
 
-def test_v1052_agent_multi_asset_predictions_reuse_single_forecast_path(monkeypatch):
+def test_v1052_agent_multi_asset_predictions_use_one_batch_forecast(monkeypatch):
     from kronos_fincept import agent
+    from kronos_fincept import service
 
     calls = []
     items = [
@@ -135,21 +136,26 @@ def test_v1052_agent_multi_asset_predictions_reuse_single_forecast_path(monkeypa
         for item in items
     ]
 
-    def fake_prediction(symbol, rows, *, dry_run):
-        calls.append({"symbol": symbol, "rows": len(rows), "dry_run": dry_run})
-        return {
-            "model": "NeoQuasar/Kronos-base",
-            "prediction_days": 5,
-            "forecast": [{"timestamp": "D1", "open": 34, "high": 35, "low": 33, "close": 34.8}],
-            "probabilistic": None,
-            "metadata": {"backend": "kronos"},
-        }
+    def fake_batch(requests):
+        calls.append(requests)
+        return [
+            {
+                "ok": True,
+                "symbol": request.symbol,
+                "model_id": "NeoQuasar/Kronos-base",
+                "pred_len": 5,
+                "forecast": [{"timestamp": "D1", "open": 34, "high": 35, "low": 33, "close": 34.8}],
+                "metadata": {"backend": "kronos-batch"},
+            }
+            for request in requests
+        ]
 
-    monkeypatch.setattr(agent, "_build_prediction", fake_prediction)
+    monkeypatch.setattr(service, "forecast_batch_responses", fake_batch)
 
     tool_calls = agent._build_batch_predictions(items, asset_contexts, dry_run=False)
 
-    assert [item["symbol"] for item in calls] == ["600036", "600519"]
-    assert all(item["rows"] == 40 for item in calls)
+    assert len(calls) == 1
+    assert [request.symbol for request in calls[0]] == ["600036", "600519"]
+    assert all(request.sample_count == agent.AGENT_MULTI_ASSET_SAMPLE_COUNT for request in calls[0])
     assert all(call.status == "completed" for call in tool_calls)
-    assert all(asset["kronos_prediction"]["metadata"]["backend"] == "kronos" for asset in asset_contexts)
+    assert all(asset["kronos_prediction"]["metadata"]["backend"] == "kronos-batch" for asset in asset_contexts)
