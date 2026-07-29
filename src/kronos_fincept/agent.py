@@ -2269,60 +2269,73 @@ def _build_asset_context(
         dry_run=dry_run,
     )
 
-    started = time.perf_counter()
-    rows: list[dict[str, Any]] = []
-    try:
-        rows = _call_quietly(_fetch_price_data, item.symbol, item.market)
-        asset["market_data"] = _build_market_data(rows)
-        calls.append(
-            AgentToolCall(
-                name="market_data",
-                status="completed" if rows else "failed",
-                summary=f"{item.symbol} 行情数据 {len(rows)} 条。",
-                elapsed_ms=_elapsed_ms(started),
-                metadata=_tool_metadata(
-                    symbol=item.symbol,
-                    market=item.market,
-                    source=_market_source_name(item.market),
-                ),
-            )
-        )
-    except Exception as exc:
-        asset["market_data_error"] = str(exc)
-        calls.append(
-            AgentToolCall(
-                name="market_data",
-                status="failed",
-                summary=f"{item.symbol} 行情获取失败：{exc}",
-                elapsed_ms=_elapsed_ms(started),
-                metadata=_tool_metadata(symbol=item.symbol, market=item.market),
-            )
-        )
+    # ── Wave 1: Fetch all independent data in parallel ──
+    wave1: dict[str, Any] = {}
 
-    started = time.perf_counter()
-    if asset["asset_class"] == "commodity_future":
-        financial_data = None
-        financial_summary = "商品期货不适用公司财务摘要，后续使用行情、风险、Kronos 与宏观信号。"
-    else:
-        financial_data = _call_quietly(_fetch_financial_summary, item.symbol, item.market)
+    def _fetch_price_wrapper() -> list[dict[str, Any]]:
+        try:
+            return _call_quietly(_fetch_price_data, item.symbol, item.market)
+        except Exception:
+            return []
+
+    def _fetch_financial_wrapper() -> Any:
+        if asset["asset_class"] == "commodity_future":
+            return ("commodity", "商品期货不适用公司财务摘要，后续使用行情、风险、Kronos 与宏观信号。")
+        data = _call_quietly(_fetch_financial_summary, item.symbol, item.market)
         if asset["asset_class"] == "etf":
-            financial_summary = "已尝试获取 ETF/基金资料；没有公司三表时不按个股基本面解释。"
+            summary = "已尝试获取 ETF/基金资料；没有公司三表时不按个股基本面解释。"
         else:
-            financial_summary = "已尝试获取财务摘要。" if financial_data else "当前数据源未返回可用财务摘要。"
-    asset["financial_data"] = financial_data
+            summary = "已尝试获取财务摘要。" if data else "当前数据源未返回可用财务摘要。"
+        return (data, summary)
+
+    def _fetch_review_wrapper() -> Any:
+        return _call_quietly(_build_local_market_review_context, item.symbol, item.market)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kronos-asset") as pool:
+        f_price = pool.submit(_fetch_price_wrapper)
+        f_fin = pool.submit(_fetch_financial_wrapper)
+        f_review = pool.submit(_fetch_review_wrapper)
+        f_research = pool.submit(_build_online_research, item, question=question, query_limit=search_query_limit)
+
+        rows = f_price.result()
+        if rows:
+            asset["market_data"] = _build_market_data(rows)
+
+        fin_result = f_fin.result()
+        if isinstance(fin_result, tuple) and len(fin_result) == 2:
+            asset["financial_data"], financial_summary = fin_result
+        else:
+            asset["financial_data"] = None
+            financial_summary = "财务摘要获取失败。"
+
+        local_market_review = f_review.result()
+        asset["local_market_review"] = local_market_review
+
+        research, research_call = f_research.result()
+        asset["online_research"] = research
+
+    # Build tool calls for wave 1 results
+    started_price = time.perf_counter()
+    calls.append(
+        AgentToolCall(
+            name="market_data",
+            status="completed" if rows else "failed",
+            summary=f"{item.symbol} 行情数据 {len(rows)} 条。" if rows else f"{item.symbol} 行情获取失败。",
+            elapsed_ms=_elapsed_ms(started_price),
+            metadata=_tool_metadata(symbol=item.symbol, market=item.market, source=_market_source_name(item.market)),
+        )
+    )
+
     calls.append(
         AgentToolCall(
             name="financial_data",
-            status="completed" if financial_data else "skipped",
+            status="completed" if asset.get("financial_data") else "skipped",
             summary=financial_summary,
-            elapsed_ms=_elapsed_ms(started),
+            elapsed_ms=_elapsed_ms(started_price),
             metadata=_tool_metadata(symbol=item.symbol, market=item.market, asset_class=asset["asset_class"]),
         )
     )
 
-    started = time.perf_counter()
-    local_market_review = _call_quietly(_build_local_market_review_context, item.symbol, item.market)
-    asset["local_market_review"] = local_market_review
     local_available = bool(isinstance(local_market_review, dict) and local_market_review.get("available"))
     symbol_hits = local_market_review.get("symbol_hits") if isinstance(local_market_review, dict) else {}
     hit_count = sum(len(value) for value in symbol_hits.values()) if isinstance(symbol_hits, dict) else 0
@@ -2335,83 +2348,91 @@ def _build_asset_context(
                 if local_available
                 else "本地市场复盘缓存不可用或不适用于该市场。"
             ),
-            elapsed_ms=_elapsed_ms(started),
+            elapsed_ms=_elapsed_ms(started_price),
             metadata=_tool_metadata(
-                symbol=item.symbol,
-                market=item.market,
+                symbol=item.symbol, market=item.market,
                 date=local_market_review.get("date") if isinstance(local_market_review, dict) else None,
                 artifact_count=local_market_review.get("artifact_count") if isinstance(local_market_review, dict) else None,
                 hit_count=hit_count,
             ),
         )
     )
+    calls.append(research_call)
 
+    # ── Wave 2: Compute rows-dependent items in parallel ──
     if rows:
-        started = time.perf_counter()
-        asset["technical_indicators"] = _call_quietly(_build_technical_indicators, rows)
+        def _build_tech_wrapper() -> Any:
+            return _call_quietly(_build_technical_indicators, rows)
+
+        def _build_risk_wrapper() -> Any:
+            return _call_quietly(_build_risk_metrics, item.symbol, rows)
+
+        def _build_pred_wrapper() -> Any:
+            if not include_prediction:
+                return None
+            try:
+                return _build_prediction(item.symbol, rows, dry_run=dry_run)
+            except Exception as exc:
+                return exc
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="kronos-compute") as pool:
+            f_tech = pool.submit(_build_tech_wrapper)
+            f_risk = pool.submit(_build_risk_wrapper)
+            f_pred = pool.submit(_build_pred_wrapper)
+
+            asset["technical_indicators"] = f_tech.result()
+            asset["risk_metrics"] = f_risk.result()
+            pred_result = f_pred.result()
+
         calls.append(
             AgentToolCall(
                 name="technical_indicators",
                 status="completed" if asset["technical_indicators"] else "skipped",
                 summary="已计算技术指标。" if asset["technical_indicators"] else "K线数量不足，跳过技术指标。",
-                elapsed_ms=_elapsed_ms(started),
+                elapsed_ms=0,
                 metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
 
-        started = time.perf_counter()
-        asset["risk_metrics"] = _call_quietly(_build_risk_metrics, item.symbol, rows)
         calls.append(
             AgentToolCall(
                 name="risk_metrics",
                 status="completed" if asset["risk_metrics"] else "failed",
                 summary="已计算风险指标。" if asset["risk_metrics"] else "风险指标计算失败或数据不足。",
-                elapsed_ms=_elapsed_ms(started),
+                elapsed_ms=0,
                 metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
 
         if include_prediction:
-            started = time.perf_counter()
-            try:
-                asset["kronos_prediction"] = _call_quietly(_build_prediction, item.symbol, rows, dry_run=dry_run)
-                calls.append(
-                    AgentToolCall(
-                        name="kronos_prediction",
-                        status="completed",
-                        summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
-                        elapsed_ms=_elapsed_ms(started),
-                        metadata=_tool_metadata(
-                            symbol=item.symbol,
-                            market=item.market,
-                            model=_active_kronos_model_id(),
-                            metadata=asset["kronos_prediction"].get("metadata"),
-                        ),
-                    )
-                )
-            except Exception as exc:
-                error_summary = _short_error(exc)
+            if isinstance(pred_result, Exception):
+                error_summary = _short_error(pred_result)
                 asset["kronos_prediction_error"] = error_summary
                 calls.append(
                     AgentToolCall(
                         name="kronos_prediction",
                         status="failed",
                         summary=f"Kronos 真实预测失败：{error_summary}",
-                        elapsed_ms=_elapsed_ms(started),
-                        metadata=_tool_metadata(
-                            symbol=item.symbol,
-                            market=item.market,
-                            model=_active_kronos_model_id(),
-                            error_type=type(exc).__name__,
-                        ),
+                        elapsed_ms=0,
+                        metadata=_tool_metadata(symbol=item.symbol, market=item.market, model=_active_kronos_model_id(),
+                                                error_type=type(pred_result).__name__),
+                    )
+                )
+            elif pred_result is not None:
+                asset["kronos_prediction"] = pred_result
+                calls.append(
+                    AgentToolCall(
+                        name="kronos_prediction",
+                        status="completed",
+                        summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
+                        elapsed_ms=0,
+                        metadata=_tool_metadata(symbol=item.symbol, market=item.market, model=_active_kronos_model_id(),
+                                                metadata=pred_result.get("metadata")),
                     )
                 )
         else:
             asset["kronos_prediction_deferred"] = True
 
-    research, research_call = _build_online_research(item, question=question, query_limit=search_query_limit)
-    asset["online_research"] = research
-    calls.append(research_call)
     log_event(
         logger,
         logging.INFO,
