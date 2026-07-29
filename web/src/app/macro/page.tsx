@@ -456,7 +456,7 @@ function ToolCalls({ calls }: { calls: AgentToolCall[] }) {
                     {statusLabel(call.status)}
                   </span>
                 </div>
-                <p className="mt-1 break-words text-sm text-muted-foreground">{call.summary}</p>
+                <p className="mt-1 break-words text-sm text-muted-foreground">{String(call.summary)}</p>
               </div>
               <p className="shrink-0 text-xs text-muted-foreground font-mono">{formatElapsedMs(call.elapsed_ms)}</p>
             </div>

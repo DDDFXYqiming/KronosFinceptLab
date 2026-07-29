@@ -149,7 +149,8 @@ export function formatApiError(error: unknown, fallback?: string): string {
   const fallbackText = fallback || t(language, "common.errorFallback");
   if (error instanceof ApiError) {
     const requestId = error.requestId ? ` request_id=${error.requestId}` : "";
-    return `${error.message}${requestId}`;
+    const msg = typeof error.message === "string" ? error.message : JSON.stringify(error.message);
+    return `${msg}${requestId}`;
   }
   if (error instanceof Error) {
     return error.message || fallbackText;

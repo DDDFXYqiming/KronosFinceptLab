@@ -248,7 +248,7 @@ function EvidenceGraphViewer({ result }: { result: AgentAnalyzeResponse }) {
               <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{item.category}</span>
             </div>
             <p className="font-semibold text-foreground">{item.title}</p>
-            <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{cleanUserVisibleText(item.summary)}</p>
+            <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{cleanUserVisibleText(String(item.summary))}</p>
           </div>
         ))}
       </div>
