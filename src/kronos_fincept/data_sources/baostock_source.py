@@ -4,10 +4,26 @@ Supports A-share historical data, financial data, etc.
 """
 
 import time
+import threading
+from functools import wraps
 from typing import Dict, Any, Optional
 from datetime import datetime
 
 from . import DataSource, DataSourceConfig, DataSourceStatus
+
+
+_BAOSTOCK_SESSION_LOCK = threading.RLock()
+
+
+def baostock_serialized(func):
+    """Serialize access to BaoStock's process-global socket/session state."""
+
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with _BAOSTOCK_SESSION_LOCK:
+            return func(*args, **kwargs)
+
+    return wrapped
 
 
 class BaoStockSource(DataSource):
@@ -44,6 +60,7 @@ class BaoStockSource(DataSource):
                 raise ImportError(f"BaoStock 未安装: {e}")
         return self._bs
 
+    @baostock_serialized
     def _login(self):
         """Log in to BaoStock"""
         if not self._logged_in:
@@ -53,6 +70,7 @@ class BaoStockSource(DataSource):
                 raise RuntimeError(f"BaoStock 登录失败: {lg.error_msg}")
             self._logged_in = True
 
+    @baostock_serialized
     def _logout(self):
         """Log out of BaoStock"""
         if self._logged_in:
@@ -97,6 +115,7 @@ class BaoStockSource(DataSource):
             # Default to Shanghai
             return f"sh.{symbol}"
 
+    @baostock_serialized
     def fetch(self, endpoint: str, **kwargs) -> Dict[str, Any]:
         """
         Fetch data
@@ -235,8 +254,6 @@ class BaoStockSource(DataSource):
             }
 
         except Exception as e:
-            # Log out to clean up connections
-            self._logout()
             return {
                 "success": False,
                 "data": None,
@@ -244,7 +261,15 @@ class BaoStockSource(DataSource):
                 "source": self.config.name,
                 "timestamp": int(datetime.now().timestamp())
             }
+        finally:
+            # BaoStock keeps one module-global connection. Always close the
+            # transaction before another source instance enters the lock.
+            self._logout()
 
     def __del__(self):
         """Log out during destruction"""
-        self._logout()
+        try:
+            self._logout()
+        except Exception:
+            # Interpreter shutdown can clear the imported module first.
+            pass

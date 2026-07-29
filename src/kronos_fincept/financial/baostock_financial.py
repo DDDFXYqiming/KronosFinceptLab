@@ -6,7 +6,7 @@ import pandas as pd
 from typing import Optional, List
 from datetime import datetime
 
-from ..data_sources.baostock_source import BaoStockSource
+from ..data_sources.baostock_source import BaoStockSource, baostock_serialized
 from .schemas import (
     FinancialData, IncomeStatement, BalanceSheet, CashFlowStatement
 )
@@ -55,6 +55,7 @@ class BaoStockFinancialSource(FinancialDataSource):
             return None
     
     @log_perf(event="baostock.income", level=20, log_args=True, log_result=True, max_result_len=500)
+    @baostock_serialized
     def get_income_statements(self, symbol: str, periods: int = 4) -> List[IncomeStatement]:
         """Get income statements from BaoStock."""
         try:
@@ -107,6 +108,8 @@ class BaoStockFinancialSource(FinancialDataSource):
         except Exception as e:
             logger.warning("Error getting income statements from BaoStock: %s", e)
             return []
+        finally:
+            self.baostock._logout()
     
     def get_balance_sheets(self, symbol: str, periods: int = 4) -> List[BalanceSheet]:
         """Get balance sheets from BaoStock."""

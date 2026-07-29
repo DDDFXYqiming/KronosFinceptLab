@@ -145,8 +145,11 @@ def test_v971_agent_returns_per_asset_results_for_multi_symbol_question(monkeypa
     assert result.symbols == ["600036", "600519"]
     assert len(result.asset_results) == 2
     assert [item["symbol"] for item in result.asset_results] == ["600036", "600519"]
-    assert result.report["conclusion"].startswith("招商银行与贵州茅台")
-    assert result.asset_results[0]["report"]["conclusion"] == "招商银行单独结论。"
+    assert "招商银行" in result.report["conclusion"]
+    assert "贵州茅台" in result.report["conclusion"]
+    assert "短期不支持看多" in result.report["conclusion"]
+    assert "Kronos 5 日" in result.asset_results[0]["report"]["conclusion"]
+    assert result.asset_results[0]["report"]["fundamentals"] == "招商银行基本面。"
     assert result.asset_results[1]["kronos_prediction"]["model"] == "NeoQuasar/Kronos-base"
 
 
@@ -158,9 +161,10 @@ def test_v971_fallback_report_still_returns_real_tool_derived_asset_cards(monkey
 
     assert result.ok is True
     assert len(result.asset_results) == 2
-    assert "各标的独立卡片" in result.report["conclusion"]
+    assert "招商银行" in result.report["conclusion"]
+    assert "贵州茅台" in result.report["conclusion"]
     assert all(item["kronos_prediction"] for item in result.asset_results)
-    assert all("工具链分析已完成" in item["report"]["conclusion"] for item in result.asset_results)
+    assert all("Kronos 5 日" in item["report"]["conclusion"] for item in result.asset_results)
 
 
 def test_v971_web_analysis_page_renders_summary_and_per_asset_cards():
