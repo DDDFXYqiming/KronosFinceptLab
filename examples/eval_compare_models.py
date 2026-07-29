@@ -26,13 +26,18 @@ BASE = str(PROJ / "external" / "Kronos" / "finetune_csv")
 
 MODEL_PATHS = {
     "pretrained_small": os.path.join(hub, "models--NeoQuasar--Kronos-small", "snapshots", "901c26c1332695a2a8f243eb2f37243a37bea320"),
-    "v2_small_v2": os.path.join(BASE, "finetuned_v2_small_v2", "basemodel", "best_model"),
+    "full_small": os.path.join(BASE, "finetuned_full_small", "basemodel", "best_model"),
     "full_small_v3": os.path.join(BASE, "finetuned_full_small_v3", "basemodel", "best_model"),
+    "v2_small_v2": os.path.join(BASE, "finetuned_v2_small_v2", "basemodel", "best_model"),
     "v3_best": os.path.join(BASE, "finetuned_v3_fromFTv1", "basemodel", "best_model"),
     "v3_cont_best": os.path.join(BASE, "finetuned_v3_fromFTv1_cont", "basemodel", "best_model"),
-    # Extra: v3_cont epoch details (only tested if needed)
     "v3_cont_epoch_1": os.path.join(BASE, "finetuned_v3_fromFTv1_cont", "basemodel", "epoch_1"),
     "v3_cont_epoch_2": os.path.join(BASE, "finetuned_v3_fromFTv1_cont", "basemodel", "epoch_2"),
+    "v3_cont_epoch_3": os.path.join(BASE, "finetuned_v3_fromFTv1_cont", "basemodel", "epoch_3"),
+    "cont2_best": os.path.join(BASE, "finetuned_v3_small_cont2", "basemodel", "best_model"),
+    "cont2_epoch_1": os.path.join(BASE, "finetuned_v3_small_cont2", "basemodel", "epoch_1"),
+    "cont2_epoch_2": os.path.join(BASE, "finetuned_v3_small_cont2", "basemodel", "epoch_2"),
+    "cont2_epoch_3": os.path.join(BASE, "finetuned_v3_small_cont2", "basemodel", "epoch_3"),
 }
 
 PL = 5
@@ -77,12 +82,12 @@ def evaluate_model(model_key: str, label: str) -> dict:
     print(f"\n=== Evaluating {label} ({model_key}) ===", flush=True)
     t0 = time.time()
 
-    # Load on CPU
+    # Load directly on DML (avoid double allocation → deadlock)
     tok = KronosTokenizer.from_pretrained(tok_path)
+    tok.to(DEVICE)
     model = Kronos.from_pretrained(model_path)
     model.eval()
     model.to(DEVICE)
-    tok.to(DEVICE)
     predictor = KronosPredictor(model, tok, max_context=512, device=DEVICE)
 
     # Inference
@@ -90,7 +95,7 @@ def evaluate_model(model_key: str, label: str) -> dict:
     total = 0
     pred_returns = []
     actual_returns = []
-    B = 4
+    B = 8
 
     for i in range(0, len(samples), B):
         batch = samples[i:i+B]
@@ -136,9 +141,21 @@ def evaluate_model(model_key: str, label: str) -> dict:
 
     elapsed = round(time.time() - t0, 1)
 
-    # Clean up
+    # Clean up — aggressive to avoid DML deadlock between models
     del model, predictor, tok
     gc.collect()
+    for _ in range(3):
+        try:
+            import torch
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        try:
+            import torch_directml
+            torch_directml.empty_cache()
+        except Exception:
+            pass
+        gc.collect()
 
     result = {
         "label": label,
@@ -159,42 +176,49 @@ def evaluate_model(model_key: str, label: str) -> dict:
     return result
 
 
-# ── Run order ──
+# ── Run order (decision tree) ──
 results = []
 
 # 1. Baseline
 results.append(evaluate_model("pretrained_small", "Pretrained baseline"))
 
-# 2. Current best
-r = evaluate_model("v2_small_v2", "v2_small_v2 (current best)")
+# 2-3. Early lineages (full_small lineage)
+r = evaluate_model("full_small", "full_small")
 results.append(r)
-v2_best = r.get("dir_accuracy", 0)
-
-# 3. full lineage
-r = evaluate_model("full_small_v3", "full_small_v3")
+r = evaluate_model("full_small_v3", "full_small_v3 (FT v1)")
 results.append(r)
 
-# 4. V3 first round
+# 4. v2 (old champion)
+r = evaluate_model("v2_small_v2", "v2_small_v2")
+results.append(r)
+v2_acc = r.get("dir_accuracy", 0)
+
+# 5-7. V3 fromFTv1 → cont (known good lineage)
 r = evaluate_model("v3_best", "V3 fromFTv1 best")
 results.append(r)
 v3_best_acc = r.get("dir_accuracy", 0)
 
-# 5. V3 continuation - only if v3_best beat or matched v2
-if v3_best_acc >= v2_best - 2:
-    print(f"\n--- v3_best ({v3_best_acc}%) close to v2_best ({v2_best}%), testing v3_cont ---", flush=True)
+if v3_best_acc >= v2_acc - 2:
     r = evaluate_model("v3_cont_best", "V3 cont best")
     results.append(r)
     v3_cont_best_acc = r.get("dir_accuracy", 0)
 
-    # 6. V3 cont epoch details - only if v3_cont_best beat v3_best
     if v3_cont_best_acc >= v3_best_acc:
-        print(f"\n--- v3_cont_best ({v3_cont_best_acc}%) beat v3_best ({v3_best_acc}%), testing epochs ---", flush=True)
-        r = evaluate_model("v3_cont_epoch_1", "V3 cont epoch_1")
+        for key, label in [("v3_cont_epoch_1", "V3 cont ep1"), ("v3_cont_epoch_2", "V3 cont ep2"), ("v3_cont_epoch_3", "V3 cont ep3")]:
+            r = evaluate_model(key, label)
+            results.append(r)
+
+# 8+. cont2 (new training) — only if v3_best beat v2 baseline
+champ_acc = max(r.get("dir_accuracy", 0) for r in results) if results else 0
+r = evaluate_model("cont2_best", "Cont2 best")
+results.append(r)
+cont2_best_acc = r.get("dir_accuracy", 0)
+
+if cont2_best_acc >= champ_acc:
+    print(f"\n--- cont2_best ({cont2_best_acc}%) is new champion, testing all cont2 epochs ---", flush=True)
+    for key, label in [("cont2_epoch_1", "Cont2 ep1"), ("cont2_epoch_2", "Cont2 ep2"), ("cont2_epoch_3", "Cont2 ep3")]:
+        r = evaluate_model(key, label)
         results.append(r)
-        r = evaluate_model("v3_cont_epoch_2", "V3 cont epoch_2")
-        results.append(r)
-else:
-    print(f"\n--- v3_best ({v3_best_acc}%) << v2_best ({v2_best}%), skipping v3_cont ---", flush=True)
 
 # ── Final summary ──
 print("\n" + "=" * 70)
