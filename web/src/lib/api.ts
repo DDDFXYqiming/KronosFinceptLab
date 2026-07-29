@@ -306,7 +306,9 @@ async function fetchApi<T>(
 
     if (!res.ok) {
       const err = await parseErrorResponse(res);
-      const message = enrichGatewayError(res.status, err.error || err.detail || `HTTP ${res.status}`, path);
+      const rawError = err.error ?? err.detail;
+      const errorMessage = typeof rawError === 'string' ? rawError : JSON.stringify(rawError);
+      const message = enrichGatewayError(res.status, errorMessage || `HTTP ${res.status}`, path);
       const requestId = res.headers.get("X-Request-ID") || err.request_id || err.requestId || clientRequestId;
       const type = err.type || err.code || "api_error";
       logApiFailure(path, res.status, requestId, message);
