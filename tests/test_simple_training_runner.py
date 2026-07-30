@@ -13,4 +13,3 @@ def test_training_lock_recovers_when_recorded_process_is_gone(tmp_path):
         assert lock_path.read_text(encoding="utf-8") == str(os.getpid())
 
     assert not lock_path.exists()
-

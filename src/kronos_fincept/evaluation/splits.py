@@ -71,4 +71,3 @@ def select_calendar_window_starts(
             continue
         starts.append(start)
     return starts
-

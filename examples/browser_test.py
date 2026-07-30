@@ -45,7 +45,7 @@ print(f"AntDesign selects found: {antSelects}")
 antAlerts = driver.execute_js("document.querySelectorAll('.ant-alert').length")
 print(f"AntDesign alerts found: {antAlerts}")
 
-# Test 6: Check Input components  
+# Test 6: Check Input components
 antInputs = driver.execute_js("document.querySelectorAll('.ant-input').length")
 print(f"AntDesign inputs found: {antInputs}")
 
@@ -78,7 +78,7 @@ time.sleep(5)
 batchLoaded = driver.execute_js("document.querySelectorAll('.ant-btn').length")
 print(f"Batch page buttons: {batchLoaded}")
 
-# Test 11: Navigate to data page  
+# Test 11: Navigate to data page
 driver.jump("http://localhost:3000/data")
 time.sleep(5)
 dataLoaded = driver.execute_js("document.querySelectorAll('.ant-picker').length")

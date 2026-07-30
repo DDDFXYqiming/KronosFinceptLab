@@ -41,4 +41,3 @@ def test_compact_calendar_windows_keep_targets_inside_their_periods():
     assert timestamps[validation[0]] < pd.Timestamp("2026-01-01")
     assert diagnostic_target_starts[0] == diagnostic_bars[5]
     assert timestamps[diagnostic[-1] + 90 + 5] <= pd.Timestamp("2026-07-31")
-

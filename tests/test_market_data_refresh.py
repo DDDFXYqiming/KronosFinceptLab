@@ -20,4 +20,3 @@ def test_refresh_detects_volume_and_amount_unit_changes():
     refreshed["amount"] *= 1000
 
     assert _scale_changed(existing, refreshed) is True
-
