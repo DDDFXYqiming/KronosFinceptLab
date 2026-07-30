@@ -1,170 +1,181 @@
-# Kronos 当前微调与评测报告
+# Kronos 紧凑微调与评测报告
 
 > 文档状态：Current
-> 项目版本：10.9.0
-> 最后核对：2026-07-29
-> 评测口径：完整生产推理链路
+> 最后核对：2026-07-30
+> 当前状态：紧凑数据、三模型训练和验证集 screen/confirm 均已完成；本轮停止并保留官方预训练基线
 
----
+## 当前实验问题
 
-## 当前结论
+本轮只回答：
 
-KronosFinceptLab 的历史探索性实验曾把 **V3 cont epoch 2** 评为最佳模型；
-2026-07-29 按当前固定时间折重新评测后，`fold_2025` 的最佳变体改为
-**full_small_v3**。该变化说明旧排名对测试窗口很敏感，当前仍没有满足严格
-OOS 条件的 checkpoint。
+> A/H 股近四年数据上的简单低学习率微调，能否稳定超过官方预训练 `Kronos-small`？
 
-该名称仅表示评测实验，不是 REST API、CLI、MCP 或 Docker 的默认模型配置。运行时模型通过 `KRONOS_MODEL_ID` 配置，公开支持：
+旧的“训练截至 2024、2025 验证、2026 诊断”实验在 M1 约完成 5.2% 时停止。该日志保留，
+但部分权重不进入候选列表。
 
-- `NeoQuasar/Kronos-mini`
-- `NeoQuasar/Kronos-small`
-- `NeoQuasar/Kronos-base`
+## 固定三模型
 
----
+三个模型互相独立，均从官方预训练 `Kronos-small` 开始，不继承 full/V2/V3/cont。
+tokenizer 固定为官方 `Kronos-Tokenizer-base`。
 
-## 当前评测标准
+| 模型 | 学习率 | 采样 | epoch | 输出目录 |
+|---|---:|---|---:|---|
+| M1 / `compact_m1` | 1e-6 | window uniform | 1 | `finetuned_compact_m1` |
+| M2 / `compact_m2` | 5e-6 | window uniform | 1 | `finetuned_compact_m2` |
+| M3 / `compact_m3` | 5e-6 | market/stock balanced | 1 | `finetuned_compact_m3` |
 
-当前评测必须走与生产预测一致的完整链路：
+共同设置：`clean_v5_compact`、seed 42、lookback 90、predict 5、训练日期
+2022-01-01～2025-12-31、验证日期 2026 Q1。
 
-1. 原始 CSV / DataFrame 输入
-2. 滚动上下文归一化
-3. tokenizer 编码
-4. 自回归生成
-5. tokenizer 解码
-6. 反归一化到原始价格空间
-7. 在原始价格空间计算方向准确率、IC、RankIC、AER 和 IR
+训练结果：
 
-跳过 tokenizer、自回归生成或反归一化的裸模型评测，不再作为当前项目指标。
+| 模型 | Training Loss | Validation Loss | 耗时 |
+|---|---:|---:|---:|
+| `compact_m1` | 3.0850 | 3.1122 | 91.58 分钟 |
+| `compact_m2` | 3.0281 | 3.0486 | 82.98 分钟 |
+| `compact_m3` | 3.0854 | 3.0502 | 84.29 分钟 |
 
-可靠评测集的完整规则见 [`EVALUATION_PROTOCOL.md`](EVALUATION_PROTOCOL.md)。Phase 1 已实现 manifest 生成器和滚动评测工具；根据当前微调配置和训练日志，现有 checkpoint 均不能被称为 `fold_2026` 的干净最终 OOS 结果。
+Validation Loss 只用于确认训练正常，不作为金融预测模型排名依据。
 
----
+## 运行时输入窗口（开发记录：2026-07-30）
 
-## 历史最后一次评测结果（旧口径）
+分析页和预测页统一使用最近 90 根日线作为 Kronos 模型输入。预测页可以继续获取并展示完整的近一年历史数据，
+但发送给模型的 `rows` 只取末尾 90 根；分析页同样只构造末尾 90 根的预测请求。这样可以与当前紧凑微调的
+`lookback=90` 训练窗口、滚动评测窗口保持一致，也避免把页面展示区间误当成模型上下文。
 
-历史结果仅用于追踪模型变化。当前统一执行流程已经改为 `smoke -> screen -> confirm -> final`，不再对所有 checkpoint 直接运行 `fold_2026` 全量 `sample_count=8`。
+这是一项运行时契约，不是永久固定的模型参数。后续若新的微调模型采用不同的 lookback 或经过新的评测协议确认，
+必须同步更新两个页面，并以同一套生产路径评测结果重新确认输入窗口；在此之前不得仅根据上游通用示例的 240/400 根
+历史数据调整默认值。
 
-评测条件：
+```powershell
+\.venv311\Scripts\python.exe examples\run_simple_training.py
+```
 
-| 项目 | 当前标准 |
-|---|---|
-| 股票池 | 30 只股票（20 只 A 股 + 10 只港股） |
-| 采样 | screen/confirm 使用 20 A 股 + 10 港股、每只 5 个固定窗口，约 150 个样本 |
-| 预测长度 | `pred_len=5` |
-| 采样次数 | screen=`1`；confirm=`8`；final 主指标=`1` |
-| 温度 | `temperature=0.3` |
-| Top-p | `top_p=0.9` |
-| 推理设备 | DirectML |
+## 数据与评测清单
 
-最新结果：
+初始 `clean_v5_compact`：
 
-| 实验 | Direction Acc | IC | RankIC | AER | IR |
-|---|---:|---:|---:|---:|---:|
-| **V3 cont epoch 2** | **60.0%** | 0.1975 | 0.1924 | 2.09% | 0.43 |
-| 预训练基线 | 51.3% | 0.0713 | 0.0535 | 0.67% | 0.14 |
-
-相较预训练基线，当前探索性实验的方向准确率提高 8.7 个百分点，并在 IC、RankIC、AER 和 IR 上均表现更好。该提升是同一评测协议下的实验差异，不是经过封存测试集验证的生产保证。
-
----
-
-## 2026-07-29 GPU 重跑结果（当前口径）
-
-本次使用 DirectML、固定随机种子 42、`fold_2025` 固定分层样本（20 A 股 +
-10 港股，每只 5 个时间分散窗口，共 150 个样本），统一
-`pred_len=5, sample_count=8, temperature=0.3, top_p=0.9`。旧结果使用的是
-数据尾部偏移窗口，因此新旧结果用于检验稳健性，不是同一测试集上的重复测量。
-
-| 当前排名 | 模型 | 新 DirAcc | 旧 DirAcc | 变化 | IC | RankIC | AER | IR |
-|---:|---|---:|---:|---:|---:|---:|---:|---:|
-| 1 | **full_small_v3** | **54.00%** | 48.00% | +6.00pp | -0.0330 | 0.0738 | 0.54% | 0.17 |
-| 2 | full_small | 52.00% | 50.70% | +1.30pp | -0.0838 | -0.0723 | -0.93% | -0.30 |
-| 3 | 预训练基线 | 49.33% | 51.30% | -1.97pp | -0.0553 | -0.0976 | 0.63% | 0.20 |
-| 4 | Cont2 best | 48.67% | 58.70% | -10.03pp | -0.1330 | -0.0628 | -1.33% | -0.43 |
-| 5 | V3 cont epoch 1 | 48.67% | 58.70% | -10.03pp | -0.1444 | -0.1062 | 0.03% | 0.01 |
-| 6 | V3 cont epoch 2 | 48.67% | 60.00% | -11.33pp | -0.1651 | -0.1082 | -1.99% | -0.64 |
-| 7 | V3 cont best | 48.00% | 59.30% | -11.30pp | -0.1419 | -0.0897 | -0.86% | -0.27 |
-| 8 | V3 fromFTv1 best | 46.67% | 56.70% | -10.03pp | -0.1645 | -0.1255 | -0.60% | -0.19 |
-| 9 | v2_small_v2 | 44.00% | 51.30% | -7.30pp | -0.0944 | -0.0770 | -0.45% | -0.15 |
-
-`full_small_v3` 的 A/HK 方向准确率均为 54.0%，总体日期聚类 Bootstrap 95% CI
-约为 45.52%–63.02%。该区间包含 50%，不能据此声称方向准确率显著超过随机。
-旧冠军 V3 continuation 谱系在新窗口上的 IC、RankIC 和多数收益指标转负，旧排名
-没有通过时间窗口稳健性复核。
-
-### fold_2026 全量诊断
-
-当前 checkpoint 都接触过 2026 数据，因此以下结果必须标记为 `diagnostic`，
-不得写成严格 OOS：
-
-| 模型/模式 | 样本 | sample_count | DirAcc (95% CI) | A / HK DirAcc | IC | RankIC | AER | IR |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| **full_small_v3 全量** | 3,696 | 1 | **52.87%** (50.88%–54.82%) | 53.10% / 52.32% | -0.0015 | 0.0166 | -2.04% | -0.32 |
-| 预训练基线全量 | 3,696 | 1 | 50.51% (48.29%–52.83%) | 50.13% / 51.41% | -0.0136 | -0.0059 | -0.95% | -0.15 |
-| full_small_v3 生产参数审计 | 256 | 8 | 51.17% (46.28%–56.59%) | 52.22% / 48.68% | -0.0990 | -0.0368 | -0.10% | -0.02 |
-
-全量诊断中 `full_small_v3` 的方向准确率高于 50%，但与预训练基线的置信区间
-重叠，且 IC 接近零、AER/IR 为负。当前证据不支持把它提升为生产交易模型；
-下一步仍应训练一个完全不接触 2026 数据的 checkpoint，再执行一次严格封存测试。
-
----
-
-## 解读边界
-
-- 约 150 个样本仍属于小规模评测，结果需要更多时间窗口和滚动样本复核。
-- 旧评测使用重叠偏移窗口，不能把窗口数量直接当作独立样本数。
-- AER 和 IR 是本次离线评测结果，不代表实盘收益。
-- 当前结论只说明该微调实验优于本次预训练基线，不等于对所有市场和时间段都有效。
-- `V3 cont epoch 2` 的训练数据截止日期和预训练 checkpoint 的数据截止日期必须在最终 OOS 报告中单独记录。
-- 模型输出仅用于研究，不构成投资建议。
-
-## Phase 1 执行状态
-
-已实现：
-
-- `examples/build_eval_manifest.py`：生成训练/验证/封存测试分区和 2023–2026 滚动折；
-- `src/kronos_fincept/evaluation/rolling.py`：窗口、embargo、按市场/股票/年份聚合和日期聚类 Bootstrap；
-- `examples/eval_rolling.py`：使用 `KronosPredictor.predict_batch()` 的完整生产推理评测。
-- `examples/eval_pipeline.py`：顺序编排 smoke、screen、confirm、final，避免 DirectML 并发。
-- `eval_rolling.py`：支持固定分层抽样、ETA、断点恢复、全局锁和原子保存。
-
-默认 manifest 产物：`output/evaluation_manifest.json`。当前数据生成了 284 个评测标的（200 A 股 + 84 港股），2026 封存折包含 3,696 个非重叠/带间隔窗口。最终测试运行前必须先冻结模型、推理参数和数据清单 hash。
-
-当前已有 checkpoint 曾接触 2026 数据，因此任何现有 `fold_2026` 运行都必须标记为
-`diagnostic`，不能写成严格 OOS 结论。严格 OOS 只适用于训练与验证数据截止不晚于
-2025-12-31 的新 checkpoint。
-
----
-
-## 当前训练数据规范
-
-项目当前日线微调标准：
-
-| 参数 | 值 |
+| 项目 | 数量 |
 |---|---:|
-| `lookback_window` | 90 |
-| `predict_window` | 10 |
-| `max_context` | 512 |
-| 特征 | open、high、low、close、volume、amount |
-| 时间列 | timestamps |
+| 文件 | 497 |
+| A 股 / 港股 | 395 / 102 |
+| 训练区间行 | 478,368 |
+| 验证区间行 | 28,176 |
+| 诊断区间行 | 39,969 |
+| 严格未来 OOS 行 | 0 |
 
-完整格式见 [`FINETUNE_DATA_PREP.md`](FINETUNE_DATA_PREP.md)。
+评测固定选择 200 A 股和 100 港股：
 
-## 历史微调切分核对
+| fold | 样本数 | A / HK | 角色 |
+|---|---:|---:|---|
+| `validation_2026_q1` | 1,749 | 1,172 / 577 | screen/confirm |
+| `diagnostic_2026_04_07` | 2,366 | 1,595 / 771 | 近期诊断 |
 
-当前训练记录对应的实际逻辑不是统一日期切分，而是每个股票 CSV 清洗后按
-80% / 10% / 10% 的行数比例切分。训练代码只创建 train 和 validation
-loader，没有 test loader；所以历史日志中的“Validation Loss”不是最终测试
-结果。
+当前实际数据截止 2026-07-29。2026-07-31 尚未发生，
+manifest 会记录实际 `observed_data_end`，不会伪造未来数据。
 
-| 模型系列 | 数据目录 | 文件数 | 2026 数据是否进入训练/验证流程 | 日志中的模型选择情况 |
-|---|---|---:|---|---|
-| V2 / V2 continuation | `data_v2` | 381 | train 最晚 2025-12-17；30 个标的的 validation 延伸至 2026-04-09 | `v2_small_v2` 在第 3/3 轮达到最佳 Validation Loss 2.9513 |
-| V3 / V3 continuation / cont2 | `data_v3` | 497 | 训练分区已有 2 个标的延伸至 2026-03-12；validation 最晚至 2026-05-19 | `v3_fromFTv1_cont` 日志第 3 轮为 2.9507；`v3_small_cont2` 已记录到第 3 轮 2.9493 |
-| full_small 系列 | `data` | 385 | train 最晚 2026-06-10；validation 最晚 2026-07-02 | `full_small_v2/v3` 的最佳验证损失都出现在第 1 轮，后续变差 |
+## 历史模型处理
 
-因此，当前探索性评测中的 **V3 cont epoch 2** 明确使用过 2026 行情，不能
-作为 `fold_2026` 的最终测试模型。`fold_2025` 和 `fold_2026` 是 Phase 1
-新定义的滚动 OOS 评测区间；它们不等于上述历史微调脚本的 train/val/test，
-当前评测 manifest 也来自 `data_v2`，需要与新 checkpoint 的训练快照分别记录。
+以下旧模型进入同一 150 样本 screen，但只作独立候选：
 
-历史训练过程、旧模型排名和旧评测口径见 [`archive/`](archive/README.md)，不得作为当前项目指标引用。
+- `full_small_v3`
+- `v3_from_ftv1`
+- `v3_from_ftv1_cont`
+- `v3_small_cont2`
+
+它们不与新模型接续训练。只有在相同协议下通过 600 样本确认的模型，才可能成为后续
+continuation 父模型；继续训练必须使用新增或明显改善的数据，并同时超过继续训练前的冠军。
+
+## 2026 Q1 验证集结果
+
+本轮结果写入 `output/evaluation_compact_v5`，与旧版 `output/evaluation` 隔离。
+Screen 使用固定 150 个不重叠样本、`sample_count=1`。
+
+| 模型 | Screen DirAcc | Screen MeanDailyRankIC | Score | Confirm |
+|---|---:|---:|---:|---|
+| pretrained_small | 50.00% | 0.0135 | 0.5027 | 基线，已确认 |
+| compact_m1 | 43.33% | -0.1299 | 0.4340 | 未通过 screen |
+| compact_m2 | 46.67% | -0.1356 | 0.4529 | 未通过 screen |
+| compact_m3 | 45.33% | -0.1039 | 0.4512 | 未通过 screen |
+| full_small_v3 | 49.33% | 0.0098 | 0.4980 | 未通过 screen |
+| v3_from_ftv1 | 57.33% | 0.1081 | 0.5656 | 通过 screen，非第一名 |
+| v3_from_ftv1_cont | 60.00% | 0.1795 | 0.5959 | Screen 第一名，已确认 |
+| v3_small_cont2 | 59.33% | 0.1740 | 0.5908 | 通过 screen，非第一名 |
+
+600 样本确认结果：
+
+| 模型 | Confirm DirAcc | Confirm MeanDailyRankIC | Score |
+|---|---:|---:|---:|
+| pretrained_small | 48.83% | -0.1336 | 0.4663 |
+| v3_from_ftv1_cont | 53.67% | 0.0300 | 0.5280 |
+
+确认阶段分市场结果：
+
+| 模型 | 市场 | 样本 | DirAcc | MeanDailyRankIC | Score |
+|---|---|---:|---:|---:|---:|
+| pretrained_small | A 股 | 400 | 49.50% | 0.0449 | 0.5060 |
+| pretrained_small | 港股 | 200 | 47.50% | -0.2408 | 0.4368 |
+| v3_from_ftv1_cont | A 股 | 400 | 55.50% | 0.1872 | 0.5704 |
+| v3_from_ftv1_cont | 港股 | 200 | 50.00% | -0.0643 | 0.4871 |
+
+候选 Score 增量为 `+0.0617`，按目标结束日期配对的 500 次 Bootstrap 95% CI 为
+`[-0.0174, 0.1548]`。虽然点估计同时超过基线，但置信区间下界不大于 0，没有满足冻结的
+晋级规则。
+
+## 本轮结论与停止决定
+
+当前证据不能证明 A/H 股简单低学习率微调能够**稳定**超过官方预训练基线：
+
+- M1/M2/M3 在 150 样本 screen 中全部低于基线；
+- 历史 `v3_from_ftv1_cont` 在 600 样本点估计中领先，但优势未通过配对 Bootstrap；
+- 按协议保留官方 `Kronos-small`，不运行 2026-04～07 诊断评测；
+- 不追加 epoch、学习率、temperature 或 continuation 搜索；
+- 下一轮只允许改善数据质量，然后原样重复同一实验；在此之前不选择新的 continuation 父模型。
+
+## 大盘股开发实验（已完成）
+
+上一节规划的 A/H 大盘股开发实验已经执行完成。两条训练线使用同一份
+`clean_v6_largecap`、同一 tokenizer、`lookback=90`、`predict_window=5`、1 epoch 和
+`learning_rate=1e-6`，只改变 predictor 的初始化权重。结果写入
+`output/evaluation_largecap_v1`。
+
+- `largecap_l1`：从官方 `Kronos-small` 起点训练 1 epoch；
+- `largecap_l2_v3cont`：从 `v3_from_ftv1_cont` 起点训练 1 epoch；
+- 两者使用相同的 2022～2025 训练窗口、2026 Q1 验证折和 A/H 大盘股评测样本；
+- 没有模型通过配对 Bootstrap 晋级时，停止当前 small 微调路线，不继续搜索局部参数。
+
+| 模型 | 初始化 | 训练状态 | Screen Score | Confirm Score |
+|---|---|---|---:|---:|
+| `pretrained_small` | 官方 Kronos-small | 基线 | 0.5156 | 0.4731 |
+| `largecap_l1` | 官方 Kronos-small | 已完成 | 0.5219 | 0.5066 |
+| `largecap_l2_v3cont` | `v3_from_ftv1_cont/best_model` | 已完成 | 0.5627 | 0.5115 |
+
+L1 在 600 样本确认中相对官方基线的综合分增量为 `+0.0335`，500 次配对 Bootstrap
+95% 置信区间为 `[-0.0007, 0.0747]`。L2 在 150 样本 screen 中明显领先，但在 600 样本确认中
+相对官方基线的综合分增量为 `+0.0383`，置信区间为 `[-0.0560, 0.1416]`。两者的区间下界都不
+大于 0，因此均没有通过冻结晋级规则。
+
+当前决定：保留官方 `Kronos-small`，不运行本轮 2026-04～07 诊断测试，不追加 epoch、学习率、
+temperature 或新的 continuation 模型。后续若继续推进，只允许改善股票池和数据质量后原样重跑
+这两条训练线。
+
+当前结果说明：将训练对象收敛到大盘股后，旧微调权重可以带来局部提升，但目前仍不能证明微调
+模型稳定优于官方模型。
+
+当前已准备好下一轮开发训练输入：
+
+| 项目 | 值 |
+|---|---:|
+| 数据集 | `clean_v6_largecap_dev` |
+| 股票文件 | 399（A 股 297、港股 102） |
+| 训练窗口 | 346,503 |
+| 验证窗口 | 18,708 |
+| L1 训练配置 | `external/Kronos/finetune_csv/configs/config_largecap_l1.yaml` |
+| L2 训练配置 | `external/Kronos/finetune_csv/configs/config_largecap_l2_v3cont.yaml` |
+| 评测 manifest | `output/evaluation_manifest_largecap_v6_dev.json` |
+
+该数据集已经通过训练器读取验收，但仍标记为 `development_only`：A 股是当前 CSI300
+快照，港股是已有高流动性候选，尚未具备完整历史时点成分。因此它可以开始开发训练，不能
+用于严格 OOS 或生产收益宣称。
+
+完整晋级和停止规则见 [`EVALUATION_PROTOCOL.md`](EVALUATION_PROTOCOL.md)。

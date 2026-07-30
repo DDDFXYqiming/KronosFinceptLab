@@ -5,7 +5,11 @@ import pandas as pd
 from kronos_fincept.evaluation.rolling import (
     AssetMeta,
     bootstrap_ci,
+    build_compact_evaluation_manifest,
     build_window_records,
+    compare_candidate_to_baseline,
+    composite_score,
+    select_screen_candidate,
     select_evaluation_samples,
     summarize_prediction_rows,
 )
@@ -52,6 +56,55 @@ def test_sample_step_cannot_overlap_target_or_embargo():
         assert "minimum is 6" in str(exc)
     else:
         raise AssertionError("overlapping sample_step should be rejected")
+
+
+def test_compact_manifest_uses_q1_validation_and_recent_diagnostic_period(tmp_path):
+    timestamps = pd.bdate_range("2021-08-01", "2026-07-31")
+    frame = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": 10.0,
+            "high": 11.0,
+            "low": 9.0,
+            "close": 10.0,
+            "volume": 100.0,
+            "amount": 1000.0,
+        }
+    )
+    frame.to_csv(tmp_path / "cn_000001.csv", index=False)
+    frame.to_csv(tmp_path / "hk_00005.csv", index=False)
+
+    manifest = build_compact_evaluation_manifest(
+        tmp_path,
+        a_limit=None,
+        hk_limit=None,
+    )
+
+    assert [partition["name"] for partition in manifest["partitions"]] == [
+        "train",
+        "validation",
+        "diagnostic",
+        "strict_future_oos",
+    ]
+    assert manifest["partitions"][0]["start"] == "2022-01-01"
+    assert manifest["partitions"][0]["end"] == "2025-12-31"
+    assert manifest["partitions"][1]["start"] == "2026-01-01"
+    assert manifest["partitions"][1]["end"] == "2026-03-31"
+    assert manifest["partitions"][2]["start"] == "2026-04-01"
+    assert manifest["partitions"][2]["end"] == "2026-07-31"
+    assert manifest["partitions"][3]["start"] == "2026-08-01"
+    assert set(manifest["samples"]) == {
+        "validation_2026_q1",
+        "diagnostic_2026_04_07",
+    }
+    assert all(
+        "2026-01-01" <= row["target_start"] <= row["target_end"] <= "2026-03-31"
+        for row in manifest["samples"]["validation_2026_q1"]
+    )
+    assert all(
+        "2026-04-01" <= row["target_start"] <= row["target_end"] <= "2026-07-31"
+        for row in manifest["samples"]["diagnostic_2026_04_07"]
+    )
 
 
 def test_summary_reports_market_groups_and_cluster_bootstrap():
@@ -107,3 +160,81 @@ def test_zero_bootstrap_replicates_disables_ci_work():
     assert result["n_bootstrap"] == 0
     assert result["lower"] is None
     assert result["upper"] is None
+
+
+def test_summary_uses_market_date_cross_sectional_rankic_instead_of_pooled_rankic():
+    rows = []
+    groups = [
+        ("A", "2025-01-10", [0.10, 0.20, 0.30], [-0.30, -0.20, -0.10]),
+        ("A", "2025-02-10", [-0.30, -0.20, -0.10], [0.10, 0.20, 0.30]),
+    ]
+    for market, target_end, actual_returns, predicted_returns in groups:
+        for index, (actual_return, predicted_return) in enumerate(zip(actual_returns, predicted_returns)):
+            rows.append(
+                {
+                    "fold": "fold_2025",
+                    "symbol": f"{target_end}-{index}",
+                    "market": market,
+                    "target_end": target_end,
+                    "last_close": 100.0,
+                    "pred_close": 100.0 * (1.0 + predicted_return),
+                    "true_close": 100.0 * (1.0 + actual_return),
+                }
+            )
+
+    summary = summarize_prediction_rows(rows, bootstrap_replicates=0)
+
+    assert summary["overall"]["rankic"] < 0
+    assert summary["overall"]["mean_daily_rankic"] == 1.0
+    assert summary["overall"]["rankic_periods"] == 2
+
+
+def test_composite_score_uses_fixed_direction_and_rankic_weights():
+    assert composite_score(0.60, 0.20) == 0.60
+
+
+def test_candidate_promotion_requires_both_metrics_and_positive_paired_ci():
+    candidate_rows = []
+    baseline_rows = []
+    for month in range(1, 7):
+        target_end = f"2025-{month:02d}-20"
+        for index, actual_return in enumerate((-0.03, -0.01, 0.01, 0.03)):
+            common = {
+                "fold": "fold_2025",
+                "symbol": f"{index:06d}",
+                "market": "A",
+                "target_end": target_end,
+                "last_close": 100.0,
+                "true_close": 100.0 * (1.0 + actual_return),
+            }
+            candidate_rows.append(
+                {**common, "pred_close": 100.0 * (1.0 + actual_return)}
+            )
+            baseline_rows.append(
+                {**common, "pred_close": 100.0 * (1.0 - actual_return)}
+            )
+
+    comparison = compare_candidate_to_baseline(
+        candidate_rows,
+        baseline_rows,
+        n_bootstrap=100,
+        seed=42,
+    )
+
+    assert comparison["candidate"]["direction_accuracy"] > comparison["baseline"]["direction_accuracy"]
+    assert comparison["candidate"]["mean_daily_rankic"] > comparison["baseline"]["mean_daily_rankic"]
+    assert comparison["score_delta_ci95"]["lower"] > 0
+    assert comparison["promoted"] is True
+
+
+def test_screen_selection_retains_baseline_when_no_candidate_clears_both_metrics():
+    baseline = {"direction_accuracy": 0.55, "mean_daily_rankic": 0.10}
+    candidates = {
+        "direction_only": {"direction_accuracy": 0.60, "mean_daily_rankic": 0.09},
+        "rank_only": {"direction_accuracy": 0.54, "mean_daily_rankic": 0.20},
+    }
+
+    decision = select_screen_candidate(candidates, baseline)
+
+    assert decision["selected"] == "pretrained_baseline"
+    assert decision["decision"] == "retain_pretrained_baseline"

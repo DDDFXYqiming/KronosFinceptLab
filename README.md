@@ -3,16 +3,11 @@
 > 本地优先的量化金融分析驾驶舱  
 > 版本：10.9.0 | Python >= 3.11 | Node >= 18
 
-> 文档状态：Current | 最后核对：2026-07-29
-> 当前文档以代码、运行配置和完整生产推理链路为准；历史计划与旧评测统一存放在 `docs/archive/`。
-
 ---
 
 ## 简介
 
 KronosFinceptLab 是一个**本地优先的量化金融分析平台**，完全在本地运行。集市场行情数据获取、AI K线预测、技术分析、宏观经济信号聚合、投研分析、策略回测于一体，支持 CLI、REST API、Web UI 和 MCP 四种入口。
-
-所有核心能力无需云端锁定即可工作。外部数据源（东方财富、Tushare、Yahoo、Binance）和 LLM 服务均为可选，失败时自动降级。
 
 ---
 
@@ -30,31 +25,27 @@ kronos serve --host 0.0.0.0 --port 8000
 cd web && npm install && npm run dev
 ```
 
-- Web UI：http://localhost:3000
-- API：http://localhost:8000
-- API 文档：http://localhost:8000/docs（需设置 `KRONOS_ENABLE_API_DOCS=1`）
-
 ---
 
 ## 能力矩阵
 
-| 能力 | CLI | API | Web | MCP |
-|---|---|---|---|---|
-| K线预测 | `kronos forecast` | `POST /api/forecast` | 预测页面 | `forecast_ohlcv` |
-| 批量排名 | `kronos batch` | `POST /api/batch` | 批量页面 | `batch_forecast_ohlcv` |
-| 行情数据 | `kronos data fetch` | `GET /api/data/*` | 数据页面 | `fetch_a_stock` |
-| 技术指标 | `kronos data indicator` | `GET /api/data/indicator/*` | 数据页面 | `calculate_indicators` |
-| AI 智能体分析 | `kronos analyze agent` | `POST /api/v1/analyze/agent` | 分析页面 | `analyze_agent` |
-| 宏观分析 | `kronos analyze macro` | `POST /api/v1/analyze/macro` | 宏观页面<sup>†</sup> | `analyze_macro` |
-| AI 个股报告 | `kronos analyze ai-analyze` | `POST /api/v1/analyze/ai` | 分析页面 | `analyze_ai` |
-| DCF/风险/组合 | `kronos analyze dcf` | `POST /api/v1/analyze/dcf` | 分析页面 | `analyze_dcf` 等 |
-| 策略回测 | `kronos backtest ranking` | `POST /api/backtest/ranking` | 回测页面 | `run_ranking_backtest` |
-| 策略实验室 | `kronos backtest strategy` | `POST /api/backtest/strategy` | 回测页面 | `run_strategy_backtest` |
-| 智能预警 | `kronos alert add` | `POST /api/alert/rules` | 预警页面 | `create_prediction_deviation_alerts` |
-| 新闻/RSS | `kronos news rss` | `POST /api/news/rss` | 新闻页面 | `fetch_rss_news` |
-| 自选研究 | `kronos watchlist` | `GET/POST /api/watchlist/*` | 自选页面 | `watchlist_research` |
-| 异步任务 | `kronos jobs` | `POST/GET /api/jobs/*` | 任务面板 | `submit_backtest_job` |
-| 健康检查 | `kronos health` | `GET /api/health` | 仪表盘 | `health_check` |
+| 能力          | CLI                         | API                           | Web                  | MCP                                  |
+| ------------- | --------------------------- | ----------------------------- | -------------------- | ------------------------------------ |
+| K线预测       | `kronos forecast`           | `POST /api/forecast`          | 预测页面             | `forecast_ohlcv`                     |
+| 批量排名      | `kronos batch`              | `POST /api/batch`             | 批量页面             | `batch_forecast_ohlcv`               |
+| 行情数据      | `kronos data fetch`         | `GET /api/data/*`             | 数据页面             | `fetch_a_stock`                      |
+| 技术指标      | `kronos data indicator`     | `GET /api/data/indicator/*`   | 数据页面             | `calculate_indicators`               |
+| AI 智能体分析 | `kronos analyze agent`      | `POST /api/v1/analyze/agent`  | 分析页面             | `analyze_agent`                      |
+| 宏观分析      | `kronos analyze macro`      | `POST /api/v1/analyze/macro`  | 宏观页面<sup>†</sup> | `analyze_macro`                      |
+| AI 个股报告   | `kronos analyze ai-analyze` | `POST /api/v1/analyze/ai`     | 分析页面             | `analyze_ai`                         |
+| DCF/风险/组合 | `kronos analyze dcf`        | `POST /api/v1/analyze/dcf`    | 分析页面             | `analyze_dcf` 等                     |
+| 策略回测      | `kronos backtest ranking`   | `POST /api/backtest/ranking`  | 回测页面             | `run_ranking_backtest`               |
+| 策略实验室    | `kronos backtest strategy`  | `POST /api/backtest/strategy` | 回测页面             | `run_strategy_backtest`              |
+| 智能预警      | `kronos alert add`          | `POST /api/alert/rules`       | 预警页面             | `create_prediction_deviation_alerts` |
+| 新闻/RSS      | `kronos news rss`           | `POST /api/news/rss`          | 新闻页面             | `fetch_rss_news`                     |
+| 自选研究      | `kronos watchlist`          | `GET/POST /api/watchlist/*`   | 自选页面             | `watchlist_research`                 |
+| 异步任务      | `kronos jobs`               | `POST/GET /api/jobs/*`        | 任务面板             | `submit_backtest_job`                |
+| 健康检查      | `kronos health`             | `GET /api/health`             | 仪表盘               | `health_check`                       |
 
 ---
 
@@ -173,21 +164,19 @@ KronosFinceptLab/
 
 ## 文档导航
 
-| 文档 | 内容 |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、模块边界、数据流、安全模型 |
-| [docs/API.md](docs/API.md) | REST 接口清单、认证、请求/响应结构 |
-| [docs/CLI.md](docs/CLI.md) | CLI 命令树、参数、示例 |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 本地、Docker、Zeabur 部署 |
-| [docs/START_GUIDE.md](docs/START_GUIDE.md) | 逐步首次运行指南 |
-| [docs/FINCEPT_INTEGRATION.md](docs/FINCEPT_INTEGRATION.md) | FinceptTerminal C++/Python 桥接 |
-| [docs/FINETUNE_DATA_PREP.md](docs/FINETUNE_DATA_PREP.md) | 当前日线微调数据规范 |
-| [docs/FINETUNE_REPORT.md](docs/FINETUNE_REPORT.md) | 最新完整生产链路评测 |
+| 文档                                                       | 内容                                       |
+| ---------------------------------------------------------- | ------------------------------------------ |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)               | 系统架构、模块边界、数据流、安全模型       |
+| [docs/API.md](docs/API.md)                                 | REST 接口清单、认证、请求/响应结构         |
+| [docs/CLI.md](docs/CLI.md)                                 | CLI 命令树、参数、示例                     |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | 本地、Docker、Zeabur 部署                  |
+| [docs/START_GUIDE.md](docs/START_GUIDE.md)                 | 逐步首次运行指南                           |
+| [docs/FINCEPT_INTEGRATION.md](docs/FINCEPT_INTEGRATION.md) | FinceptTerminal C++/Python 桥接            |
+| [docs/FINETUNE_DATA_PREP.md](docs/FINETUNE_DATA_PREP.md)   | 当前日线微调数据规范                       |
+| [docs/FINETUNE_REPORT.md](docs/FINETUNE_REPORT.md)         | 最新完整生产链路评测                       |
 | [docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md) | 当前滚动评测、训练/验证/封存测试和统计规范 |
-| [kronos_mcp/README.md](kronos_mcp/README.md) | MCP 服务工具与客户端配置 |
-| [docs/archive/README.md](docs/archive/README.md) | 历史计划、旧评测与一次性审计 |
-
-`external/Kronos/` 是上游 Kronos 项目副本，其 README 和示例仅作为上游参考，不定义 KronosFinceptLab 的当前运行或训练标准。
+| [kronos_mcp/README.md](kronos_mcp/README.md)               | MCP 服务工具与客户端配置                   |
+| [docs/archive/README.md](docs/archive/README.md)           | 历史计划、旧评测与一次性审计               |
 
 ---
 
@@ -211,8 +200,6 @@ cd web && npm run typecheck && npm run lint && npm run test:frontend
 ---
 
 > 所有预测和分析仅供研究用途，不构成投资建议。
-
-† Web 宏观页面支持手动选择数据源（FRED/CME/Kalshi/Deribit 等），未选择时自动使用所有可用提供方。信号渲染已增强，订单簿和期权希腊值以结构化格式展示。
 
 ---
 

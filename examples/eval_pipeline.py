@@ -4,7 +4,7 @@ Examples::
 
     python examples/eval_pipeline.py --phase screen --manifest output/evaluation_manifest.json --tokenizer-path <path>
     python examples/eval_pipeline.py --phase confirm --manifest output/evaluation_manifest.json --tokenizer-path <path>
-    python examples/eval_pipeline.py --phase final --model-key v3_cont_epoch_2 --manifest output/evaluation_manifest.json --tokenizer-path <path>
+    python examples/eval_pipeline.py --phase final --model-key simple_m2 --manifest output/evaluation_manifest.json --tokenizer-path <path>
 
 The runner deliberately starts one evaluator at a time.  DirectML is not
 safe to stress with concurrent checkpoint processes on this machine.
@@ -22,6 +22,12 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 EVALUATOR = PROJECT_ROOT / "examples" / "eval_rolling.py"
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from kronos_fincept.evaluation.rolling import (  # noqa: E402
+    compare_candidate_to_baseline,
+    select_screen_candidate,
+)
 
 
 def _hub_cache() -> Path:
@@ -37,27 +43,25 @@ def _model_paths() -> dict[str, Path]:
     hub = _hub_cache()
     return {
         "pretrained_small": hub / "models--NeoQuasar--Kronos-small" / "snapshots" / "901c26c1332695a2a8f243eb2f37243a37bea320",
-        "full_small": base / "finetuned_full_small" / "basemodel" / "best_model",
+        "compact_m1": base / "finetuned_compact_m1" / "basemodel" / "best_model",
+        "compact_m2": base / "finetuned_compact_m2" / "basemodel" / "best_model",
+        "compact_m3": base / "finetuned_compact_m3" / "basemodel" / "best_model",
         "full_small_v3": base / "finetuned_full_small_v3" / "basemodel" / "best_model",
-        "v2_small_v2": base / "finetuned_v2_small_v2" / "basemodel" / "best_model",
-        "v3_best": base / "finetuned_v3_fromFTv1" / "basemodel" / "best_model",
-        "v3_cont_best": base / "finetuned_v3_fromFTv1_cont" / "basemodel" / "best_model",
-        "v3_cont_epoch_1": base / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_1",
-        "v3_cont_epoch_2": base / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_2",
-        "cont2_best": base / "finetuned_v3_small_cont2" / "basemodel" / "best_model",
+        "v3_from_ftv1": base / "finetuned_v3_fromFTv1" / "basemodel" / "best_model",
+        "v3_from_ftv1_cont": base / "finetuned_v3_fromFTv1_cont" / "basemodel" / "best_model",
+        "v3_small_cont2": base / "finetuned_v3_small_cont2" / "basemodel" / "best_model",
     }
 
 
 SCREEN_KEYS = [
     "pretrained_small",
-    "full_small",
+    "compact_m1",
+    "compact_m2",
+    "compact_m3",
     "full_small_v3",
-    "v2_small_v2",
-    "v3_best",
-    "v3_cont_best",
-    "v3_cont_epoch_1",
-    "v3_cont_epoch_2",
-    "cont2_best",
+    "v3_from_ftv1",
+    "v3_from_ftv1_cont",
+    "v3_small_cont2",
 ]
 
 
@@ -152,7 +156,7 @@ class _PipelineLock:
             self.path.unlink(missing_ok=True)
 
 
-def _confirm_keys(screen_report: Path) -> list[str]:
+def _confirm_keys(screen_report: Path) -> tuple[list[str], dict[str, Any]]:
     report = json.loads(screen_report.read_text(encoding="utf-8"))
     completed = {
         entry.get("model_key")
@@ -164,17 +168,17 @@ def _confirm_keys(screen_report: Path) -> list[str]:
         raise RuntimeError(
             "screen report is incomplete; run the full screen phase before confirm: " + ", ".join(missing)
         )
-    candidates = []
-    for entry in report.get("results", []):
-        overall = (entry.get("summary") or {}).get("overall") or {}
-        accuracy = overall.get("direction_accuracy")
-        if accuracy is not None:
-            candidates.append((float(accuracy), entry["model_key"]))
-    candidates.sort(reverse=True)
-    selected = [key for _, key in candidates[:2]]
-    if "pretrained_small" not in selected:
-        selected.append("pretrained_small")
-    return selected
+    entries = {entry["model_key"]: entry for entry in report.get("results", [])}
+    baseline = (entries["pretrained_small"].get("summary") or {}).get("overall") or {}
+    candidates = {
+        key: (entries[key].get("summary") or {}).get("overall") or {}
+        for key in SCREEN_KEYS
+        if key != "pretrained_small"
+    }
+    decision = select_screen_candidate(candidates, baseline)
+    if decision["selected"] == "pretrained_baseline":
+        return [], decision
+    return [decision["selected"], "pretrained_small"], decision
 
 
 def main() -> None:
@@ -192,11 +196,6 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--oos-status", choices=("diagnostic", "strict"), default="diagnostic")
     parser.add_argument("--production-audit", action="store_true")
-    parser.add_argument(
-        "--all-models",
-        action="store_true",
-        help="For confirm, run all nine screened models instead of only the top two plus baseline.",
-    )
     parser.add_argument("--no-resume", action="store_true")
     args = parser.parse_args()
 
@@ -205,10 +204,10 @@ def main() -> None:
         keys = SCREEN_KEYS
         mode = "screen"
     elif args.phase == "confirm":
-        keys = SCREEN_KEYS if args.all_models else _confirm_keys(args.screen_report)
+        keys, screen_decision = _confirm_keys(args.screen_report)
         mode = "confirm"
     elif args.phase == "smoke":
-        keys = [args.model_key or "v3_cont_epoch_2"]
+        keys = [args.model_key or "pretrained_small"]
         mode = "smoke"
     else:
         if not args.model_key and not args.model_path:
@@ -228,6 +227,11 @@ def main() -> None:
     phase_dir = args.output_dir / args.phase
     entries: list[dict[str, Any]] = []
     with _PipelineLock(PROJECT_ROOT / "output" / ".evaluation_pipeline.lock"):
+        if args.phase == "confirm":
+            _write_summary(phase_dir / "screen_decision.json", "screen_decision", [screen_decision])
+            if not keys:
+                print("[pipeline] no candidate cleared both screen guardrails; retain pretrained baseline")
+                return
         for key in keys:
             model_path = paths[key]
             output = phase_dir / f"{key}.json"
@@ -243,10 +247,22 @@ def main() -> None:
                     model_path,
                     output=audit_output,
                     mode="final",
-                    extra=["--max-samples", "256", "--sample-count", "8", "--bootstrap-replicates", "200"],
+                    extra=["--max-samples", "128", "--sample-count", "8", "--bootstrap-replicates", "200"],
                 )
                 entries.append(audit)
                 _write_summary(phase_dir / "summary.json", args.phase, entries)
+
+        if args.phase == "confirm" and len(entries) == 2 and all(entry.get("returncode") == 0 for entry in entries):
+            by_key = {entry["model_key"]: _read_result(Path(entry["output"])) for entry in entries}
+            candidate_key = next(key for key in by_key if key != "pretrained_small")
+            decision = compare_candidate_to_baseline(
+                by_key[candidate_key]["rows"],
+                by_key["pretrained_small"]["rows"],
+                n_bootstrap=500,
+                seed=args.seed,
+            )
+            decision["candidate_key"] = candidate_key
+            _write_summary(phase_dir / "decision.json", "confirm_decision", [decision])
 
     print(f"\n[pipeline] completed phase={args.phase} results={phase_dir / 'summary.json'}")
 

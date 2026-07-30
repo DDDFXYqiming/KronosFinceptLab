@@ -32,28 +32,34 @@ from kronos_fincept.evaluation.rolling import (  # noqa: E402
 
 MODE_DEFAULTS: dict[str, dict[str, Any]] = {
     "smoke": {
-        "fold": "fold_2025",
+        "fold": "validation_2026_q1",
         "sample_count": 1,
         "temperature": 0.3,
         "top_p": 0.9,
         "bootstrap_replicates": 0,
     },
     "screen": {
-        "fold": "fold_2025",
+        "fold": "validation_2026_q1",
         "sample_count": 1,
         "temperature": 0.3,
         "top_p": 0.9,
         "bootstrap_replicates": 0,
+        "a_symbols": 20,
+        "hk_symbols": 10,
+        "windows_per_symbol": 5,
     },
     "confirm": {
-        "fold": "fold_2025",
-        "sample_count": 8,
+        "fold": "validation_2026_q1",
+        "sample_count": 1,
         "temperature": 0.3,
         "top_p": 0.9,
-        "bootstrap_replicates": 200,
+        "bootstrap_replicates": 500,
+        "a_symbols": 80,
+        "hk_symbols": 40,
+        "windows_per_symbol": 5,
     },
     "final": {
-        "fold": "fold_2026",
+        "fold": "diagnostic_2026_04_07",
         "sample_count": 1,
         "temperature": 0.3,
         "top_p": 0.9,
@@ -218,18 +224,32 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
             setattr(args, name, defaults[name])
     if args.mode == "smoke" and args.max_samples is None:
         args.max_samples = 16
+    if args.mode in {"screen", "confirm"}:
+        for argument, default_key in (
+            ("screen_a_symbols", "a_symbols"),
+            ("screen_hk_symbols", "hk_symbols"),
+            ("windows_per_symbol", "windows_per_symbol"),
+        ):
+            if getattr(args, argument) is None:
+                setattr(args, argument, defaults[default_key])
     return args
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     args = _resolve_args(args)
-    if args.mode in {"screen", "confirm"} and args.fold == "fold_2026":
-        raise ValueError("screen/confirm must not use sealed fold_2026; choose fold_2025 or another validation-like fold")
     _seed_everything(args.seed)
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     folds = {fold["id"]: fold for fold in manifest["rolling_folds"]}
     if args.fold not in folds:
         raise ValueError(f"unknown fold {args.fold}; choose from {sorted(folds)}")
+    if (
+        args.mode in {"screen", "confirm"}
+        and folds[args.fold].get("role") != "model_selection"
+    ):
+        raise ValueError(
+            "screen/confirm must use a model_selection fold, "
+            f"not {args.fold} ({folds[args.fold].get('role')})"
+        )
 
     all_samples = manifest["samples"].get(args.fold, [])
     samples = select_evaluation_samples(
@@ -370,9 +390,9 @@ def main() -> None:
     parser.add_argument("--bootstrap-seed", type=int, default=42)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-samples", type=int, default=None)
-    parser.add_argument("--screen-a-symbols", type=int, default=20)
-    parser.add_argument("--screen-hk-symbols", type=int, default=10)
-    parser.add_argument("--windows-per-symbol", type=int, default=5)
+    parser.add_argument("--screen-a-symbols", type=int, default=None)
+    parser.add_argument("--screen-hk-symbols", type=int, default=None)
+    parser.add_argument("--windows-per-symbol", type=int, default=None)
     parser.add_argument("--checkpoint-every", type=int, default=64)
     parser.add_argument("--progress-path", type=Path, default=None)
     parser.add_argument("--no-resume", action="store_true")
@@ -387,7 +407,9 @@ def main() -> None:
     print(
         f"fold={result['fold']} mode={result['mode']} sealed={result['sealed']} "
         f"oos={result['oos_status']} n={overall['n_samples']} "
-        f"dir_acc={overall.get('direction_accuracy')} ic={overall.get('ic')} rankic={overall.get('rankic')}"
+        f"dir_acc={overall.get('direction_accuracy')} "
+        f"mean_daily_rankic={overall.get('mean_daily_rankic')} "
+        f"score={overall.get('composite_score')}"
     )
     print(f"saved={args.output}")
 

@@ -328,6 +328,150 @@ def build_evaluation_manifest(
     }
 
 
+def build_compact_evaluation_manifest(
+    data_dir: str | Path,
+    *,
+    train_start: str = "2022-01-01",
+    train_end: str = "2025-12-31",
+    validation_start: str = "2026-01-01",
+    validation_end: str = "2026-03-31",
+    diagnostic_start: str = "2026-04-01",
+    diagnostic_end: str = "2026-07-31",
+    strict_oos_start: str = "2026-08-01",
+    lookback: int = 90,
+    pred_len: int = 5,
+    sample_step: int | None = None,
+    embargo_bars: int = 5,
+    a_limit: int | None = 200,
+    hk_limit: int | None = 100,
+) -> dict[str, Any]:
+    """Build the fixed compact development and forward-OOS manifest."""
+
+    root = Path(data_dir)
+    assets = discover_universe(root, a_limit=a_limit, hk_limit=hk_limit)
+    if not assets:
+        raise ValueError(f"no cn_*.csv or hk_*.csv files found under {root}")
+
+    boundaries = [
+        _date(train_start),
+        _date(train_end),
+        _date(validation_start),
+        _date(validation_end),
+        _date(diagnostic_start),
+        _date(diagnostic_end),
+        _date(strict_oos_start),
+    ]
+    if boundaries != sorted(boundaries) or len(set(boundaries)) != len(boundaries):
+        raise ValueError("compact partition boundaries must be strictly increasing")
+
+    data_end = _date(_last_day(assets))
+    effective_diagnostic_end = min(_date(diagnostic_end), data_end)
+    effective_step = sample_step if sample_step is not None else pred_len + embargo_bars
+    fold_specs = (
+        (
+            "validation_2026_q1",
+            "model_selection",
+            _date(validation_start),
+            _date(validation_end),
+        ),
+        (
+            "diagnostic_2026_04_07",
+            "recent_diagnostic",
+            _date(diagnostic_start),
+            effective_diagnostic_end,
+        ),
+    )
+
+    folds: list[dict[str, Any]] = []
+    samples_by_fold: dict[str, list[dict[str, Any]]] = {}
+    for fold_id, role, fold_start, fold_end in fold_specs:
+        fold_samples: list[dict[str, Any]] = []
+        if fold_start <= fold_end:
+            for asset in assets:
+                records = build_window_records(
+                    asset,
+                    read_timestamps(root / asset.file),
+                    fold=fold_id,
+                    target_start=fold_start,
+                    target_end=fold_end,
+                    lookback=lookback,
+                    pred_len=pred_len,
+                    sample_step=effective_step,
+                    embargo_bars=embargo_bars,
+                )
+                fold_samples.extend(asdict(record) for record in records)
+        folds.append(
+            {
+                "id": fold_id,
+                "role": role,
+                "evaluation_start": _date_text(fold_start),
+                "evaluation_end": _date_text(fold_end),
+                "sealed": False,
+                "sample_count": len(fold_samples),
+                "symbol_count": len({item["symbol"] for item in fold_samples}),
+                "market_counts": {
+                    market: sum(item["market"] == market for item in fold_samples)
+                    for market in ("A", "HK")
+                },
+            }
+        )
+        samples_by_fold[fold_id] = fold_samples
+
+    return {
+        "manifest_version": 2,
+        "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "data_dir": str(root),
+        "observed_data_end": _date_text(data_end),
+        "universe_policy": {
+            "markets": ["A", "HK"],
+            "selection": "deterministic sorted filenames",
+            "a_limit": a_limit,
+            "hk_limit": hk_limit,
+        },
+        "protocol": {
+            "lookback": lookback,
+            "pred_len": pred_len,
+            "sample_step": effective_step,
+            "embargo_bars": embargo_bars,
+            "target_windows_non_overlapping_per_symbol": effective_step >= pred_len,
+            "oos_boundary": _date_text(strict_oos_start),
+        },
+        "partitions": [
+            {
+                "name": "train",
+                "role": "fit",
+                "start": _date_text(train_start),
+                "end": _date_text(train_end),
+                "sealed": False,
+            },
+            {
+                "name": "validation",
+                "role": "model_selection",
+                "start": _date_text(validation_start),
+                "end": _date_text(validation_end),
+                "sealed": False,
+            },
+            {
+                "name": "diagnostic",
+                "role": "recent_diagnostic",
+                "start": _date_text(diagnostic_start),
+                "end": _date_text(diagnostic_end),
+                "sealed": False,
+            },
+            {
+                "name": "strict_future_oos",
+                "role": "forward_only_after_freeze",
+                "start": _date_text(strict_oos_start),
+                "end": None,
+                "sealed": True,
+            },
+        ],
+        "rolling_folds": folds,
+        "universe": [asdict(asset) for asset in assets],
+        "samples": samples_by_fold,
+    }
+
+
 def select_evaluation_samples(
     samples: Sequence[Mapping[str, Any]],
     *,
@@ -441,6 +585,214 @@ def _metric(frame: pd.DataFrame, name: str) -> float | None:
     raise ValueError(f"unsupported metric: {name}")
 
 
+def _mean_cross_sectional_rankic(
+    frame: pd.DataFrame,
+    *,
+    period_column: str = "target_end",
+) -> tuple[float | None, int]:
+    """Average Spearman IC across market/date cross-sections."""
+
+    if frame.empty or period_column not in frame.columns or "market" not in frame.columns:
+        return None, 0
+    values: list[float] = []
+    for _, group in frame.groupby(["market", period_column], sort=True):
+        value = _safe_corr(group["pred_return"], group["actual_return"], rank=True)
+        if value is not None and np.isfinite(value):
+            values.append(float(value))
+    return (float(np.mean(values)), len(values)) if values else (None, 0)
+
+
+def composite_score(
+    direction_accuracy: float | None,
+    mean_daily_rankic: float | None,
+) -> float | None:
+    """Return the frozen 60% direction / 40% cross-sectional RankIC score."""
+
+    if direction_accuracy is None or mean_daily_rankic is None:
+        return None
+    return float(0.60 * direction_accuracy + 0.40 * ((mean_daily_rankic + 1.0) / 2.0))
+
+
+def _selection_metrics(frame: pd.DataFrame, *, period_column: str = "target_end") -> dict[str, Any]:
+    daily_rankic, periods = _mean_cross_sectional_rankic(frame, period_column=period_column)
+    direction = _metric(frame, "direction_accuracy")
+    return {
+        "direction_accuracy": direction,
+        "mean_daily_rankic": daily_rankic,
+        "rankic_periods": periods,
+        "composite_score": composite_score(direction, daily_rankic),
+    }
+
+
+def _prediction_frame(rows: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
+    frame = pd.DataFrame(rows)
+    required = {
+        "symbol",
+        "market",
+        "target_end",
+        "last_close",
+        "pred_close",
+        "true_close",
+    }
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"prediction rows are missing columns: {sorted(missing)}")
+    frame = frame.copy()
+    frame["pred_return"] = frame["pred_close"].astype(float) / frame["last_close"].astype(float) - 1.0
+    frame["actual_return"] = frame["true_close"].astype(float) / frame["last_close"].astype(float) - 1.0
+    return frame
+
+
+def compare_candidate_to_baseline(
+    candidate_rows: Sequence[Mapping[str, Any]],
+    baseline_rows: Sequence[Mapping[str, Any]],
+    *,
+    n_bootstrap: int = 500,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """Compare aligned predictions and enforce the frozen promotion rule."""
+
+    candidate = _prediction_frame(candidate_rows)
+    baseline = _prediction_frame(baseline_rows)
+    keys = ["market", "symbol", "target_end"]
+    if candidate.duplicated(keys).any() or baseline.duplicated(keys).any():
+        raise ValueError("candidate and baseline rows must be unique by market/symbol/target_end")
+    candidate_keys = set(map(tuple, candidate[keys].astype(str).to_numpy()))
+    baseline_keys = set(map(tuple, baseline[keys].astype(str).to_numpy()))
+    if candidate_keys != baseline_keys:
+        raise ValueError("candidate and baseline predictions must contain identical samples")
+
+    candidate = candidate.sort_values(keys).reset_index(drop=True)
+    baseline = baseline.sort_values(keys).reset_index(drop=True)
+    for column in ("last_close", "true_close"):
+        if not np.allclose(
+            candidate[column].to_numpy(dtype=float),
+            baseline[column].to_numpy(dtype=float),
+            equal_nan=False,
+        ):
+            raise ValueError(f"candidate and baseline {column} values do not match")
+
+    candidate_metrics = _selection_metrics(candidate)
+    baseline_metrics = _selection_metrics(baseline)
+    score_delta = (
+        float(candidate_metrics["composite_score"] - baseline_metrics["composite_score"])
+        if candidate_metrics["composite_score"] is not None
+        and baseline_metrics["composite_score"] is not None
+        else None
+    )
+
+    estimates: list[float] = []
+    dates = candidate["target_end"].astype(str).drop_duplicates().tolist()
+    if n_bootstrap > 0 and dates:
+        rng = np.random.default_rng(seed)
+        for _ in range(n_bootstrap):
+            candidate_pieces: list[pd.DataFrame] = []
+            baseline_pieces: list[pd.DataFrame] = []
+            for instance, selected_date in enumerate(rng.choice(dates, size=len(dates), replace=True)):
+                period = f"{selected_date}#{instance}"
+                candidate_piece = candidate[candidate["target_end"].astype(str) == str(selected_date)].copy()
+                baseline_piece = baseline[baseline["target_end"].astype(str) == str(selected_date)].copy()
+                candidate_piece["_bootstrap_period"] = period
+                baseline_piece["_bootstrap_period"] = period
+                candidate_pieces.append(candidate_piece)
+                baseline_pieces.append(baseline_piece)
+            candidate_sample = _selection_metrics(
+                pd.concat(candidate_pieces, ignore_index=True),
+                period_column="_bootstrap_period",
+            )
+            baseline_sample = _selection_metrics(
+                pd.concat(baseline_pieces, ignore_index=True),
+                period_column="_bootstrap_period",
+            )
+            if (
+                candidate_sample["composite_score"] is not None
+                and baseline_sample["composite_score"] is not None
+            ):
+                estimates.append(
+                    float(candidate_sample["composite_score"] - baseline_sample["composite_score"])
+                )
+
+    ci = {
+        "lower": float(np.quantile(estimates, 0.025)) if estimates else None,
+        "upper": float(np.quantile(estimates, 0.975)) if estimates else None,
+        "n_bootstrap": len(estimates),
+        "cluster": "target_end",
+    }
+    promoted = bool(
+        score_delta is not None
+        and score_delta > 0
+        and candidate_metrics["direction_accuracy"] is not None
+        and baseline_metrics["direction_accuracy"] is not None
+        and candidate_metrics["direction_accuracy"] >= baseline_metrics["direction_accuracy"]
+        and candidate_metrics["mean_daily_rankic"] is not None
+        and baseline_metrics["mean_daily_rankic"] is not None
+        and candidate_metrics["mean_daily_rankic"] >= baseline_metrics["mean_daily_rankic"]
+        and ci["lower"] is not None
+        and ci["lower"] > 0
+    )
+    return {
+        "candidate": candidate_metrics,
+        "baseline": baseline_metrics,
+        "score_delta": score_delta,
+        "score_delta_ci95": ci,
+        "promoted": promoted,
+        "decision": "promote_candidate" if promoted else "retain_pretrained_baseline",
+    }
+
+
+def select_screen_candidate(
+    candidates: Mapping[str, Mapping[str, Any]],
+    baseline: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Choose one screen winner without relaxing either point-estimate guardrail."""
+
+    baseline_direction = baseline.get("direction_accuracy")
+    baseline_rankic = baseline.get("mean_daily_rankic")
+    baseline_score = baseline.get("composite_score")
+    if baseline_score is None:
+        baseline_score = composite_score(baseline_direction, baseline_rankic)
+    if baseline_direction is None or baseline_rankic is None or baseline_score is None:
+        raise ValueError("baseline must contain direction_accuracy and mean_daily_rankic")
+
+    eligible: list[tuple[float, str]] = []
+    scored: dict[str, dict[str, Any]] = {}
+    for name, metrics in candidates.items():
+        direction = metrics.get("direction_accuracy")
+        rankic = metrics.get("mean_daily_rankic")
+        score = metrics.get("composite_score")
+        if score is None:
+            score = composite_score(direction, rankic)
+        clears = bool(
+            direction is not None
+            and rankic is not None
+            and score is not None
+            and direction >= baseline_direction
+            and rankic >= baseline_rankic
+            and score > baseline_score
+        )
+        scored[str(name)] = {
+            "direction_accuracy": direction,
+            "mean_daily_rankic": rankic,
+            "composite_score": score,
+            "clears_point_guardrails": clears,
+        }
+        if clears:
+            eligible.append((float(score), str(name)))
+
+    eligible.sort(key=lambda item: (-item[0], item[1]))
+    selected = eligible[0][1] if eligible else "pretrained_baseline"
+    return {
+        "selected": selected,
+        "decision": "confirm_candidate" if eligible else "retain_pretrained_baseline",
+        "baseline": {
+            "direction_accuracy": baseline_direction,
+            "mean_daily_rankic": baseline_rankic,
+            "composite_score": baseline_score,
+        },
+        "candidates": scored,
+    }
+
+
 def _portfolio_metrics(frame: pd.DataFrame) -> dict[str, Any]:
     """Match the historical top-k AER/IR comparison in original return space."""
 
@@ -523,6 +875,7 @@ def summarize_prediction_rows(
     def summarize(group: pd.DataFrame, *, include_bootstrap: bool = True) -> dict[str, Any]:
         group_bootstrap = bootstrap_replicates if include_bootstrap else 0
         portfolio = _portfolio_metrics(group)
+        selection = _selection_metrics(group)
         return {
             "n_samples": int(len(group)),
             "n_symbols": int(group["symbol"].nunique()) if "symbol" in group else None,
@@ -530,8 +883,10 @@ def summarize_prediction_rows(
             "direction_accuracy": _metric(group, "direction_accuracy"),
             "ic": _metric(group, "ic"),
             "rankic": _metric(group, "rankic"),
+            **selection,
             "mean_actual_return": float(group["actual_return"].mean()),
             **portfolio,
+            "portfolio_metrics_status": "legacy_diagnostic_not_for_model_selection",
             "direction_accuracy_ci95": bootstrap_ci(
                 group, metric="direction_accuracy", n_bootstrap=group_bootstrap, seed=bootstrap_seed
             ),

@@ -23,7 +23,7 @@ P = float(sys.argv[6]) if len(sys.argv) > 6 else 0.9
 
 dml_dev = torch_directml.device()
 
-hub =  os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))
+hub = r"E:\AI_Projects\ModelCache\huggingface\hub"
 tok_path = os.path.join(hub, "models--NeoQuasar--Kronos-Tokenizer-base", "snapshots", "0e0117387f39004a9016484a186a908917e22426")
 
 model_paths = {
@@ -31,16 +31,14 @@ model_paths = {
     "pretrained_small": os.path.join(hub, "models--NeoQuasar--Kronos-small", "snapshots", "901c26c1332695a2a8f243eb2f37243a37bea320"),
     "pretrained_base": os.path.join(hub, "models--NeoQuasar--Kronos-base", "snapshots", "2b554741eca47781b64468546e77fef3e85130e6"),
     "finetuned_small_v2": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v2_small_v2" / "basemodel" / "best_model"),
+    "finetuned_small_v3": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_small_cont2" / "basemodel" / "best_model"),
     "v3_epoch_1": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1" / "basemodel" / "epoch_1"),
     "v3_epoch_2": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1" / "basemodel" / "epoch_2"),
     "v3_epoch_3": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1" / "basemodel" / "epoch_3"),
-    "v3_epoch_4": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_4"),
-    "v3_epoch_5": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_5"),
-    "v3_epoch_6": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_6"),
-    "v3_epoch_7": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_7"),
-    "v3_epoch_8": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_8"),
-    "v3_epoch_9": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_9"),
-    "v3_epoch_10": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_fromFTv1_cont" / "basemodel" / "epoch_10"),
+    "v3_epoch_4": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_small_cont2" / "basemodel" / "epoch_4"),
+    "v3_epoch_5": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_small_cont2" / "basemodel" / "epoch_5"),
+    "v3_epoch_6": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_small_cont2" / "basemodel" / "epoch_6"),
+    "v3_epoch_7": str(PROJ / "external" / "Kronos" / "finetune_csv" / "finetuned_v3_small_cont2" / "basemodel" / "epoch_7"),
 }
 
 model_path = model_paths.get(model_key)
