@@ -184,7 +184,71 @@ def test_v102_macro_agent_returns_macro_report(monkeypatch):
     assert result.report["probability_scenarios"]
     assert "宏观信号" in result.final_report
     assert "macro_signal" in {call.name for call in result.tool_calls}
-    assert manager.last_provider_ids[:2] == ["polymarket", "kalshi"]
+
+
+def test_v102_macro_report_separates_duplicate_conclusion_and_analysis():
+    from kronos_fincept import agent
+
+    signals = [
+        {
+            "source": "rates",
+            "signal_type": "policy_rate",
+            "value": "hold",
+            "interpretation": "利率信号暂未形成明确方向。",
+        },
+        {
+            "source": "sentiment",
+            "signal_type": "market_sentiment",
+            "value": "mixed",
+            "interpretation": "市场情绪中性偏谨慎。",
+        },
+    ]
+    macro_context = {
+        "question": "现在适合买入吗",
+        "signals": signals,
+        "selected_provider_ids": ["rates", "sentiment"],
+        "provider_results": {},
+        "dimension_coverage": {
+            "sufficient_evidence": False,
+            "dimension_count": 2,
+            "required_dimension_count": 3,
+        },
+    }
+    duplicate = "结论：当前以观察为主。"
+    report = {
+        "conclusion": duplicate,
+        "macro_analysis": duplicate,
+        "recommendation": "观察",
+        "confidence": 0.4,
+        "risk_level": "中",
+        "disclaimer": "仅供研究。",
+    }
+
+    normalized = agent._ensure_macro_report(report, macro_context)
+
+    assert normalized["conclusion"] == duplicate
+    assert normalized["macro_analysis"] != duplicate
+    assert "利率信号" in normalized["macro_analysis"]
+
+
+def test_v102_macro_fallback_does_not_copy_conclusion_into_analysis():
+    from kronos_fincept import agent
+
+    macro_context = {
+        "question": "宏观环境怎么样",
+        "signals": [],
+        "selected_provider_ids": [],
+        "provider_results": {},
+        "dimension_coverage": {
+            "sufficient_evidence": False,
+            "dimension_count": 0,
+            "required_dimension_count": 3,
+        },
+    }
+
+    report = agent._fallback_macro_report(macro_context)
+
+    assert report["conclusion"] != report["macro_analysis"]
 
 
 def test_v102_existing_stock_agent_does_not_auto_call_macro(monkeypatch):

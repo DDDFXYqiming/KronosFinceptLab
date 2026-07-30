@@ -316,6 +316,9 @@ MACRO_SIGNAL_DIMENSION_HINTS: tuple[tuple[str, str], ...] = (
 )
 
 
+KRONOS_RUNTIME_LOOKBACK = 90
+
+
 def _active_kronos_model_id() -> str:
     return settings.kronos.model_id or DEFAULT_MODEL_ID
 
@@ -2450,22 +2453,23 @@ def _build_asset_context(
         def _build_risk_wrapper() -> Any:
             return _call_quietly(_build_risk_metrics, item.symbol, rows)
 
-        def _build_pred_wrapper() -> Any:
-            if not include_prediction:
-                return None
-            try:
-                return _build_prediction(item.symbol, rows, dry_run=dry_run)
-            except Exception as exc:
-                return exc
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="kronos-compute") as pool:
             f_tech = pool.submit(_build_tech_wrapper)
             f_risk = pool.submit(_build_risk_wrapper)
-            f_pred = pool.submit(_build_pred_wrapper)
 
             asset["technical_indicators"] = f_tech.result()
             asset["risk_metrics"] = f_risk.result()
-            pred_result = f_pred.result()
+
+        # DirectML-backed Kronos inference must stay outside this compute pool.
+        # The upstream runtime is stateful and its device context is not safe to
+        # share with the concurrent indicator/risk workers. Keep the evaluated
+        # model parameters unchanged; only restore the serialized call boundary.
+        pred_result: Any = None
+        if include_prediction:
+            try:
+                pred_result = _build_prediction(item.symbol, rows, dry_run=dry_run)
+            except Exception as exc:
+                pred_result = exc
 
         calls.append(
             AgentToolCall(
@@ -3591,7 +3595,7 @@ def _forecast_request_for_rows(
             volume=_safe_float(row.get("volume")),
             amount=_safe_float(row.get("amount")),
         )
-        for row in rows[-100:]
+        for row in rows[-KRONOS_RUNTIME_LOOKBACK:]
     ]
     effective_id = _active_kronos_model_id()
     return ForecastRequest(
@@ -4710,7 +4714,7 @@ JSON 字段：
 conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties, recommendation, confidence, risk_level, disclaimer,
 如果 trusted_project_context.macro 存在，还必须输出：
 macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions, time_layered_conclusions。
-宏观问题的 conclusion 和 macro_analysis 第一字符起必须直接回答用户问题，格式为“结论：……”。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
+宏观问题的 conclusion 必须第一字符起直接回答用户问题，格式为“结论：……”，只写核心判断和行动方向；macro_analysis 必须只写支撑判断的事实、信号和不确定性，禁止重复 conclusion，也不要以“结论：”开头。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
 宏观问题每个文字字段最多 2 句，避免长篇解释导致 JSON 被截断。
 macro_signals 可省略或最多返回 5 条最关键摘要；后端会用真实 provider 结构化信号补齐。每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
 time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。时间分层规则：S-短期（天到周）关注预测市场近月、价格动量、VIX、期权 skew、FOMC实时概率；M-中期（周到月）关注收益率曲线变化、CFTC持仓变动、信用利差、宏观数据发布；L-长期（月到季度）关注信用周期拐点、GDP预测修正、BIS信用缺口、行业库存周期。每层必须给出独立的 judgment 和该层的 confidence，不同层的 confidence 可以不同。
@@ -4968,7 +4972,7 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
             "confidence": confidence,
             "risk_level": "中" if signal_count else "未知",
             "disclaimer": RESEARCH_DISCLAIMER,
-            "macro_analysis": conclusion,
+            "macro_analysis": _macro_analysis_from_signals(signals),
             "macro_signals": signals,
             "cross_validation": cross_validation,
             "contradictions": contradictions,
@@ -5000,8 +5004,36 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
             merged[key] = fallback.get(key)
     merged.setdefault("macro_evidence", fallback.get("macro_evidence"))
     normalized = _normalize_report(merged)
+    if _macro_texts_are_duplicate(normalized.get("conclusion"), normalized.get("macro_analysis")):
+        normalized["macro_analysis"] = _macro_analysis_from_signals(
+            _normalize_macro_signals(macro_context.get("signals"))
+        )
     normalized = _annotate_macro_monitoring_signals(normalized, macro_context)
     return _apply_macro_evidence_guard(normalized, macro_context)
+
+
+def _macro_text_fingerprint(value: Any) -> str:
+    text = str(value or "").lower()
+    return re.sub(r"[\s\u3000，。；：、,.!?！？…()（）\[\]【】‘’“”'\"、/\\_—-]+", "", text)
+
+
+def _macro_texts_are_duplicate(first: Any, second: Any) -> bool:
+    left = _macro_text_fingerprint(first)
+    right = _macro_text_fingerprint(second)
+    if not left or not right:
+        return False
+    return left == right or left in right or right in left
+
+
+def _macro_analysis_from_signals(signals: list[dict[str, Any]]) -> str:
+    interpretations = [
+        str(signal.get("interpretation") or "").strip()
+        for signal in signals
+        if str(signal.get("interpretation") or "").strip()
+    ][:3]
+    if not interpretations:
+        return "分析依据暂不充分：本轮没有返回可用宏观信号，需等待数据源恢复后再评估。"
+    return "分析依据：" + "；".join(interpretations) + "。信号之间是否形成共振，应结合下方一致性评估、概率场景和监控项进一步确认。"
 
 
 def _apply_macro_evidence_guard(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:

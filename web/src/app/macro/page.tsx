@@ -159,6 +159,26 @@ function macroActionCopy(rec: string, evidence?: MacroEvidenceCoverage): string 
   return "先看结论再看证据：以下判断只基于本轮宏观信号，不构成投资建议。";
 }
 
+function normalizeMacroDisplayText(value: string | undefined | null): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[\s\u3000，。；：、,.!?！？…()（）\[\]【】‘’“”'"、/\\_—-]+/g, "");
+}
+
+function macroTextsAreDuplicate(first: string | undefined | null, second: string | undefined | null): boolean {
+  const left = normalizeMacroDisplayText(first);
+  const right = normalizeMacroDisplayText(second);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function compactMacroAction(value: string | undefined | null): string {
+  const text = String(value || "").trim().replace(/^结论\s*[:：]\s*/, "");
+  if (!text) return "";
+  const firstSentence = text.split(/[。！？!?；;]/, 1)[0]?.trim() || text;
+  return firstSentence.length > 90 ? `${firstSentence.slice(0, 87)}…` : firstSentence;
+}
+
 function RiskBadge({ level }: { level: string }) {
   const lower = level.toLowerCase();
   let bg = "bg-muted text-muted-foreground";
@@ -812,8 +832,11 @@ function MacroContent() {
   const monitoring = normalizeMonitoring(report?.monitoring_signals);
   const providerRows = getMacroProviderRows(result);
   const evidence = result?.macro_dimension_coverage || report?.macro_evidence;
-  const macroAction = result
-    ? (result.report?.conclusion || result.report?.macro_analysis || macroActionCopy(result.recommendation, evidence))
+  const macroConclusion = result?.report?.conclusion || "";
+  const macroNarrative = report?.macro_analysis || report?.conclusion || "";
+  const macroAction = compactMacroAction(macroConclusion) || macroActionCopy(result?.recommendation || "", evidence);
+  const showMacroNarrative = macroNarrative && !macroTextsAreDuplicate(macroAction, macroNarrative)
+    ? macroNarrative
     : "";
 
   return (
@@ -1001,9 +1024,14 @@ function MacroContent() {
                 </div>
                 <RecommendationBadge rec={result.recommendation} />
               </div>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {report?.macro_analysis || report?.conclusion || tx(language, "暂无结论。", "No conclusion yet.")}
-              </p>
+              {showMacroNarrative ? (
+                <div className="border-t border-accent/10 pt-3">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {tx(language, "分析依据", "Analysis Basis")}
+                  </p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">{showMacroNarrative}</p>
+                </div>
+              ) : null}
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
