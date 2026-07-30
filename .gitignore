@@ -19,10 +19,34 @@ target/
 logs/
 models/
 external/
+checkpoints/
+weights/
+artifacts/
 *.db
 *.sqlite
 *.parquet
 *.pkl
+
+# Generated evaluation, runtime and local verification outputs
+/output/
+/outputs/
+web/.next-stale-*/
+web/tsconfig.tsbuildinfo
+
+# Model weights and serialized model artifacts (never commit to GitHub)
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.ckpt
+*.gguf
+*.joblib
+*.npz
+*.npy
+*.h5
+*.hdf5
+*.tflite
 
 # Secrets
 .env
