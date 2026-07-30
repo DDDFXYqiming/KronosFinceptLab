@@ -89,6 +89,58 @@ def _ensure_kronos_on_syspath() -> None:
         sys.path.insert(0, repo_str)
 
 
+def _dml_safe_top_k_top_p_filtering(
+    logits: Any,
+    top_k: int = 0,
+    top_p: float = 1.0,
+    filter_value: float = -float("Inf"),
+    min_tokens_to_keep: int = 1,
+) -> Any:
+    """Apply upstream sampling semantics without DirectML-unsafe in-place writes."""
+    import torch
+    import torch.nn.functional as F
+
+    if top_k > 0:
+        top_k = min(max(top_k, min_tokens_to_keep), logits.size(-1))
+        threshold = torch.topk(logits, top_k)[0][..., -1, None]
+        return logits.masked_fill(logits < threshold, filter_value)
+
+    if top_p < 1.0:
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+        cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+        sorted_indices_to_remove = cumulative_probs > top_p
+        if min_tokens_to_keep > 1:
+            sorted_indices_to_remove = torch.cat(
+                (
+                    torch.zeros_like(sorted_indices_to_remove[..., :min_tokens_to_keep]),
+                    sorted_indices_to_remove[..., min_tokens_to_keep:],
+                ),
+                dim=-1,
+            )
+        shifted = torch.cat(
+            (
+                torch.zeros_like(sorted_indices_to_remove[..., :1]),
+                sorted_indices_to_remove[..., :-1],
+            ),
+            dim=-1,
+        )
+        indices_to_remove = torch.zeros_like(shifted).scatter(1, sorted_indices, shifted)
+        return logits.masked_fill(indices_to_remove, filter_value)
+
+    return logits
+
+
+def _install_dml_sampling_compatibility() -> None:
+    """Patch the upstream sampler once for DirectML's tensor assignment limitation."""
+    import importlib
+
+    kronos_module = importlib.import_module("model.kronos")
+    if getattr(kronos_module, "_kfl_dml_sampling_compatibility", False):
+        return
+    kronos_module.top_k_top_p_filtering = _dml_safe_top_k_top_p_filtering
+    kronos_module._kfl_dml_sampling_compatibility = True
+
+
 def _hf_cache_hint(model_id: str) -> str:
     """Return a hint about HuggingFace cache location."""
     hf_home = _resolve_hf_hub_cache_root()
@@ -461,6 +513,7 @@ class KronosPredictorWrapper:
             try:
                 import torch_directml
                 device_obj = torch_directml.device()
+                _install_dml_sampling_compatibility()
             except ImportError:
                 device_obj = "cpu"
                 device = "cpu"

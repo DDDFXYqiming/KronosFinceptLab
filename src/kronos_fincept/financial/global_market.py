@@ -90,6 +90,8 @@ class GlobalMarketSource:
             base = base[:-3]
         if base.startswith("HK") and base[2:].isdigit():
             base = base[2:]
+        if base.isdigit() and len(base) == 5 and base.startswith("0"):
+            base = base[1:]
         if base.isdigit() and len(base) < 4:
             base = base.zfill(4)
         return f"{base}.HK"
@@ -148,7 +150,7 @@ class GlobalMarketSource:
                     row[key] = 0.0
                 else:
                     row[key] = float(value)
-            row.setdefault("amount", 0.0)
+            row["amount"] = float(row["close"]) * float(row["volume"])
             rows.append(row)
         return rows
     
@@ -217,9 +219,22 @@ class GlobalMarketSource:
             end = self._exclusive_end_date(end_date)
             ticker = yf.Ticker(yahoo_symbol)
             if start or end:
-                df = ticker.history(start=start, end=end, interval=interval)
+                df = ticker.history(
+                    start=start,
+                    end=end,
+                    interval=interval,
+                    auto_adjust=True,
+                    repair=True,
+                    actions=False,
+                )
             else:
-                df = ticker.history(period=period, interval=interval)
+                df = ticker.history(
+                    period=period,
+                    interval=interval,
+                    auto_adjust=True,
+                    repair=True,
+                    actions=False,
+                )
             result = self._standardize_history_frame(df)
             if result.empty:
                 return []

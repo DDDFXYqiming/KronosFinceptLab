@@ -135,6 +135,48 @@ class TestGlobalMarketSource:
 
         assert GlobalMarketSource() is GlobalMarketSource()
 
+    def test_hk_canonical_five_digit_code_maps_to_yahoo_four_digit_code(self):
+        from kronos_fincept.financial.global_market import GlobalMarketSource
+
+        source = GlobalMarketSource()
+
+        assert source._convert_symbol("00005", market="hk") == "0005.HK"
+        assert source._convert_symbol("09988", market="hk") == "9988.HK"
+
+    def test_hk_date_range_fetch_requests_adjusted_repaired_history(self, monkeypatch):
+        from kronos_fincept.financial.global_market import GlobalMarketSource
+
+        captured = {}
+
+        class FakeTicker:
+            def __init__(self, symbol):
+                captured["symbol"] = symbol
+
+            def history(self, **kwargs):
+                captured["kwargs"] = kwargs
+                return pd.DataFrame(
+                    {
+                        "Open": [10.0],
+                        "High": [11.0],
+                        "Low": [9.0],
+                        "Close": [10.5],
+                        "Volume": [100.0],
+                    },
+                    index=pd.to_datetime(["2026-07-29"]),
+                )
+
+        monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(Ticker=FakeTicker))
+
+        rows = GlobalMarketSource().fetch_data(
+            "00005", "20260725", "20260730", market="hk"
+        )
+
+        assert captured["symbol"] == "0005.HK"
+        assert captured["kwargs"]["auto_adjust"] is True
+        assert captured["kwargs"]["repair"] is True
+        assert captured["kwargs"]["actions"] is False
+        assert rows[0]["amount"] == 1050.0
+
     def test_stock_data_uses_shared_cache(self, monkeypatch):
         from kronos_fincept.financial.global_market import GlobalMarketSource
 

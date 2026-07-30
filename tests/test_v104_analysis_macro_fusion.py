@@ -130,7 +130,7 @@ def test_v104_stock_analysis_injects_macro_context_when_router_requires(monkeypa
     assert result.ok is True
     assert captured["market"] == "cn"
     assert captured["symbols"] == ["600036"]
-    assert 2 <= len(captured["provider_ids"]) <= 3
+    assert 2 <= len(captured["provider_ids"]) <= 5
     assert "macro_signal" in {call.name for call in result.tool_calls}
     macro_step = next(step for step in result.steps if step.name == "宏观信号")
     assert macro_step.status == "completed"
@@ -159,6 +159,39 @@ def test_v104_stock_analysis_skips_macro_context_when_router_does_not_require(mo
     )
 
     result = agent.analyze_investment_question("分析 600036 的技术面")
+
+    assert result.ok is True
+    assert "macro_signal" not in {call.name for call in result.tool_calls}
+    assert all(step.name != "宏观信号" for step in result.steps)
+
+
+def test_analysis_page_technical_only_question_overrides_router_macro_request(monkeypatch):
+    from kronos_fincept import agent
+
+    _patch_base_stock_tools(monkeypatch)
+    monkeypatch.setattr(
+        agent,
+        "_call_llm_router",
+        lambda question, explicit_symbol=None, explicit_market=None: agent.AgentRouteDecision(
+            allowed=True,
+            symbols=[
+                agent.ResolvedSymbol("002594", "cn", "比亚迪"),
+                agent.ResolvedSymbol("300750", "cn", "宁德时代"),
+            ],
+            needs_macro=True,
+            source="llm_router",
+        ),
+    )
+    monkeypatch.setattr(
+        agent,
+        "_build_macro_context",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("technical-only analysis must not run macro")),
+    )
+
+    result = agent.analyze_investment_question(
+        "比亚迪和宁德时代哪个技术面更看涨",
+        context={"entry": "web-analysis"},
+    )
 
     assert result.ok is True
     assert "macro_signal" not in {call.name for call in result.tool_calls}
@@ -275,7 +308,13 @@ def test_analysis_commodity_asset_uses_price_kronos_and_macro_context(monkeypatc
         "question": "帮我看看黄金现在能不能买",
         "symbols": ["GC=F"],
         "market": "commodity",
-        "provider_ids": ["yahoo_price", "cftc_cot", "us_treasury"],
+        "provider_ids": [
+            "source_project_macro_cache",
+            "yahoo_price",
+            "us_treasury",
+            "cftc_cot",
+            "fear_greed",
+        ],
     }
     financial_call = next(call for call in result.tool_calls if call.name == "financial_data")
     assert financial_call.status == "skipped"

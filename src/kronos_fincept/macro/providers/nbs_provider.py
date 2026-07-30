@@ -47,6 +47,13 @@ def _extract_latest(data) -> tuple[str, float] | None:
     return None
 
 
+def _normalize_nbs_value(signal_type: str, value: float) -> tuple[float, str]:
+    """Convert fractional rates returned by nbsc into percentage points."""
+    if signal_type == "inflation" and -0.2 <= value <= 0.2:
+        return value * 100.0, "percent"
+    return value, "index" if signal_type == "pmi" else "value"
+
+
 class NBSMacroProvider(MacroProvider):
     provider_id = "china_macro_nbs"
     display_name = "NBS Official China Macro"
@@ -71,15 +78,22 @@ class NBSMacroProvider(MacroProvider):
                 extracted = _extract_latest(data)
                 if extracted is None:
                     continue
-                date, value = extracted
+                date, raw_value = extracted
+                value, unit = _normalize_nbs_value(signal_type, raw_value)
                 signals.append(MacroSignal(
                     source=self.provider_id,
                     signal_type=signal_type,
                     value=value,
-                    interpretation=f"China {label}: {value:.2f}" if isinstance(value, float) and abs(value) < 1000 else f"China {label}: {value:.2f}",
+                    interpretation=f"China {label}: {value:.2f}{'%' if unit == 'percent' else ''}",
                     time_horizon="medium",
                     confidence=0.8,
                     observed_at=str(date),
+                    source_url="https://data.stats.gov.cn/",
+                    metadata={
+                        "unit": unit,
+                        "raw_value": raw_value,
+                        "data_quality": "nbs_official_via_nbsc",
+                    },
                 ))
             except Exception as e:
                 logger.debug("NBS %s fetch failed: %s", signal_type, e)

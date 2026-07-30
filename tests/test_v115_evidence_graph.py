@@ -42,5 +42,8 @@ def test_v115_frontend_exposes_evidence_graph_viewer_contract():
     assert "evidence_pack" in page
     assert "cited_claims" in page
     assert "confidence_breakdown" in page
+    assert "公开信息来源" in page
+    assert "report?.sources" in page
     assert "EvidencePack" in types
     assert "CitedClaim" in types
+    assert "AgentReportSource" in types

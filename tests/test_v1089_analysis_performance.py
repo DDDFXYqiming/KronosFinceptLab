@@ -68,7 +68,7 @@ def test_forecast_batch_responses_uses_one_predict_batch_call(monkeypatch):
     assert all(response["metadata"]["sample_count"] == 8 for response in responses)
 
 
-def test_macro_manager_is_reused_and_embedded_timeout_is_bounded(monkeypatch):
+def test_macro_manager_is_reused_and_complete_timeout_is_longer_than_fast(monkeypatch):
     from kronos_fincept import agent
 
     created = []
@@ -85,8 +85,8 @@ def test_macro_manager_is_reused_and_embedded_timeout_is_bounded(monkeypatch):
 
     assert first is second
     assert len(created) == 1
-    assert first.per_provider_timeout_seconds == agent.EMBEDDED_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
-    assert first.per_provider_timeout_seconds <= 8
+    assert first.per_provider_timeout_seconds == agent.COMPLETE_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
+    assert first.per_provider_timeout_seconds > agent.WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
 
 
 def test_shallow_model_info_reports_configured_directml_device(monkeypatch):

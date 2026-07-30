@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import threading
 import time
 from typing import Iterable
 
@@ -69,6 +70,7 @@ class MacroDataManager:
         failure_threshold: int = 3,
         failure_cooldown_seconds: int = 300,
         max_workers: int | None = None,
+        max_cache_entries: int = 512,
     ) -> None:
         self.providers = {provider.provider_id: provider for provider in (providers or create_all_providers())}
         self.cache_ttl_seconds = max(0, cache_ttl_seconds)
@@ -77,9 +79,11 @@ class MacroDataManager:
         self.failure_threshold = max(1, failure_threshold)
         self.failure_cooldown_seconds = max(1, failure_cooldown_seconds)
         self.max_workers = max_workers
+        self.max_cache_entries = max(32, max_cache_entries)
         self._cache: dict[str, tuple[float, MacroProviderResult]] = {}
         self._failure_counts: dict[str, int] = {}
         self._suspended_until: dict[str, float] = {}
+        self._state_lock = threading.RLock()
 
     def describe_providers(self) -> list[dict]:
         return [provider.describe().to_dict() for provider in self.providers.values()]
@@ -88,20 +92,21 @@ class MacroDataManager:
         """Return provider runtime/cache/cooldown status for operational dashboards."""
         now = time.time()
         rows: list[dict] = []
-        for provider in self.providers.values():
-            provider_id = provider.provider_id
-            cached_entries = sum(1 for key in self._cache if key.startswith(f"{provider_id}|"))
-            suspended_until = self._suspended_until.get(provider_id)
-            remaining = int(max(0, suspended_until - now)) if suspended_until else 0
-            rows.append({
-                **provider.describe().to_dict(),
-                "status": "suspended" if remaining > 0 else "ready",
-                "failure_count": self._failure_counts.get(provider_id, 0),
-                "suspended_remaining_seconds": remaining,
-                "cached_entries": cached_entries,
-                "cache_ttl_seconds": self.cache_ttl_seconds,
-                "timeout_seconds": self.per_provider_timeout_seconds,
-            })
+        with self._state_lock:
+            for provider in self.providers.values():
+                provider_id = provider.provider_id
+                cached_entries = sum(1 for key in self._cache if key.startswith(f"{provider_id}|"))
+                suspended_until = self._suspended_until.get(provider_id)
+                remaining = int(max(0, suspended_until - now)) if suspended_until else 0
+                rows.append({
+                    **provider.describe().to_dict(),
+                    "status": "suspended" if remaining > 0 else "ready",
+                    "failure_count": self._failure_counts.get(provider_id, 0),
+                    "suspended_remaining_seconds": remaining,
+                    "cached_entries": cached_entries,
+                    "cache_ttl_seconds": self.cache_ttl_seconds,
+                    "timeout_seconds": self.per_provider_timeout_seconds,
+                })
         return rows
 
     def gather(
@@ -216,6 +221,7 @@ class MacroDataManager:
                 signals=[],
                 elapsed_ms=elapsed_ms,
                 error=_short_error(exc),
+                metadata={"reason": "unavailable"} if isinstance(exc, MacroProviderUnavailable) else {},
             )
         finally:
             single.shutdown(wait=False, cancel_futures=True)
@@ -224,24 +230,26 @@ class MacroDataManager:
         return MacroProviderResult(provider_id=provider.provider_id, status=status, signals=signals, elapsed_ms=elapsed_ms)
 
     def _record_provider_result(self, provider_id: str, result: MacroProviderResult) -> None:
-        if result.status != "failed":
-            self._failure_counts.pop(provider_id, None)
-            self._suspended_until.pop(provider_id, None)
-            return
-        failures = self._failure_counts.get(provider_id, 0) + 1
-        self._failure_counts[provider_id] = failures
-        if failures >= self.failure_threshold:
-            self._suspended_until[provider_id] = time.time() + self.failure_cooldown_seconds
-            self._failure_counts[provider_id] = 0
+        with self._state_lock:
+            if result.status != "failed":
+                self._failure_counts.pop(provider_id, None)
+                self._suspended_until.pop(provider_id, None)
+                return
+            failures = self._failure_counts.get(provider_id, 0) + 1
+            self._failure_counts[provider_id] = failures
+            if failures >= self.failure_threshold:
+                self._suspended_until[provider_id] = time.time() + self.failure_cooldown_seconds
+                self._failure_counts[provider_id] = 0
 
     def _suspended_result(self, provider_id: str) -> MacroProviderResult | None:
-        resume_at = self._suspended_until.get(provider_id)
-        if resume_at is None:
-            return None
-        remaining = int(max(0, resume_at - time.time()))
-        if remaining <= 0:
-            self._suspended_until.pop(provider_id, None)
-            return None
+        with self._state_lock:
+            resume_at = self._suspended_until.get(provider_id)
+            if resume_at is None:
+                return None
+            remaining = int(max(0, resume_at - time.time()))
+            if remaining <= 0:
+                self._suspended_until.pop(provider_id, None)
+                return None
         return MacroProviderResult(
             provider_id=provider_id,
             status="skipped",
@@ -273,19 +281,27 @@ class MacroDataManager:
         if self.cache_ttl_seconds <= 0:
             return None
         cache_key = self._cache_key(provider_id, query)
-        cached = self._cache.get(cache_key)
-        if cached is None:
-            return None
-        stored_at, result = cached
-        if time.time() - stored_at > self.cache_ttl_seconds:
-            self._cache.pop(cache_key, None)
-            return None
-        return result
+        with self._state_lock:
+            cached = self._cache.get(cache_key)
+            if cached is None:
+                return None
+            stored_at, result = cached
+            ttl = self.cache_ttl_seconds if result.status == "completed" else 15
+            if time.time() - stored_at > ttl:
+                self._cache.pop(cache_key, None)
+                return None
+            return result
 
     def _set_cached(self, provider_id: str, query: MacroQuery, result: MacroProviderResult) -> None:
         if self.cache_ttl_seconds <= 0:
             return
-        self._cache[self._cache_key(provider_id, query)] = (time.time(), result)
+        if result.status in {"failed", "unavailable"}:
+            return
+        with self._state_lock:
+            self._cache[self._cache_key(provider_id, query)] = (time.time(), result)
+            while len(self._cache) > self.max_cache_entries:
+                oldest_key = min(self._cache, key=lambda key: self._cache[key][0])
+                self._cache.pop(oldest_key, None)
 
 
 def _short_error(exc: BaseException, *, limit: int = 180) -> str:

@@ -41,6 +41,15 @@ class StaticProvider:
             )
         ]
 
+def test_nbs_fractional_inflation_is_normalized_to_percentage_points():
+    from kronos_fincept.macro.providers.nbs_provider import _normalize_nbs_value
+
+    value, unit = _normalize_nbs_value("inflation", 0.01)
+
+    assert value == 1.0
+    assert unit == "percent"
+
+
 
 class SourceCacheProvider(StaticProvider):
     provider_id = "source_project_macro_cache"
@@ -345,6 +354,7 @@ def test_v101_us_treasury_retries_nominal_curve_before_degrading(monkeypatch):
         return {"Date": "05/15/2026", "10 YR": "2.10"}
 
     monkeypatch.setattr(providers, "_latest_curve_row", fake_latest_curve_row)
+    monkeypatch.setattr(providers.USTreasuryProvider, "_fetch_curve_rows_fred", lambda self: (None, None))
     monkeypatch.setattr(providers.USTreasuryProvider, "_fetch_exchange_rate_rows", lambda self, query: [])
 
     signals = providers.USTreasuryProvider().fetch_signals(providers.MacroQuery("黄金该不该买"))
@@ -366,6 +376,7 @@ def test_v101_us_treasury_real_yield_signal_uses_tips_label(monkeypatch):
         return {"Date": "05/15/2026", "10 YR": "2.10"}
 
     monkeypatch.setattr(providers, "_latest_curve_row", fake_latest_curve_row)
+    monkeypatch.setattr(providers.USTreasuryProvider, "_fetch_curve_rows_fred", lambda self: (None, None))
     monkeypatch.setattr(providers.USTreasuryProvider, "_fetch_exchange_rate_rows", lambda self, query: [])
 
     signals = providers.USTreasuryProvider().fetch_signals(providers.MacroQuery("黄金该不该买"))

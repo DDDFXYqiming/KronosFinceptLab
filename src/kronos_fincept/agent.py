@@ -14,7 +14,7 @@ import time
 from contextlib import redirect_stdout
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import StringIO
 from functools import lru_cache
 from typing import Any
@@ -56,7 +56,19 @@ WEB_MACRO_REPORT_PROVIDER_TIMEOUTS_SECONDS = {"llm": 60}
 WEB_MACRO_SINGLE_PROVIDER_TIMEOUT_SECONDS = 60
 WEB_MACRO_TIMEOUT_SECONDS = 60.0
 WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 30.0
-EMBEDDED_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 8.0
+COMPLETE_MACRO_TIMEOUT_SECONDS = 90.0
+COMPLETE_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = 45.0
+MACRO_MONITOR_FALLBACK_MAX_ITEMS = max(1, env_int("KRONOS_MACRO_MONITOR_FALLBACK_MAX_ITEMS", 4))
+MACRO_MONITOR_FALLBACK_ITEM_TIMEOUT_SECONDS = max(
+    1.0, float(os.getenv("KRONOS_MACRO_MONITOR_FALLBACK_ITEM_TIMEOUT_SECONDS", "5"))
+)
+MACRO_MONITOR_FALLBACK_TOTAL_TIMEOUT_SECONDS = max(
+    MACRO_MONITOR_FALLBACK_ITEM_TIMEOUT_SECONDS,
+    float(os.getenv("KRONOS_MACRO_MONITOR_FALLBACK_TOTAL_TIMEOUT_SECONDS", "8")),
+)
+# Compatibility name for integrations that imported the old constant. The
+# embedded path now follows complete-mode semantics instead of the old 8s cap.
+EMBEDDED_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = COMPLETE_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
 DEFAULT_LLM_PROVIDER_ORDER = ("llm",)
 LLM_CONTEXT_MAX_RESEARCH_RESULTS = 12
 LLM_CONTEXT_MAX_TEXT_CHARS = 600
@@ -127,10 +139,9 @@ DIGITAL_ORACLE_IRON_RULES = (
     "3. 多信号交叉验证：至少使用 3 个彼此独立的维度；不足时必须明确缺口，不得编造。\n"
     "4. 时间维度标注：每个关键判断需要说明对应时间跨度（短/中/长或事件窗口）。\n"
     "5. 结构化输出：必须输出结构化报告，包含概率场景、信号一致性和待监控信号。\n"
-    "6. 价格源可信度分层：当 yahoo_price/stooq/coingecko 等直接价格 API 均不可用时，"
-    "价格数据来自 web_search/anysearch 抓取的公开网页。此时必须在结论中标注“⚠️ "
-    "价格来自公开网页搜索，非实时 API”，并将 confidence 降低至少 0.1。若同一资产的多条 "
-    "anysearch 信号给出不同价格区间，以 observed_at 最新的为准并注明价格分歧。\n"
+    "6. 价格源可信度分层：只有 yahoo_price/stooq/coingecko 或项目本地结构化价格数据可作为"
+    "当前价格和数值阈值依据。web_search/anysearch 仅作新闻与观点背景，不能据其摘要生成"
+    "当前价格、买卖价位、支撑位或阻力位；直接价格源不可用时必须明确说明价格缺失。\n"
     "7. 矛盾检测与解决：当不同 provider 的信号互相矛盾时（例如实际利率下降但结论说加息周期），"
     "必须在 contradictions 字段明确列出矛盾双方、各自来源和 observed_at 时间戳，"
     "并在 cross_validation 中说明无法确认的方面。禁止用笼统表述掩盖信号冲突。\n"
@@ -165,8 +176,11 @@ SYMBOL_ALIASES: dict[str, tuple[str, str, str]] = {
     "东方财富": ("300059", "cn", "东方财富"),
     "小米": ("1810", "hk", "小米集团"),
     "小米集团": ("1810", "hk", "小米集团"),
-    "小米": ("1810", "hk", "小米集团"),
-    "小米集团": ("1810", "hk", "小米集团"),
+    "黄金": ("GC=F", "commodity", "黄金期货"),
+    "金价": ("GC=F", "commodity", "黄金期货"),
+    "白银": ("SI=F", "commodity", "白银期货"),
+    "原油": ("CL=F", "commodity", "原油期货"),
+    "铜价": ("HG=F", "commodity", "铜期货"),
 }
 
 ALLOWED_SCOPE_PATTERNS = [
@@ -204,9 +218,9 @@ MACRO_ALLOWED_PATTERNS = [
 MACRO_ROUTE_PROVIDER_IDS: dict[str, tuple[str, ...]] = {
     "geopolitical": ("polymarket", "kalshi", "yahoo_price", "cftc_cot", "bis"),
     "recession": ("source_project_macro_cache", "fred", "kalshi_fed", "us_treasury", "cftc_cot", "bis", "cme_fedwatch"),
-    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "cftc_cot", "fear_greed", "altme_fng", "rss_news", "us_treasury", "anysearch"),
+    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "us_treasury", "cftc_cot", "fear_greed", "anysearch", "rss_news"),
     "stock_options": ("source_project_macro_cache", "yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
-    "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "altme_fng", "cftc_cot", "us_treasury", "anysearch"),
+    "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "anysearch", "altme_fng", "cftc_cot", "us_treasury"),
     "default": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "rss_news", "anysearch"),
 }
 
@@ -868,6 +882,7 @@ class MacroRouteDecision:
 def _build_evidence_graph_payload(result: "AgentAnalysisResult") -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, float]]:
     """Create a deterministic evidence pack and cited claims for agent reports."""
     items: list[dict[str, Any]] = []
+    asset_evidence_ids: dict[str, dict[str, list[str]]] = {}
 
     def add_item(category: str, title: str, summary: str, payload: dict[str, Any] | None = None, source: str = "agent") -> str:
         evidence_id = f"{category}:{len(items) + 1:03d}"
@@ -881,13 +896,65 @@ def _build_evidence_graph_payload(result: "AgentAnalysisResult") -> tuple[dict[s
         })
         return evidence_id
 
-    if result.current_price is not None:
-        add_item("price", "当前价格", f"{result.symbol or '标的'} 当前价格约 {result.current_price}。", {"current_price": result.current_price, "symbol": result.symbol})
-    if result.kronos_prediction:
-        forecast = result.kronos_prediction.get("forecast") or []
-        add_item("forecast", "Kronos 预测", f"Kronos 返回 {len(forecast)} 条预测记录。", {"prediction_days": result.kronos_prediction.get("prediction_days"), "forecast_count": len(forecast)})
-    if result.risk_metrics:
-        add_item("risk", "风险指标", "风险指标已计算，可用于约束仓位和判断波动暴露。", result.risk_metrics)
+    def add_asset_evidence(asset: dict[str, Any]) -> None:
+        symbol = str(asset.get("symbol") or "标的")
+        per_asset = asset_evidence_ids.setdefault(symbol, {})
+
+        def remember(category: str, evidence_id: str) -> None:
+            per_asset.setdefault(category, []).append(evidence_id)
+
+        current_price = asset.get("current_price")
+        if current_price is not None:
+            remember(
+                "price",
+                add_item(
+                    "price",
+                    f"{symbol} 当前价格",
+                    f"{symbol} 当前价格约 {current_price}。",
+                    {"current_price": current_price, "symbol": symbol},
+                ),
+            )
+        prediction = asset.get("kronos_prediction")
+        if isinstance(prediction, dict):
+            forecast = prediction.get("forecast") or []
+            remember(
+                "forecast",
+                add_item(
+                    "forecast",
+                    f"{symbol} Kronos 预测",
+                    f"{symbol} 的 Kronos 返回 {len(forecast)} 条预测记录。",
+                    {
+                        "symbol": symbol,
+                        "prediction_days": prediction.get("prediction_days"),
+                        "forecast_count": len(forecast),
+                    },
+                ),
+            )
+        risk_metrics = asset.get("risk_metrics")
+        if isinstance(risk_metrics, dict) and risk_metrics:
+            remember(
+                "risk",
+                add_item(
+                    "risk",
+                    f"{symbol} 风险指标",
+                    f"{symbol} 风险指标已计算，可用于约束仓位和判断波动暴露。",
+                    {"symbol": symbol, **risk_metrics},
+                ),
+            )
+
+    if result.asset_results:
+        for asset in result.asset_results:
+            if isinstance(asset, dict):
+                add_asset_evidence(asset)
+    else:
+        add_asset_evidence(
+            {
+                "symbol": result.symbol,
+                "current_price": result.current_price,
+                "kronos_prediction": result.kronos_prediction,
+                "risk_metrics": result.risk_metrics,
+            }
+        )
     valid_tool_calls = [
         call for call in result.tool_calls
         if call.status in {"completed", "fallback"}
@@ -915,6 +982,26 @@ def _build_evidence_graph_payload(result: "AgentAnalysisResult") -> tuple[dict[s
         {"claim": str(result.report.get("conclusion") or result.final_report or "分析结论已生成。"), "evidence_ids": pick("price", "forecast", "risk"), "confidence": result.confidence},
         {"claim": str(result.report.get("recommendation") or result.recommendation), "evidence_ids": pick("forecast", "risk", "disclosure", "tool"), "confidence": result.confidence},
     ]
+    for asset in result.asset_results:
+        if not isinstance(asset, dict):
+            continue
+        symbol = str(asset.get("symbol") or "").strip()
+        asset_report = asset.get("report") if isinstance(asset.get("report"), dict) else {}
+        evidence_by_category = asset_evidence_ids.get(symbol, {})
+        evidence_ids = [
+            evidence_id
+            for category in ("price", "forecast", "risk")
+            for evidence_id in evidence_by_category.get(category, [])
+        ]
+        claim = str(asset_report.get("conclusion") or "").strip()
+        if symbol and claim and evidence_ids:
+            claims.append(
+                {
+                    "claim": claim,
+                    "evidence_ids": evidence_ids,
+                    "confidence": float(asset.get("confidence") or result.confidence),
+                }
+            )
     if result.report.get("risk"):
         claims.append({"claim": str(result.report.get("risk")), "evidence_ids": pick("risk", "macro", "tool"), "confidence": min(result.confidence, 0.75)})
 
@@ -1105,7 +1192,10 @@ def analyze_investment_question(
         )
 
     if _is_web_analysis_context(context):
-        route = replace(route, needs_macro=route.needs_macro or _web_analysis_requires_embedded_macro(clean_question))
+        if _is_technical_only_question(clean_question):
+            route = replace(route, needs_macro=False)
+        else:
+            route = replace(route, needs_macro=route.needs_macro or _web_analysis_requires_embedded_macro(clean_question))
         if route.needs_macro and not route.symbols and route.source != "local_fallback":
             log_event(
                 logger,
@@ -1507,37 +1597,48 @@ def analyze_macro_question(
             elapsed_ms=_elapsed_ms(started_at),
         ),
     ]
-    # Always use select_macro_provider_ids as the base to ensure dimension
-    # coverage (rates/positioning/sentiment), then merge LLM suggestions on top.
-    selected_provider_ids = list(select_macro_provider_ids(clean_question, symbols=effective_symbols))
-    if provider_ids:
-        for _pid in provider_ids:
-            if _pid not in selected_provider_ids:
-                selected_provider_ids.append(_pid)
+    # A missing provider_ids means intelligent routing. An explicit non-empty
+    # list is a manual override and must be respected exactly after validation;
+    # silently adding providers makes the UI selection misleading and expands
+    # latency unpredictably.
+    manual_provider_selection = bool(provider_ids)
+    selected_provider_ids = (
+        list(provider_ids)
+        if manual_provider_selection
+        else list(select_macro_provider_ids(clean_question, symbols=effective_symbols))
+    )
     selected_provider_ids = _sanitize_macro_provider_ids(
         selected_provider_ids,
         question=clean_question,
         symbols=effective_symbols,
     )
-    selected_provider_ids = _ensure_macro_provider_dimension_floor(
-        selected_provider_ids,
-        question=clean_question,
-        symbols=effective_symbols,
-    )
+    if not manual_provider_selection:
+        selected_provider_ids = _ensure_macro_provider_dimension_floor(
+            selected_provider_ids,
+            question=clean_question,
+            symbols=effective_symbols,
+        )
     # Ensure AnySearch (anonymous public-web search) is always available when
     # configured, providing public web evidence that geo-blocked providers
     # (us_treasury/cftc_cot) cannot deliver from China.
     try:
         from kronos_fincept.config import settings as _settings
 
-        if _settings.anysearch.is_configured and "anysearch" not in selected_provider_ids:
+        if not manual_provider_selection and _settings.anysearch.is_configured and "anysearch" not in selected_provider_ids:
             selected_provider_ids = [*selected_provider_ids, "anysearch"]
     except Exception:
         pass
 
-    # Ensure altme_fng (alternative.me crypto F&G) is included alongside fear_greed
-    # for additional sentiment signal, regardless of LLM routing decision.
-    if "fear_greed" in selected_provider_ids and "altme_fng" not in selected_provider_ids and "altme_fng" in ALLOWED_MACRO_PROVIDER_IDS:
+    # alternative.me measures crypto sentiment and is relevant only to crypto
+    # questions. Mixing it into gold/equity reports creates false evidence.
+    is_crypto_question = _macro_question_focus(clean_question) == "crypto"
+    if (
+        not manual_provider_selection
+        and is_crypto_question
+        and "fear_greed" in selected_provider_ids
+        and "altme_fng" not in selected_provider_ids
+        and "altme_fng" in ALLOWED_MACRO_PROVIDER_IDS
+    ):
         selected_provider_ids = [*selected_provider_ids, "altme_fng"]
 
     steps.append(
@@ -2108,6 +2209,12 @@ def resolve_symbols(
             resolved.append(ResolvedSymbol(symbol, explicit_market or "cn"))
             seen.add(key)
 
+    for match in re.finditer(r"\b[A-Z]{1,5}=F\b", question):
+        symbol = match.group(0).upper()
+        if symbol not in seen:
+            resolved.append(ResolvedSymbol(symbol, explicit_market or "commodity"))
+            seen.add(symbol)
+
     for match in re.finditer(r"\b[A-Z]{1,5}(?:\.[A-Z]{1,3})?\b", question):
         symbol = match.group(0)
         previous_char = question[match.start() - 1] if match.start() > 0 else ""
@@ -2200,6 +2307,23 @@ def _web_analysis_requires_embedded_macro(text: str) -> bool:
     )
 
 
+def _is_technical_only_question(text: str) -> bool:
+    clean_text = (text or "").strip()
+    if not re.search(
+        r"技术面|均线|macd|kdj|rsi|布林|形态|k线|K线|回测参数",
+        clean_text,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    return not bool(
+        re.search(
+            r"宏观|利率|通胀|美元|美债|收益率|央行|货币政策|财政政策|降息|加息|FOMC|Fed|联储|全球|经济周期|行业周期|衰退|复苏|流动性|汇率|人民币|黄金|原油|商品|大宗|CPI|PPI|PMI|GDP|就业|非农|避险",
+            clean_text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def _question_requires_macro(text: str) -> bool:
     clean_text = (text or "").strip()
     if not clean_text:
@@ -2218,7 +2342,7 @@ def _question_requires_macro(text: str) -> bool:
 def _select_embedded_macro_provider_ids(question: str, *, symbols: list[ResolvedSymbol]) -> list[str]:
     symbol_list = [item.symbol for item in symbols]
     market = symbols[0].market if symbols else None
-    cn_preferred = ["fear_greed", "yahoo_price", "china_macro_nbs", "china_macro_akshare", "source_project_macro_cache"]
+    cn_preferred = ["source_project_macro_cache", "china_macro_akshare", "china_macro_chinalive", "china_macro_nbs", "fear_greed", "yahoo_price"]
     if _optional_provider_enabled("KRONOS_ENABLE_NBS_LIVE"):
         cn_preferred.append("china_nbs_live")
     base = select_macro_provider_ids(question, symbols=symbol_list)
@@ -2360,7 +2484,7 @@ def _build_asset_context(
 
     def _fetch_financial_wrapper() -> Any:
         if asset["asset_class"] == "commodity_future":
-            return ("commodity", "商品期货不适用公司财务摘要，后续使用行情、风险、Kronos 与宏观信号。")
+            return (None, "商品期货不适用公司财务摘要，后续使用行情、风险、Kronos 与宏观信号。")
         data = _call_quietly(_fetch_financial_summary, item.symbol, item.market)
         if asset["asset_class"] == "etf":
             summary = "已尝试获取 ETF/基金资料；没有公司三表时不按个股基本面解释。"
@@ -2803,11 +2927,11 @@ def _create_macro_data_manager(*, fast_mode: bool = False) -> MacroDataManager:
 
 @lru_cache(maxsize=2)
 def _shared_macro_data_manager(fast_mode: bool) -> MacroDataManager:
-    timeout_seconds = WEB_MACRO_TIMEOUT_SECONDS if fast_mode else 20.0
+    timeout_seconds = WEB_MACRO_TIMEOUT_SECONDS if fast_mode else COMPLETE_MACRO_TIMEOUT_SECONDS
     per_provider_timeout_seconds = (
         WEB_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
         if fast_mode
-        else EMBEDDED_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
+        else COMPLETE_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
     )
     return MacroDataManager(
         timeout_seconds=timeout_seconds,
@@ -3000,18 +3124,7 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
                 selected.append(provider_id)
             if len(selected) >= 3:
                 break
-    # Ensure AnySearch (anonymous public-web search) is included whenever it is
-    # configured, regardless of route, so macro context always has access to
-    # public web evidence (mitigates gaps from geo-blocked providers such as
-    # us_treasury/cftc_cot when accessed from China).
-    try:
-        from kronos_fincept.config import settings as _settings
-
-        if _settings.anysearch.is_configured and "anysearch" not in selected:
-            selected.append("anysearch")
-    except Exception:
-        pass
-    return selected
+    return selected[:5]
 
 
 @log_perf(event="agent.macro_ctx", level=20, log_args=True, log_result=True, max_result_len=1000)
@@ -3102,12 +3215,13 @@ def _macro_context_from_gather(
     result: MacroGatherResult,
 ) -> dict[str, Any]:
     payload = result.to_dict()
-    dimension_coverage = _macro_dimension_coverage(payload["signals"], payload["provider_results"], selected_provider_ids=provider_ids)
-    local_data_assets = _macro_local_data_assets(payload["signals"])
+    signals = _filter_macro_signals_for_question(question, payload["signals"])
+    dimension_coverage = _macro_dimension_coverage(signals, payload["provider_results"], selected_provider_ids=provider_ids)
+    local_data_assets = _macro_local_data_assets(signals)
     return {
         "question": question,
         "selected_provider_ids": provider_ids,
-        "signals": payload["signals"],
+        "signals": signals,
         "provider_results": payload["provider_results"],
         "errors": payload["errors"],
         "ok": payload["ok"],
@@ -3122,6 +3236,29 @@ def _macro_context_from_gather(
             "场景分析",
         ],
     }
+
+
+def _filter_macro_signals_for_question(question: str, signals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep web snippets as context, but reject unstructured commodity quotes."""
+
+    if _macro_question_focus(question) != "commodity":
+        return signals
+    filtered: list[dict[str, Any]] = []
+    for signal in signals:
+        source = str(signal.get("source") or "").strip().lower()
+        signal_type = str(signal.get("signal_type") or "").strip().lower()
+        metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+        text = f"{signal.get('value') or ''} {signal.get('interpretation') or ''}"
+        untrusted_web_quote = (
+            source in {"anysearch", "web_search"}
+            and signal_type == "public_web_result"
+            and metadata.get("price_eligible") is not True
+            and bool(re.search(r"黄金|gold|金价|价格|价位|失守|突破|回调", text, re.IGNORECASE))
+            and bool(re.search(r"\d{3,}(?:\.\d+)?", text))
+        )
+        if not untrusted_web_quote:
+            filtered.append(signal)
+    return filtered
 
 
 def _macro_local_data_assets(signals: list[dict[str, Any]]) -> dict[str, Any]:
@@ -3193,14 +3330,16 @@ def _macro_dimension_coverage(
         if source and source not in sources.setdefault(dimension, []):
             sources[dimension].append(source)
 
-    # Count intended dimensions from selected providers even if they returned no data
+    planned_dimensions: set[str] = set()
     if selected_provider_ids:
         for pid in selected_provider_ids:
             dimension = MACRO_PROVIDER_DIMENSIONS.get(pid, "official_macro")
-            counts.setdefault(dimension, 0)
-            sources.setdefault(dimension, [])
+            planned_dimensions.add(dimension)
 
-    dimensions = sorted(counts)
+    # Only dimensions backed by at least one returned signal count as evidence.
+    # Selected providers with no usable output are reported separately as planned
+    # coverage and must not raise confidence.
+    dimensions = sorted(dimension for dimension, count in counts.items() if count > 0)
     missing_dimensions = [dimension for dimension in MACRO_DIMENSION_LABELS if dimension not in counts]
     provider_status_counts: dict[str, int] = {}
     for result in (provider_results or {}).values():
@@ -3219,6 +3358,8 @@ def _macro_dimension_coverage(
         "dimension_labels": [MACRO_DIMENSION_LABELS.get(item, item) for item in dimensions],
         "dimension_counts": counts,
         "dimension_sources": sources,
+        "planned_dimensions": sorted(planned_dimensions),
+        "planned_dimension_count": len(planned_dimensions),
         "missing_dimensions": missing_dimensions,
         "missing_dimension_labels": [MACRO_DIMENSION_LABELS.get(item, item) for item in missing_dimensions],
         "provider_status_counts": provider_status_counts,
@@ -3872,6 +4013,51 @@ def _deterministic_risk_summary(asset: dict[str, Any]) -> tuple[str, str]:
     return f"{summary}；量化风险等级为{risk_level}。", risk_level
 
 
+def _format_financial_amount(value: Any) -> str | None:
+    number = _last_indicator_value(value)
+    if number is None:
+        text = str(value or "").strip()
+        return text or None
+    absolute = abs(number)
+    if absolute >= 1e8:
+        return f"{number / 1e8:.2f}亿"
+    if absolute >= 1e4:
+        return f"{number / 1e4:.2f}万"
+    return f"{number:.2f}"
+
+
+def _deterministic_fundamentals_summary(asset: dict[str, Any]) -> str:
+    asset_class = str(asset.get("asset_class") or "equity")
+    if asset_class == "commodity_future":
+        return "商品期货不适用公司财务三表。"
+    if asset_class == "etf":
+        return "ETF/基金不适用单一公司财务三表，应关注底层资产、费用和流动性。"
+    data = asset.get("financial_data") or {}
+    if not data:
+        return "当前结构化数据源未返回可用财务摘要，不展示未经核验的基本面数字。"
+    parts: list[str] = []
+    period = str(data.get("period") or "").strip()
+    if period:
+        parts.append(f"报告期{period}")
+    for key, label in (
+        ("revenue", "营收"),
+        ("net_income", "净利润"),
+        ("gross_profit", "毛利润"),
+        ("market_cap", "市值"),
+    ):
+        formatted = _format_financial_amount(data.get(key))
+        if formatted:
+            parts.append(f"{label}{formatted}")
+    for key, label in (("pe", "市盈率"), ("pb", "市净率")):
+        number = _last_indicator_value(data.get(key))
+        if number is not None:
+            parts.append(f"{label}{number:.2f}")
+    roe = _last_indicator_value(data.get("roe"))
+    if roe is not None:
+        parts.append(f"ROE{roe * 100:.2f}%")
+    return "；".join(parts) + "。" if parts else "结构化财务摘要可用，但未返回可展示的核心字段。"
+
+
 def _analysis_data_quality_context(asset_contexts: list[dict[str, Any]]) -> dict[str, Any]:
     assets: list[dict[str, Any]] = []
     for asset in asset_contexts:
@@ -3998,6 +4184,57 @@ def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
     return f"{label}：{fact_text}，{judgment}。", recommendation
 
 
+def _asset_display_label(asset: dict[str, Any]) -> str:
+    symbol = str(asset.get("symbol") or "标的")
+    name = str(asset.get("name") or "").strip()
+    return f"{name}({symbol})" if name else symbol
+
+
+def _join_deterministic_asset_sections(
+    asset_contexts: list[dict[str, Any]],
+    render: Any,
+) -> str:
+    parts: list[str] = []
+    for asset in asset_contexts:
+        if not asset.get("market_data"):
+            continue
+        text = str(render(asset) or "").strip().rstrip("。；; ")
+        if text:
+            parts.append(f"{_asset_display_label(asset)}：{text}")
+    return "；".join(parts) + ("。" if parts else "")
+
+
+def _valid_public_source_url(value: Any) -> str | None:
+    url = str(value or "").strip()
+    return url if re.match(r"^https?://", url, re.IGNORECASE) else None
+
+
+def _report_sources_from_assets(asset_contexts: list[dict[str, Any]]) -> list[dict[str, str]]:
+    sources: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for asset in asset_contexts:
+        symbol = str(asset.get("symbol") or "").strip()
+        research = asset.get("online_research") or {}
+        for item in research.get("results") or []:
+            if not isinstance(item, dict):
+                continue
+            url = _valid_public_source_url(item.get("url"))
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            sources.append(
+                {
+                    "symbol": symbol,
+                    "title": str(item.get("title") or item.get("source") or url).strip(),
+                    "url": url,
+                    "provider": str(item.get("provider") or item.get("source") or "public_web").strip(),
+                }
+            )
+            if len(sources) >= 12:
+                return sources
+    return sources
+
+
 def _enforce_report_data_quality(
     report: dict[str, Any],
     asset_contexts: list[dict[str, Any]],
@@ -4011,7 +4248,6 @@ def _enforce_report_data_quality(
     valid_market_count = 0
     confidence_caps: list[float] = []
     long_horizon = any(term in question for term in ("年内", "年底", "今年", "未来一年"))
-    strict_consistency = len(asset_contexts) > 1 or long_horizon
 
     for asset in asset_contexts:
         symbol = str(asset.get("symbol") or "")
@@ -4028,6 +4264,7 @@ def _enforce_report_data_quality(
             payload = raw.get("report") if isinstance(raw, dict) and isinstance(raw.get("report"), dict) else raw
             asset_report = _normalize_report(payload) if isinstance(payload, dict) else _default_asset_report(asset)
             asset_report["technical"] = _deterministic_technical_summary(asset)
+            asset_report["fundamentals"] = _deterministic_fundamentals_summary(asset)
             short_term, _ = _prediction_summary(
                 asset.get("market_data") or {},
                 asset.get("kronos_prediction") or {},
@@ -4038,9 +4275,8 @@ def _enforce_report_data_quality(
             asset_report["risk"] = risk_summary
             asset_report["risk_level"] = risk_level
             deterministic_conclusion, deterministic_recommendation = _deterministic_asset_outlook(asset)
-            if strict_consistency:
-                asset_report["conclusion"] = deterministic_conclusion
-                asset_report["recommendation"] = deterministic_recommendation
+            asset_report["conclusion"] = deterministic_conclusion
+            asset_report["recommendation"] = deterministic_recommendation
             confidence_cap = 0.7 if asset.get("kronos_prediction") and asset.get("risk_metrics") else 0.55
             if long_horizon:
                 confidence_cap = min(confidence_cap, 0.55)
@@ -4062,6 +4298,7 @@ def _enforce_report_data_quality(
         )
 
     guarded["asset_reports"] = guarded_asset_reports
+    guarded["sources"] = _report_sources_from_assets(asset_contexts)
     total_assets = len(asset_contexts)
     missing_count = total_assets - valid_market_count
     if total_assets and valid_market_count == 0:
@@ -4093,7 +4330,7 @@ def _enforce_report_data_quality(
         )
         guarded["recommendation"] = "数据不完整，暂不进行跨标的排序"
         guarded["confidence"] = min(float(guarded.get("confidence") or 0.5), 0.4)
-    elif confidence_caps and strict_consistency:
+    elif confidence_caps:
         deterministic_outlooks = [
             _deterministic_asset_outlook(asset)
             for asset in asset_contexts
@@ -4111,10 +4348,26 @@ def _enforce_report_data_quality(
             float(guarded.get("confidence") or 0.5),
             sum(confidence_caps) / len(confidence_caps),
         )
-    elif confidence_caps:
-        guarded["confidence"] = min(
-            float(guarded.get("confidence") or 0.5),
-            sum(confidence_caps) / len(confidence_caps),
+    if valid_market_count:
+        guarded["short_term_prediction"] = _join_deterministic_asset_sections(
+            asset_contexts,
+            lambda asset: _prediction_summary(
+                asset.get("market_data") or {},
+                asset.get("kronos_prediction") or {},
+                asset.get("kronos_prediction_error"),
+            )[0],
+        )
+        guarded["technical"] = _join_deterministic_asset_sections(
+            asset_contexts,
+            _deterministic_technical_summary,
+        )
+        guarded["fundamentals"] = _join_deterministic_asset_sections(
+            asset_contexts,
+            _deterministic_fundamentals_summary,
+        )
+        guarded["risk"] = _join_deterministic_asset_sections(
+            asset_contexts,
+            lambda asset: _deterministic_risk_summary(asset)[0],
         )
     return guarded
 
@@ -4502,13 +4755,19 @@ def _compact_online_research_for_llm(
 
     results = value.get("results")
     if isinstance(results, list):
+        cited_results = [
+            item
+            for item in results
+            if isinstance(item, dict) and _valid_public_source_url(item.get("url"))
+        ]
         compact["results"] = [
             _compact_research_result_for_llm(item, text_limit=text_limit)
-            for item in results[:result_limit]
-            if isinstance(item, dict)
+            for item in cited_results[:result_limit]
         ]
         compact["result_count"] = len(results)
-        compact["results_truncated"] = len(results) > result_limit
+        compact["cited_result_count"] = len(cited_results)
+        compact["results_truncated"] = len(cited_results) > result_limit
+        compact["_policy"] = "results without a public http(s) URL are excluded from LLM factual context"
     return compact
 
 
@@ -4650,7 +4909,9 @@ def _inject_anysearch_online_research(question: str, prompt_context: dict[str, A
                 "url": item.url,
                 "source": getattr(item, "source", "") or "anysearch",
                 "provider": "anysearch",
-                "timestamp": getattr(item, "published_at", "") or datetime.now().isoformat(),
+                # A missing publication date is intentionally kept missing.  It
+                # must not look like a freshly fetched current event.
+                "timestamp": getattr(item, "published_at", "") or None,
             })
         if results:
             prompt_context["online_research"] = {
@@ -4706,12 +4967,12 @@ Digital Oracle 5 条铁规则：
 
 数据时效性规则（极其重要）：
 - 当前分析日期：{datetime.now().strftime("%Y-%m-%d %H:%M UTC")}。这是你执行分析的实时时刻。
-- 下方 trusted_project_context.macro.signals 中的所有信号均来自实时数据源（API/网页抓取），每条信号含 observed_at 时间戳标注数据实际更新时间。
+- trusted_project_context.macro.signals 可能来自实时 API、日频/周频官方数据或网页摘要，不能一概视为实时；必须按 observed_at 和 metadata.data_quality 判断时效与口径。
 - 绝对禁止用你的训练数据中记忆的"当前"值覆盖这些实时信号值！例如：如果 real_yield_10y 信号显示 2.39，即使你记忆中美债收益率不同，也必须优先使用 2.39。
 - 如果某信号 observed_at 距分析日期超过 72 小时，应在结论中明确标注该数据的时效性风险。
 - 结论中的价格区间、利率水平、持仓数据必须基于 signals 中的实际值，不得凭空给出其他数值。
 - 引用外部人物/机构时，严格依据 trusted_project_context.online_research.results 中的网页搜索结果和 signals 中的实时数据。绝对禁止使用训练数据中过时的"现任""当前"等时间敏感事实。online_research 来自实时 AnySearch 搜索，其时效性远高于你的训练数据 cutoff。如果两者冲突，以 online_research 为准（例如：online_research 显示 Kevin Warsh 是美联储主席而训练数据中为 Jerome Powell，必须输出 Kevin Warsh）。
-- 关键价格验证：对于黄金/原油/比特币等资产价格，如果 yahoo_price 或 stooq provider 状态为 failed/empty/timeout，说明直接价格 API 不可用，此时 anysearch 抓取的网页价格可能包含延迟（分钟到小时级）甚至是旧文章中的历史价格。你必须优先取 observed_at 最新的 anysearch 信号，在结论中标注"⚠️ 价格来自公开网页，可能存在延迟"，并自问"这个价格区间是否符合当前市场的合理范围"——如有疑问，降低 confidence。
+- 关键价格验证：对于黄金/原油/比特币等资产，只有 yahoo_price、stooq、coingecko 或项目本地结构化价格信号可以支持当前价格和具体价位。anysearch/web_search 的标题、摘要和 online_research 只能用于新闻背景，即使出现数字也禁止把它写成当前价格、买入阈值、支撑位、阻力位或概率场景价位。直接价格源不可用时必须写“当前价格数据缺失”，不得补猜具体数字。
 - 利率方向判断：如有效联邦基金利率(当前值)与一年前相比下降，说明处于降息周期；即使鹰派言论或加息预期存在，基础事实是利率已下降，结论必须以实际利率变化方向为准，"鹰派预期"仅作为风险因素放在 monitoring_signals 中。
 
 JSON 字段：
@@ -4879,6 +5140,43 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _macro_question_focus(question: str) -> str:
+    """Classify the minimum topic needed for a useful degraded-mode answer."""
+
+    text = (question or "").lower()
+    if re.search(r"美联储|联邦基金|fedwatch|fomc|加息|降息|利率方向", text, re.IGNORECASE):
+        return "rate_direction"
+    if re.search(r"黄金|gold|白银|原油|铜|商品|锂矿|碳酸锂|锂电|新能源材料", text, re.IGNORECASE):
+        return "commodity"
+    if re.search(r"比特币|btc|eth|加密|crypto", text, re.IGNORECASE):
+        return "crypto"
+    if re.search(r"泡沫|过热|估值|ai|人工智能|科技股|半导体", text, re.IGNORECASE):
+        return "growth_assets"
+    if re.search(r"a股|港股|美股|大盘|指数|纳指|标普|道指|股票|股市", text, re.IGNORECASE):
+        return "equities"
+    return "general"
+
+
+def _macro_fallback_conclusion_is_too_generic(question: str, conclusion: Any) -> bool:
+    """Reject a syntactically valid but non-responsive macro conclusion."""
+
+    text = str(conclusion or "").strip().lower()
+    if not text:
+        return True
+    focus = _macro_question_focus(question)
+    if focus == "rate_direction":
+        return not bool(re.search(r"加息|降息|维持|无法确认|观望", text, re.IGNORECASE))
+    if focus == "commodity":
+        return not bool(re.search(r"黄金|白银|原油|商品|锂矿|碳酸锂|锂电|供需|买|追高|观望|分批", text, re.IGNORECASE))
+    if focus == "crypto":
+        return not bool(re.search(r"比特币|加密|反转|见底|买|追高|观望", text, re.IGNORECASE))
+    if focus == "growth_assets":
+        return not bool(re.search(r"科技|ai|人工智能|半导体|泡沫|估值|买|追高|观望", text, re.IGNORECASE))
+    if focus == "equities":
+        return not bool(re.search(r"股票|股市|指数|大盘|买|追高|观望|配置", text, re.IGNORECASE))
+    return False
+
+
 def _macro_local_conclusion(
     question: str,
     *,
@@ -4897,11 +5195,35 @@ def _macro_local_conclusion(
         f"本轮从 {provider_count} 个宏观 provider 获取 {signal_count} 条信号，"
         f"覆盖 {dimension_count}/{required_dimensions} 类独立维度，主要来源：{top_sources}。"
     )
+    focus = _macro_question_focus(question)
     if not sufficient_evidence:
-        action = "暂不支持直接买入或追涨，当前只能观察并继续验证" if asks_buy_timing else "只能给出观察结论，暂不支持高置信度方向判断"
+        if focus == "rate_direction":
+            action = "目前不能确认下一步是加息还是降息，暂按观望处理并等待利率、通胀和就业数据确认"
+        elif focus == "growth_assets":
+            action = "科技成长资产目前不能据此确认已经进入泡沫破裂或明确反转阶段，不宜追高，适合观察或小仓位分批验证"
+        elif focus == "commodity":
+            action = "黄金等商品目前不支持无条件追买，适合观察或分批验证，不宜一次性重仓"
+        elif focus == "crypto":
+            action = "比特币等加密资产目前不能据此确认见底或反转，适合等待趋势和流动性信号确认"
+        elif asks_buy_timing:
+            action = "暂不支持直接买入或追涨，当前只能观察并继续验证"
+        else:
+            action = "只能给出观察结论，暂不支持高置信度方向判断"
         return f"结论：{action}；{evidence_summary}"
     if asks_buy_timing:
-        return f"结论：宏观证据已满足交叉验证，但仍不支持无条件追买；更适合观察或小仓位分批验证，并等待价格与盈利信号确认。{evidence_summary}"
+        if focus == "growth_assets":
+            action = "科技成长资产的宏观证据已满足交叉验证，但仍不支持无条件追买；更适合观察或小仓位分批验证，并等待估值、盈利和价格趋势同步确认"
+        elif focus == "commodity":
+            action = "黄金等商品的宏观证据已满足交叉验证，但仍不支持无条件追买；更适合分批验证并控制仓位，等待利率和价格趋势进一步确认"
+        elif focus == "crypto":
+            action = "加密资产的宏观证据已满足交叉验证，但仍不支持无条件追涨；更适合小仓位分批验证，并等待流动性与趋势信号确认"
+        else:
+            action = "宏观证据已满足交叉验证，但仍不支持无条件追买；更适合观察或小仓位分批验证，并等待价格与盈利信号确认"
+        return f"结论：{action}。{evidence_summary}"
+    if focus == "rate_direction":
+        return f"结论：当前宏观证据尚不能确认下一步明确加息或降息，暂按观望处理，等待利率、通胀和就业数据进一步确认。{evidence_summary}"
+    if focus == "growth_assets":
+        return f"结论：当前证据显示科技成长资产存在估值和预期波动风险，但不足以确认泡沫破裂；暂不追高，等待盈利兑现和价格趋势确认。{evidence_summary}"
     return f"结论：当前宏观证据满足交叉验证，可给出中等置信度的观察判断；具体方向仍需结合下方信号一致性和监控阈值确认。{evidence_summary}"
 
 
@@ -4976,7 +5298,7 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
             "confidence": confidence,
             "risk_level": "中" if signal_count else "未知",
             "disclaimer": RESEARCH_DISCLAIMER,
-            "macro_analysis": _macro_analysis_from_signals(signals),
+            "macro_analysis": conclusion,
             "macro_signals": signals,
             "cross_validation": cross_validation,
             "contradictions": contradictions,
@@ -4994,9 +5316,12 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
 def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
     fallback = _fallback_macro_report(macro_context)
     merged = dict(report)
+    had_model_probability = bool(_normalize_probability_scenarios(report.get("probability_scenarios")))
+    # Provider output is the source of truth. An LLM may summarize signals but
+    # must never replace them with invented or stale web-derived structures.
+    merged["macro_signals"] = _normalize_macro_signals(macro_context.get("signals"))
     for key in [
         "macro_analysis",
-        "macro_signals",
         "cross_validation",
         "contradictions",
         "probability_scenarios",
@@ -5008,12 +5333,186 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
             merged[key] = fallback.get(key)
     merged.setdefault("macro_evidence", fallback.get("macro_evidence"))
     normalized = _normalize_report(merged)
+    normalized["probability_method"] = (
+        "llm_scenario_weight" if had_model_probability else "provider_confidence_fallback"
+    )
+    normalized["probability_note"] = "模型情景权重，非统计校准概率。"
     if _macro_texts_are_duplicate(normalized.get("conclusion"), normalized.get("macro_analysis")):
         normalized["macro_analysis"] = _macro_analysis_from_signals(
             _normalize_macro_signals(macro_context.get("signals"))
         )
+    if _macro_fallback_conclusion_is_too_generic(macro_context.get("question", ""), normalized.get("conclusion")):
+        normalized["conclusion"] = fallback.get("conclusion")
+        normalized["recommendation"] = fallback.get("recommendation", normalized.get("recommendation"))
     normalized = _annotate_macro_monitoring_signals(normalized, macro_context)
-    return _apply_macro_evidence_guard(normalized, macro_context)
+    normalized = _guard_unverified_commodity_prices(normalized, macro_context, fallback)
+    normalized = _apply_macro_evidence_guard(normalized, macro_context)
+    scenarios = _normalize_probability_scenarios(normalized.get("probability_scenarios"))
+    if not scenarios:
+        scenarios = _default_probability_scenarios(_normalize_macro_signals(macro_context.get("signals")))
+    normalized["probability_scenarios"] = scenarios
+    return normalized
+
+
+def _has_direct_market_price_signal(macro_context: dict[str, Any]) -> bool:
+    question = str(macro_context.get("question") or "")
+    question_focus = _macro_question_focus(question)
+    for signal in _normalize_macro_signals(macro_context.get("signals")):
+        source = str(signal.get("source") or "").strip().lower()
+        signal_text = " ".join(
+            str(value or "")
+            for value in (
+                signal.get("signal_type"),
+                signal.get("interpretation"),
+                (signal.get("metadata") or {}).get("symbol") if isinstance(signal.get("metadata"), dict) else "",
+                (signal.get("metadata") or {}).get("label") if isinstance(signal.get("metadata"), dict) else "",
+                (signal.get("metadata") or {}).get("commodity") if isinstance(signal.get("metadata"), dict) else "",
+            )
+        ).lower()
+        if question_focus == "commodity":
+            if re.search(r"锂矿|碳酸锂|锂电|lithium", question, re.IGNORECASE):
+                if not re.search(r"锂|lithium", signal_text, re.IGNORECASE):
+                    continue
+            elif re.search(r"黄金|gold|gc=/?f|gold", question, re.IGNORECASE):
+                if not re.search(r"黄金|gold|gc=/?f", signal_text, re.IGNORECASE):
+                    continue
+        metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+        if source in {"yahoo_price", "stooq", "coingecko"} and metadata.get("price_eligible") is not False:
+            if metadata.get("latest") is not None or metadata.get("close") is not None:
+                return True
+        if source == "source_project_macro_cache" and "price" in str(signal.get("signal_type") or "").lower():
+            return True
+    return False
+
+
+def _contains_unverified_commodity_price(value: Any) -> bool:
+    text = str(value or "")
+    has_price_context = bool(
+        re.search(r"黄金|gold|金价|锂价|锂盐价|价格|价位|回调至|跌破|突破|支撑|阻力|区间", text, re.IGNORECASE)
+    )
+    return has_price_context and bool(
+        re.search(r"\d{1,8}(?:\.\d+)?\s*(?:万|亿|千)?\s*(?:元|美元|港元|人民币|usd|cny|hkd)?", text, re.IGNORECASE)
+    )
+
+
+def _lithium_price_missing_text() -> str:
+    return "当前缺少可验证的直接锂矿价格数据，网页摘要不作为当前价格或买卖价位依据。"
+
+
+def _sanitize_unverified_commodity_detail(
+    report: dict[str, Any],
+    *,
+    question: str,
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    """Remove stale numeric commodity claims and cross-asset leakage from LLM detail."""
+    guarded = dict(report)
+    is_lithium = bool(re.search(r"锂矿|碳酸锂|锂电|新能源材料|lithium", question, re.IGNORECASE))
+    missing_text = _lithium_price_missing_text() if is_lithium else "当前缺少可验证的直接商品价格数据，不能生成具体价位判断。"
+
+    for key in ("conclusion", "short_term_prediction", "technical", "fundamentals", "macro_analysis", "risk", "uncertainties"):
+        value = str(guarded.get(key) or "").strip()
+        if not value:
+            continue
+        if is_lithium and re.search(r"黄金|gold", value, re.IGNORECASE):
+            guarded[key] = fallback.get(key) or missing_text
+        elif _contains_unverified_commodity_price(value):
+            if key == "fundamentals":
+                sentences = re.split(r"(?<=[。！？])", value)
+                safe_sentences = [
+                    sentence.strip()
+                    for sentence in sentences
+                    if sentence.strip() and not _contains_unverified_commodity_price(sentence)
+                ]
+                guarded[key] = "".join(safe_sentences + [missing_text]).strip()
+            else:
+                guarded[key] = fallback.get(key) or missing_text
+
+    for collection_key in ("time_stratified_sub_conclusions", "time_layered_conclusions"):
+        collection = guarded.get(collection_key)
+        if not isinstance(collection, list):
+            continue
+        sanitized_collection: list[dict[str, Any]] = []
+        for item in collection:
+            if not isinstance(item, dict):
+                sanitized_collection.append(item)
+                continue
+            sanitized = dict(item)
+            for text_key in ("judgment", "basis", "meaning"):
+                value = str(sanitized.get(text_key) or "").strip()
+                if is_lithium and re.search(r"黄金|gold", value, re.IGNORECASE):
+                    sanitized[text_key] = missing_text
+                elif _contains_unverified_commodity_price(value):
+                    sanitized[text_key] = missing_text
+            sanitized_collection.append(sanitized)
+        guarded[collection_key] = sanitized_collection
+    return guarded
+
+
+def _guard_unverified_commodity_prices(
+    report: dict[str, Any],
+    macro_context: dict[str, Any],
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    question = str(macro_context.get("question") or "")
+    if _macro_question_focus(question) != "commodity" or _has_direct_market_price_signal(macro_context):
+        return report
+
+    guarded = _sanitize_unverified_commodity_detail(
+        report,
+        question=question,
+        fallback=fallback,
+    )
+
+    scenarios = [
+        item
+        for item in _normalize_probability_scenarios(guarded.get("probability_scenarios"))
+        if not _contains_unverified_commodity_price(f"{item.get('scenario')} {item.get('basis')}")
+    ]
+    if len(scenarios) < 2:
+        scenarios = _default_probability_scenarios(_normalize_macro_signals(macro_context.get("signals")))
+    guarded["probability_scenarios"] = scenarios
+
+    monitoring = [
+        item
+        for item in _normalize_monitoring_signals(guarded.get("monitoring_signals"))
+        if not _contains_unverified_commodity_price(
+            f"{item.get('signal')} {item.get('current_value')} {item.get('threshold')} {item.get('meaning')}"
+        )
+    ]
+    if re.search(r"锂矿|碳酸锂|锂电|lithium", question, re.IGNORECASE):
+        price_label = "碳酸锂相关价格"
+        price_meaning = "当前问题相关的锂矿价格源缺失，网页搜索摘要不作为当前价格或买卖价位依据。"
+    else:
+        price_label = "黄金直接价格"
+        price_meaning = "网页搜索摘要不作为当前金价或买卖价位依据。"
+    monitoring.append(
+        {
+            "signal": price_label,
+            "current_value": "缺失",
+            "threshold": "直接价格 provider 恢复后再生成数值阈值",
+            "meaning": price_meaning,
+            "status": "unavailable",
+            "provider": None,
+            "source_url": None,
+            "observed_at": None,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "evidence_role": "unavailable",
+            "freshness": "unknown",
+            "threshold_source": "model_rule",
+        }
+    )
+    guarded["monitoring_signals"] = monitoring
+    guarded["recommendation"] = "观察"
+    guarded["confidence"] = min(float(guarded.get("confidence") or 0.0), 0.45)
+    if re.search(r"锂矿|碳酸锂|锂电|lithium", question, re.IGNORECASE):
+        warning = _lithium_price_missing_text()
+    else:
+        warning = "当前缺少可验证的黄金直接报价，报告不会使用网页摘要中的数字生成买卖价位。"
+    uncertainties = str(guarded.get("uncertainties") or "").strip()
+    if warning not in uncertainties:
+        guarded["uncertainties"] = f"{uncertainties}\n{warning}".strip()
+    return guarded
 
 
 def _macro_text_fingerprint(value: Any) -> str:
@@ -5173,13 +5672,258 @@ def _annotate_macro_monitoring_rows(
     return annotated
 
 
+def _monitoring_text_tokens(value: Any) -> set[str]:
+    text = str(value or "").lower()
+    tokens = set(re.findall(r"[a-z0-9_]{2,}|[\u4e00-\u9fff]{2,}", text))
+    return {token for token in tokens if token not in {"当前", "信号", "数据", "市场", "可能", "需要", "如果"}}
+
+
+def _monitoring_match_score(row: dict[str, Any], signal: dict[str, Any]) -> int:
+    row_name = str(row.get("signal") or "").strip().lower()
+    signal_type = str(signal.get("signal_type") or "").strip().lower()
+    source = str(signal.get("source") or "").strip().lower()
+    label = _macro_monitoring_signal_label(signal).lower()
+    if not row_name or not signal_type:
+        return 0
+    if "名义" in row_name and ("实际" in label or "real" in signal_type):
+        return 0
+    if "实际" in row_name and ("名义" in label or "nominal" in signal_type):
+        return 0
+    if row_name == label or row_name == signal_type:
+        return 100
+    if row_name in {label, source, signal_type} or label in row_name:
+        return 80
+    row_tokens = _monitoring_text_tokens(row_name)
+    signal_tokens = _monitoring_text_tokens(f"{label} {signal_type} {source} {signal.get('interpretation')}")
+    overlap = row_tokens & signal_tokens
+    if not overlap:
+        return 0
+    return min(70, 20 * len(overlap))
+
+
+def _best_monitoring_signal(row: dict[str, Any], signals: list[dict[str, Any]]) -> dict[str, Any] | None:
+    scored = [(_monitoring_match_score(row, signal), signal) for signal in signals]
+    scored = [(score, signal) for score, signal in scored if score >= 40]
+    if not scored:
+        return None
+    return max(scored, key=lambda item: item[0])[1]
+
+
+def _monitoring_is_numeric(row: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(row.get(key) or "")
+        for key in ("signal", "current_value", "threshold", "meaning")
+    )
+    return bool(
+        re.search(
+            r"价格|价位|成交量|量能|收益率|利率|指数|点位|销量|产量|库存|增长率|净多|持仓|价格|price|volume|yield|rate|index|sales|output|inventory",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _monitoring_is_event(row: dict[str, Any]) -> bool:
+    text = " ".join(str(row.get(key) or "") for key in ("signal", "threshold", "meaning"))
+    return bool(re.search(r"公告|宣布|政策|减产|停产|复产|投产|扩产|产能|进度|进展|供给端|需求端|订单|指引|会议|制裁|调查|事件|新闻|发布|announcement|policy|event|guidance|capacity|supply|demand", text, re.IGNORECASE))
+
+
+def _parse_monitoring_datetime(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        timestamp = float(value)
+        if timestamp > 10_000_000_000:
+            timestamp /= 1000
+        try:
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    candidate = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _monitoring_freshness(row: dict[str, Any], observed_at: Any) -> str:
+    parsed = _parse_monitoring_datetime(observed_at)
+    if parsed is None:
+        return "unknown"
+    age_hours = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 3600)
+    text = " ".join(str(row.get(key) or "") for key in ("signal", "threshold", "meaning"))
+    max_age_hours = 72.0
+    if re.search(r"月度|季度|销量|产量|库存|monthly|quarterly|sales|output|inventory", text, re.IGNORECASE):
+        max_age_hours = 45 * 24
+    elif re.search(r"公告|政策|宣布|减产|停产|订单|指引|announcement|policy|guidance", text, re.IGNORECASE):
+        max_age_hours = 30 * 24
+    return "fresh" if age_hours <= max_age_hours else "stale"
+
+
+def _monitoring_evidence_fields(
+    row: dict[str, Any],
+    signal: dict[str, Any],
+    *,
+    status: str,
+    evidence_role: str,
+) -> dict[str, Any]:
+    metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+    observed_at = signal.get("observed_at")
+    annotated = dict(row)
+    annotated.update(
+        {
+            "current_value": signal.get("value"),
+            "status": status,
+            "provider": signal.get("source"),
+            "source_url": signal.get("source_url"),
+            "observed_at": observed_at,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "evidence_role": evidence_role,
+            "freshness": _monitoring_freshness(row, observed_at),
+            "threshold_source": "model_rule",
+        }
+    )
+    if metadata.get("data_quality"):
+        annotated["data_quality"] = metadata["data_quality"]
+    return annotated
+
+
+def _unavailable_monitoring_row(row: dict[str, Any], *, reason: str = "") -> dict[str, Any]:
+    annotated = dict(row)
+    current_value = row.get("current_value")
+    if current_value not in {"缺失", "未获取"}:
+        current_value = "未获取"
+    annotated.update(
+        {
+            "current_value": current_value,
+            "status": "unavailable",
+            "provider": None,
+            "source_url": None,
+            "observed_at": None,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "evidence_role": "unavailable",
+            "freshness": "unknown",
+            "threshold_source": "model_rule",
+        }
+    )
+    if reason:
+        annotated["meaning"] = f"{annotated.get('meaning') or ''} 数据状态：{reason}。".strip()
+    return annotated
+
+
+def _search_anysearch_monitoring_row(question: str, row: dict[str, Any]) -> dict[str, Any] | None:
+    client = AnySearchClient()
+    if not getattr(client, "is_configured", False):
+        return None
+    signal = str(row.get("signal") or "").strip()
+    query = f"{question} {signal} 最新公告 新闻 仅返回带发布日期的事件信息"
+    response = client.search(query)
+    if response.status not in {"completed", "skipped"}:
+        return None
+    for item in response.results:
+        observed_at = getattr(item, "published_at", None)
+        if not observed_at or not getattr(item, "url", None):
+            continue
+        if _monitoring_freshness(row, observed_at) == "stale":
+            continue
+        signal_payload = {
+            "source": "anysearch",
+            "signal_type": "public_web_event",
+            "value": getattr(item, "title", "") or "新闻事件",
+            "interpretation": getattr(item, "snippet", "") or "公开网页事件摘要",
+            "observed_at": observed_at,
+            "source_url": getattr(item, "url", None),
+            "metadata": {"evidence_role": "news_context_only", "price_eligible": False},
+        }
+        enriched = _monitoring_evidence_fields(
+            row,
+            signal_payload,
+            status="news_context",
+            evidence_role="news_context_only",
+        )
+        enriched["meaning"] = f"{enriched.get('meaning') or ''} 新闻摘要：{signal_payload['interpretation']}".strip()
+        return enriched
+    return None
+
+
+def _enrich_macro_monitoring_signals(
+    rows: list[dict[str, Any]],
+    signals: list[dict[str, Any]],
+    *,
+    question: str,
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    fallback_rows: list[tuple[int, dict[str, Any]]] = []
+    for index, row in enumerate(rows):
+        matched = _best_monitoring_signal(row, signals)
+        if matched:
+            source = str(matched.get("source") or "").lower()
+            metadata = matched.get("metadata") if isinstance(matched.get("metadata"), dict) else {}
+            if _monitoring_is_numeric(row) and (source in {"anysearch", "web_search"} or metadata.get("price_eligible") is False):
+                enriched.append(_unavailable_monitoring_row(row, reason="网页摘要不能作为数值行情来源"))
+            else:
+                evidence_role = str(metadata.get("evidence_role") or "structured_current")
+                status = "news_context" if evidence_role == "news_context_only" else "verified"
+                enriched.append(_monitoring_evidence_fields(row, matched, status=status, evidence_role=evidence_role))
+            continue
+        if _monitoring_is_numeric(row) or not _monitoring_is_event(row):
+            enriched.append(_unavailable_monitoring_row(row, reason="没有匹配到可验证数据源"))
+        else:
+            enriched.append(_unavailable_monitoring_row(row, reason="等待 AnySearch 带日期的事件证据"))
+            fallback_rows.append((index, row))
+
+    if not fallback_rows or not question:
+        return enriched
+    fallback_rows = fallback_rows[:MACRO_MONITOR_FALLBACK_MAX_ITEMS]
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(4, len(fallback_rows)),
+        thread_name_prefix="kronos-macro-monitor",
+    ) as executor:
+        futures = {
+            executor.submit(_search_anysearch_monitoring_row, question, row): index
+            for index, row in fallback_rows
+        }
+        done, _ = concurrent.futures.wait(
+            futures,
+            timeout=MACRO_MONITOR_FALLBACK_TOTAL_TIMEOUT_SECONDS,
+        )
+        for future in done:
+            index = futures[future]
+            try:
+                result = future.result(timeout=MACRO_MONITOR_FALLBACK_ITEM_TIMEOUT_SECONDS)
+            except Exception as exc:
+                log_event(logger, logging.DEBUG, "agent.macro.monitor_fallback_failed", _short_error(exc))
+                result = None
+            if result:
+                enriched[index] = result
+    return enriched
+
+
 def _annotate_macro_monitoring_signals(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
     rows = _normalize_monitoring_signals(report.get("monitoring_signals"))
     if not rows:
         return report
     signals = _normalize_macro_signals(macro_context.get("signals")) or _normalize_macro_signals(report.get("macro_signals"))
     report = dict(report)
-    report["monitoring_signals"] = _annotate_macro_monitoring_rows(rows, signals)
+    annotated = _annotate_macro_monitoring_rows(rows, signals)
+    report["monitoring_signals"] = _enrich_macro_monitoring_signals(
+        annotated,
+        signals,
+        question=str(macro_context.get("question") or ""),
+    )
     return report
 
 
@@ -5317,6 +6061,11 @@ def _normalize_probability_scenarios(value: Any) -> list[dict[str, Any]]:
                 "basis": basis,
             }
         )
+    total = sum(float(item["probability"]) for item in rows)
+    if total <= 0:
+        return []
+    for item in rows:
+        item["probability"] = round(float(item["probability"]) / total, 6)
     return rows
 
 
@@ -5338,6 +6087,15 @@ def _normalize_monitoring_signals(value: Any) -> list[dict[str, Any]]:
                 "current_value": item.get("current_value"),
                 "threshold": threshold,
                 "meaning": meaning,
+                "status": str(item.get("status") or "unavailable"),
+                "provider": item.get("provider"),
+                "source_url": item.get("source_url"),
+                "observed_at": item.get("observed_at"),
+                "fetched_at": item.get("fetched_at"),
+                "evidence_role": item.get("evidence_role"),
+                "freshness": item.get("freshness"),
+                "threshold_source": item.get("threshold_source") or "model_rule",
+                "data_quality": item.get("data_quality"),
             }
         )
     return rows
@@ -5426,15 +6184,54 @@ def _report_text(value: Any) -> str:
     if isinstance(value, dict):
         parts: list[str] = []
         for key, item in value.items():
-            item_text = _report_text(item)
+            label = str(key).strip()
+            if label.lower() in {"source", "sources"}:
+                item_text = _report_source_text(item)
+            else:
+                item_text = _report_text(item)
             if not item_text:
                 continue
-            label = str(key).strip()
-            parts.append(f"{label}：{item_text}" if label else item_text)
+            display_label = {
+                "contradiction": "矛盾",
+                "explanation": "解释",
+                "source": "来源",
+                "sources": "来源",
+                "observed_at": "时间",
+            }.get(label.lower(), label)
+            if re.fullmatch(r"[\s:：;,；，、|/\-]+", display_label):
+                display_label = ""
+            item_text = item_text.lstrip(":：；;，,、 ")
+            parts.append(f"{display_label}：{item_text}" if display_label else item_text)
         return "；".join(parts)
     if isinstance(value, (list, tuple, set)):
         return "；".join(item for item in (_report_text(item) for item in value) if item)
     return str(value).strip()
+
+
+def _report_source_text(value: Any) -> str:
+    """Keep identifiable source names/URLs; timestamps alone are not sources."""
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or re.fullmatch(r"[\s:：;,；，、|/\-]+", text):
+            return ""
+        return text
+    if isinstance(value, dict):
+        candidates = [
+            value.get("source"),
+            value.get("provider"),
+            value.get("name"),
+            value.get("title"),
+            value.get("url"),
+            value.get("source_url"),
+        ]
+        return "、".join(
+            text for text in (_report_source_text(item) for item in candidates) if text
+        )
+    if isinstance(value, (list, tuple, set)):
+        return "、".join(
+            text for text in (_report_source_text(item) for item in value) if text
+        )
+    return ""
 
 
 def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
@@ -5471,6 +6268,10 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     probability_scenarios = _normalize_probability_scenarios(payload.get("probability_scenarios"))
     if probability_scenarios:
         normalized["probability_scenarios"] = probability_scenarios
+    if payload.get("probability_method"):
+        normalized["probability_method"] = str(payload["probability_method"])
+    if payload.get("probability_note"):
+        normalized["probability_note"] = _report_text(payload["probability_note"])
     monitoring_signals = _normalize_monitoring_signals(payload.get("monitoring_signals"))
     if monitoring_signals:
         normalized["monitoring_signals"] = monitoring_signals
@@ -5540,7 +6341,15 @@ def _format_report(report: dict[str, Any]) -> str:
         ("关键不确定性", report.get("uncertainties")),
         ("非投资建议声明", report.get("disclaimer") or RESEARCH_DISCLAIMER),
     ]
-    return "\n\n".join(f"{title}：{content}" for title, content in sections if content)
+    formatted: list[str] = []
+    for title, content in sections:
+        if not content:
+            continue
+        text = str(content)
+        if title == "结论":
+            text = re.sub(r"^结论\s*[：:]\s*", "", text).strip()
+        formatted.append(f"{title}：{text}")
+    return "\n\n".join(formatted)
 
 
 def _format_macro_signals(value: Any) -> str:
@@ -5694,11 +6503,14 @@ def _extract_json_object(text: Any) -> dict[str, Any] | None:
 
 
 def _infer_market(symbol: str) -> str:
-    if re.fullmatch(r"\d{6}", symbol):
+    normalized = str(symbol or "").strip().upper()
+    if re.fullmatch(r"[A-Z]{1,5}=F", normalized):
+        return "commodity"
+    if re.fullmatch(r"\d{6}", normalized):
         return "cn"
-    if symbol.upper().endswith(".HK") or re.fullmatch(r"\d{4,5}", symbol):
+    if normalized.endswith(".HK") or re.fullmatch(r"\d{4,5}", normalized):
         return "hk"
-    return "cn"
+    return "us"
 
 
 def _normalize_resolved_symbol(symbol: str, market: str) -> str:
@@ -5707,7 +6519,7 @@ def _normalize_resolved_symbol(symbol: str, market: str) -> str:
         alias = SYMBOL_ALIASES.get(clean.lower()) or SYMBOL_ALIASES.get(clean)
         if alias and alias[1] == "commodity":
             return alias[0].upper()
-    if market in {}:
+    if market in {"us", "hk", "commodity"}:
         return clean.upper()
     return clean
 
@@ -5718,7 +6530,7 @@ def _asset_display_name(item: ResolvedSymbol) -> str:
 
 def _asset_class(symbol: str, market: str) -> str:
     normalized = str(symbol or "").strip().upper()
-    if False:
+    if market == "commodity" or re.fullmatch(r"[A-Z]{1,5}=F", normalized):
         return "commodity_future"
     if normalized in {
         "SPY",

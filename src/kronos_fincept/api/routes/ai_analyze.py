@@ -15,6 +15,13 @@ from kronos_fincept.api.routes.news import DEFAULT_RSS_FEEDS, validate_rss_feed_
 from kronos_fincept.logging_config import log_event, log_perf
 
 logger = logging.getLogger(__name__)
+
+
+def _public_analysis_failure(kind: str) -> tuple[str, str]:
+    """Keep implementation errors in logs and expose stable public messages."""
+    if kind == "macro":
+        return "宏观分析暂时不可用，请稍后重试。", "macro_analysis_failed"
+    return "AI 分析暂时不可用，请稍后重试。", "agent_analysis_failed"
 router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
 
 
@@ -205,22 +212,23 @@ async def agent_analyze(req: AgentAnalyzeRequest) -> AgentAnalyzeResponse:
         )
         from datetime import datetime
 
+        public_message, public_code = _public_analysis_failure("agent")
         return AgentAnalyzeResponse(
             ok=False,
             question=req.question,
             report={
-                "conclusion": "Agent 分析失败。",
-                "risk": str(exc),
+                "conclusion": public_message,
+                "risk": "本轮没有生成完整研究结果。",
                 "disclaimer": "本报告仅供研究，不构成投资建议。",
             },
-            final_report=f"Agent 分析失败：{exc}",
+            final_report=public_message,
             recommendation="失败",
             confidence=0.0,
             risk_level="未知",
             tool_calls=[],
-            steps=[{"name": "执行", "status": "failed", "summary": str(exc), "elapsed_ms": 0}],
+            steps=[{"name": "执行", "status": "failed", "summary": public_message, "elapsed_ms": 0}],
             timestamp=datetime.now().isoformat(),
-            error=str(exc),
+            error=public_code,
         )
 
 
@@ -256,22 +264,23 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
         )
         from datetime import datetime
 
+        public_message, public_code = _public_analysis_failure("macro")
         return AgentAnalyzeResponse(
             ok=False,
             question=req.question,
             report={
-                "conclusion": "宏观分析失败。",
-                "risk": str(exc),
+                "conclusion": public_message,
+                "risk": "本轮没有生成完整宏观研究结果。",
                 "disclaimer": "本报告仅供研究，不构成投资建议。",
             },
-            final_report=f"宏观分析失败：{exc}",
+            final_report=public_message,
             recommendation="失败",
             confidence=0.0,
             risk_level="未知",
             tool_calls=[],
-            steps=[{"name": "执行", "status": "failed", "summary": str(exc), "elapsed_ms": 0}],
+            steps=[{"name": "执行", "status": "failed", "summary": public_message, "elapsed_ms": 0}],
             timestamp=datetime.now().isoformat(),
-            error=str(exc),
+            error=public_code,
         )
 
 

@@ -123,6 +123,8 @@ def test_v102_selects_macro_providers_for_geopolitical_question():
     assert providers[:2] == ["polymarket", "kalshi"]
     assert 3 <= len(providers) <= 5
     assert {"cftc_cot", "fear_greed", "us_treasury"} <= set(gold_providers)
+    assert "yahoo_price" in gold_providers
+    assert "altme_fng" not in gold_providers
 
 
 def test_v102_embedded_cn_macro_prefers_local_macro_sources():

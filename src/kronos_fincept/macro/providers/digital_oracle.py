@@ -714,7 +714,7 @@ class USTreasuryProvider(MacroProvider):
             )
         wants_fx = bool(re.search(r"汇率|fx|exchange|currency|美元|人民币|欧元|日元|英镑|瑞郎", _query_text(query), flags=re.IGNORECASE))
         remaining = max(0, query.limit - len(signals))
-        if remaining > 0 and (wants_fx or query.limit > len(signals)):
+        if remaining > 0 and wants_fx:
             try:
                 for row in self._fetch_exchange_rate_rows(query)[:remaining]:
                     rate = _row_number(row, "exchange_rate")
@@ -747,73 +747,60 @@ class CftcCotProvider(MacroProvider):
     display_name = "CFTC COT"
     capabilities = ("futures_positioning", "institutional_flow")
 
-    _XOOMAR_COMMODITY_SLUG = {
-        "GOLD": "gold",
-        "SILVER": "silver",
-        "CRUDE": "crude-oil-light-sweet",
-        "COPPER": "copper-grade-1",
-        "BITCOIN": "bitcoin",
-    }
-
     def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
         commodity = _infer_cftc_commodity(query)
-        slug = self._XOOMAR_COMMODITY_SLUG.get(commodity, "gold")
-
-        def _fetch_payload():
-            import requests as _rq
-            _resp = _rq.get(
-                "https://xoomar.com/api/markets/cot",
-                headers=_request_headers("application/json"),
-                timeout=(3, 12),
-            )
-            _resp.raise_for_status()
-            return _resp.json()
-
         try:
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
-                payload = _ex.submit(_fetch_payload).result(timeout=15)
+            payload = _get_json(
+                CFTC_SODA_URL,
+                params={
+                    "$select": (
+                        "market_and_exchange_names,report_date_as_yyyy_mm_dd,commodity_name,"
+                        "open_interest_all,prod_merc_positions_long,prod_merc_positions_short,"
+                        "m_money_positions_long_all,m_money_positions_short_all"
+                    ),
+                    "$where": f"upper(market_and_exchange_names) like '%{_soql_like(commodity)}%'",
+                    "$order": "report_date_as_yyyy_mm_dd DESC",
+                    "$limit": 25,
+                },
+                timeout=12,
+            )
         except Exception as exc:
             logger.warning("cftc_cot.fetch_failed: %s", exc)
             return []
 
-        data = payload.get("data") if isinstance(payload, dict) else []
-        if not isinstance(data, list):
-            return []
-        row = None
-        for item in data:
-            if isinstance(item, dict) and item.get("slug") == slug:
-                row = item
-                break
+        rows = [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
+        row = _primary_cot_row(rows)
         if not isinstance(row, dict):
             return []
-        long_value = _row_number(row, "assetMgrLong")
-        short_value = _row_number(row, "assetMgrShort")
-        prod_long = _row_number(row, "dealerLong")
-        prod_short = _row_number(row, "dealerShort")
-        open_interest = _row_number(row, "openInterest")
+        long_value = _row_number(row, "m_money_positions_long_all")
+        short_value = _row_number(row, "m_money_positions_short_all")
+        prod_long = _row_number(row, "prod_merc_positions_long", "prod_merc_positions_long_all")
+        prod_short = _row_number(row, "prod_merc_positions_short", "prod_merc_positions_short_all")
+        open_interest = _row_number(row, "open_interest_all")
         net = round(long_value - short_value, 4) if long_value is not None and short_value is not None else None
         commercial_net = round(prod_long - prod_short, 4) if prod_long is not None and prod_short is not None else None
-        observed_at = _date_prefix(row.get("reportDate"))
+        observed_at = _date_prefix(row.get("report_date_as_yyyy_mm_dd"))
         return [
             _signal(
                 source=self.provider_id,
                 signal_type="managed_money_net_position",
                 value=net,
-                interpretation=f"CFTC 管理基金{commodity}净仓位，代表期货市场趋势资金方向。数据来源 xoomar.com。",
+                interpretation=f"CFTC 官方 {commodity} 管理资金净仓位，代表期货市场趋势资金方向。",
                 time_horizon="medium",
                 confidence=0.66 if net is not None else 0.4,
                 observed_at=observed_at,
-                source_url="https://xoomar.com/markets/cot",
+                source_url="https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm",
                 metadata={
                     "commodity_query": commodity,
-                    "slug": slug,
-                    "commodity": row.get("name"),
+                    "commodity": row.get("commodity_name") or commodity,
+                    "market_and_exchange": row.get("market_and_exchange_names"),
                     "long": long_value,
                     "short": short_value,
                     "open_interest": open_interest,
                     "commercial_net": commercial_net,
-                    "data_source": "xoomar_cot_api",
+                    "unit": "contracts",
+                    "data_quality": "official_cftc_soda",
+                    "data_source": "cftc_public_reporting_soda",
                 },
             )
         ]
@@ -1447,11 +1434,16 @@ class WebSearchProvider(MacroProvider):
                 source=self.provider_id,
                 signal_type="public_web_result",
                 value=item.title,
-                interpretation=item.snippet,
+                interpretation=f"公开网页摘要（仅作新闻背景，不作为当前价格或数值阈值）：{item.snippet}",
                 time_horizon="mixed",
                 confidence=0.5,
+                observed_at=item.published_at,
                 source_url=item.url,
-                metadata={"search_provider": response.provider},
+                metadata={
+                    "search_provider": response.provider,
+                    "evidence_role": "news_context_only",
+                    "price_eligible": False,
+                },
             )
             for item in response.results[: query.limit]
         ]
@@ -1641,16 +1633,48 @@ class YahooPriceProvider(MacroProvider):
         latest = float(close.iloc[-1])
         first = float(close.iloc[0])
         change = round(latest / first - 1.0, 6) if first else None
+        observed_at = None
+        try:
+            observed_at = str(history.index[-1])
+        except Exception:
+            pass
+        asset = {
+            "GC=F": "gold",
+            "SI=F": "silver",
+            "BZ=F": "brent_crude",
+            "CL=F": "wti_crude",
+            "HG=F": "copper",
+            "^VIX": "vix",
+        }.get(symbol, symbol)
+        unit = {
+            "GC=F": "USD/oz",
+            "SI=F": "USD/oz",
+            "BZ=F": "USD/barrel",
+            "CL=F": "USD/barrel",
+            "HG=F": "USD/lb",
+            "^VIX": "index_points",
+        }.get(symbol, "quote_currency")
         return [
             _signal(
                 source=self.provider_id,
                 signal_type="price_trend_1m",
                 value=change,
-                interpretation=f"{label}（{symbol}）最近 1 个月价格趋势。",
+                interpretation=f"{label}（{symbol}）最新价 {latest:.2f} {unit}，最近 1 个月价格变化 {change:.2%}。",
                 time_horizon="short",
                 confidence=0.64 if change is not None else 0.4,
+                observed_at=observed_at,
                 source_url="https://finance.yahoo.com/",
-                metadata={"symbol": symbol, "label": label, "latest": latest, "first": first},
+                metadata={
+                    "symbol": symbol,
+                    "label": label,
+                    "asset": asset,
+                    "latest": latest,
+                    "first": first,
+                    "currency": "USD",
+                    "unit": unit,
+                    "data_quality": "yfinance_history",
+                    "price_eligible": True,
+                },
             )
         ]
 
@@ -1928,6 +1952,7 @@ def create_default_providers() -> list[MacroProvider]:
         FearGreedProvider(),
         CMEFedWatchProvider(),
         RssNewsProvider(),
+        WebSearchProvider(),
         AnySearchProvider(),
         AlternativeMeFearGreedProvider(),
         YahooPriceProvider(),
