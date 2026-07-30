@@ -22,7 +22,7 @@ import zipfile
 from datetime import date
 from typing import Any
 
-from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderUnavailable
+from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderError, MacroProviderUnavailable
 from kronos_fincept.macro.schemas import MacroQuery, MacroSignal
 from kronos_fincept.macro.providers.china_macro import ChinaMacroAkshareProvider
 from kronos_fincept.macro.providers.chinalive import ChinaDataLiveProvider
@@ -437,6 +437,136 @@ class KalshiProvider(MacroProvider):
                 )
             )
         return signals
+
+
+class KalshiFedProvider(MacroProvider):
+    """Kalshi Fed decision probabilities as a clearly labelled CME alternative."""
+
+    provider_id = "kalshi_fed"
+    display_name = "Kalshi Fed Decision"
+    capabilities = ("fed_decision_probability", "rates", "prediction_market")
+    _SERIES_TICKER = "KXFEDDECISION"
+
+    def fetch_signals(self, query: MacroQuery) -> list[MacroSignal]:
+        base_url = os.getenv("KALSHI_API_BASE_URL", "https://api.elections.kalshi.com/trade-api/v2").rstrip("/")
+        event_payload = _get_json(
+            f"{base_url}/events",
+            params={
+                "series_ticker": self._SERIES_TICKER,
+                "status": "open",
+                "limit": max(1, min(query.limit, 8)),
+            },
+            timeout=10,
+        )
+        events = event_payload.get("events") if isinstance(event_payload, dict) else []
+        if not isinstance(events, list):
+            return []
+
+        signals: list[MacroSignal] = []
+        for event in events[: max(1, query.limit)]:
+            if not isinstance(event, dict):
+                continue
+            event_ticker = str(event.get("event_ticker") or "").strip()
+            if not event_ticker:
+                continue
+            market_payload = _get_json(
+                f"{base_url}/markets",
+                params={"event_ticker": event_ticker, "status": "open", "limit": 20},
+                timeout=10,
+            )
+            markets = market_payload.get("markets") if isinstance(market_payload, dict) else []
+            if not isinstance(markets, list):
+                continue
+            aggregated = self._aggregate_event(event, markets)
+            if aggregated is None:
+                continue
+            signals.append(aggregated)
+        return signals
+
+    def _aggregate_event(self, event: dict[str, Any], markets: list[dict[str, Any]]) -> MacroSignal | None:
+        probabilities: dict[str, float] = {}
+        spreads: dict[str, float] = {}
+        volumes: dict[str, float] = {}
+        for market in markets:
+            if not isinstance(market, dict):
+                continue
+            scenario = self._scenario_key(market)
+            if scenario is None:
+                continue
+            probability = self._market_probability(market)
+            if probability is None:
+                continue
+            probabilities[scenario] = probabilities.get(scenario, 0.0) + probability
+            bid = self._dollar_number(market.get("yes_bid_dollars"), market.get("yes_bid"))
+            ask = self._dollar_number(market.get("yes_ask_dollars"), market.get("yes_ask"))
+            if bid is not None and ask is not None:
+                spreads[scenario] = max(0.0, ask - bid)
+            volume = self._dollar_number(market.get("volume"))
+            if volume is not None:
+                volumes[scenario] = volumes.get(scenario, 0.0) + volume
+
+        if not probabilities:
+            return None
+        meeting_date = str(event.get("strike_date") or event.get("strikeDate") or "")
+        meeting_date = meeting_date[:10] if meeting_date else "unknown"
+        label = f"Kalshi Fed {meeting_date}"
+        ordered = ("cut", "hold", "hike")
+        summary = ", ".join(f"{name}={probabilities.get(name, 0.0):.1%}" for name in ordered)
+        top_scenario = max(probabilities, key=probabilities.get)
+        metadata = {
+            "series_ticker": self._SERIES_TICKER,
+            "event_ticker": event.get("event_ticker"),
+            "meeting_date": meeting_date,
+            "probabilities": probabilities,
+            "yes_spread": spreads,
+            "volume": volumes,
+            "data_quality": "kalshi_fed_public_api",
+            "source_kind": "prediction_market_alternative_not_cme_fedwatch",
+        }
+        return _signal(
+            source=self.provider_id,
+            signal_type="fed_decision_probability",
+            value=probabilities.get(top_scenario),
+            interpretation=f"{label} 会议概率：{summary}。主要情景：{top_scenario}。",
+            time_horizon="event",
+            confidence=0.6,
+            observed_at=str(event.get("last_updated_ts") or event.get("last_updated") or "") or None,
+            source_url=f"https://kalshi.com/markets/{self._SERIES_TICKER.lower()}",
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _scenario_key(market: dict[str, Any]) -> str | None:
+        text = " ".join(
+            str(market.get(key) or "")
+            for key in ("subtitle", "title", "ticker")
+        ).lower()
+        if "cut" in text:
+            return "cut"
+        if "hike 0" in text or "hold" in text:
+            return "hold"
+        if "hike" in text:
+            return "hike"
+        return None
+
+    @classmethod
+    def _market_probability(cls, market: dict[str, Any]) -> float | None:
+        bid = cls._dollar_number(market.get("yes_bid_dollars"), market.get("yes_bid"))
+        ask = cls._dollar_number(market.get("yes_ask_dollars"), market.get("yes_ask"))
+        value = ((bid + ask) / 2.0) if bid is not None and ask is not None else cls._dollar_number(
+            market.get("last_price_dollars"), market.get("last_price"), bid, ask
+        )
+        if value is None:
+            return None
+        return value if value <= 1 else value / 100.0
+
+    @staticmethod
+    def _dollar_number(*values: Any) -> float | None:
+        for value in values:
+            number = _number(value)
+            if number is not None:
+                return number
+        return None
 
 
 class USTreasuryProvider(MacroProvider):
@@ -1241,17 +1371,16 @@ class CMEFedWatchProvider(MacroProvider):
             return _get_json(endpoint, params=params or None, timeout=8)
         try:
             from cme_fedwatch import get_probabilities  # type: ignore
-        except Exception as exc:
+        except ImportError as exc:
             raise MacroProviderUnavailable(
-                "CME FedWatch requires CME_FEDWATCH_ENDPOINT or optional cme_fedwatch package."
+                "CME FedWatch 未配置：请设置 CME_FEDWATCH_ENDPOINT，或安装可选 cme_fedwatch 包。"
             ) from exc
         try:
             return get_probabilities(meeting="next")
         except Exception as exc:
-            raise MacroProviderUnavailable(
-                f"CME FedWatch: cannot reach CME – {exc}. "
-                "The CME website may be blocked from this network. "
-                "Set CME_FEDWATCH_ENDPOINT env var for a proxy/alternative endpoint."
+            raise MacroProviderError(
+                f"CME FedWatch 请求失败：{exc}。CME 可能被当前网络拦截；"
+                "如有官方接入权限，请配置 CME_FEDWATCH_ENDPOINT。"
             ) from exc
 
     def _extract_probability_rows(self, payload: Any) -> list[dict[str, Any]]:
@@ -1782,6 +1911,7 @@ def create_default_providers() -> list[MacroProvider]:
         CboeOptionsProvider(),
         PolymarketProvider(),
         KalshiProvider(),
+        KalshiFedProvider(),
         FredProvider(),
         SourceProjectMacroCacheProvider(),
         ChinaMacroAkshareProvider(),

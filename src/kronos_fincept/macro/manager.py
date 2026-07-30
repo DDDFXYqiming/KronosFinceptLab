@@ -212,7 +212,7 @@ class MacroDataManager:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             return MacroProviderResult(
                 provider_id=provider.provider_id,
-                status="failed",
+                status="unavailable" if isinstance(exc, MacroProviderUnavailable) else "failed",
                 signals=[],
                 elapsed_ms=elapsed_ms,
                 error=_short_error(exc),
