@@ -111,11 +111,14 @@ export function AgentProgress({ loading, result, loadingSteps, expectedDurationM
   const resultSteps = result?.steps?.length ? result.steps : null;
   const steps = resultSteps ?? buildLiveSteps(loadingSteps, liveProgress);
   const completedCount = resultSteps ? steps.filter((step) => isFinishedStepStatus(step.status) || isFailedStepStatus(step.status)).length : 0;
+  const failedCount = resultSteps ? steps.filter((step) => isFailedStepStatus(step.status)).length : 0;
   const progressPercent = resultSteps ? 100 : liveProgress;
   const progressText = resultSteps
     ? `进度 ${Math.min(completedCount, steps.length)}/${steps.length}`
     : `进度 ${Math.round(progressPercent)}%`;
-  const statusText = resultSteps ? "已完成" : loading ? "正在处理…" : "等待开始";
+  const statusText = resultSteps
+    ? failedCount > 0 ? "部分完成" : "已完成"
+    : loading ? "预计进度，正在处理…" : "等待开始";
 
   return (
     <div className="space-y-3" data-agent-progress>

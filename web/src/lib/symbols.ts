@@ -32,8 +32,8 @@ export function inferMarketFromSymbol(symbol: string, fallback: Market = "cn"): 
   const kind = detectSymbolKind(symbol);
   if (kind === "a_stock") return "cn";
   if (kind === "hk_stock") return "hk";
-  if (kind === "commodity") return "hk";
-  if (kind === "us_stock") return "hk";
+  if (kind === "commodity") return "commodity";
+  if (kind === "us_stock") return "us";
   return fallback;
 }
 

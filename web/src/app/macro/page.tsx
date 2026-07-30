@@ -24,15 +24,20 @@ import type {
   MacroProbabilityScenario,
   MacroProviderResultView,
   MacroSignal,
+  MacroProviderStatusRow,
+  RssFeed,
 } from "@/types/api";
 
 const VERSION = "v10.8.8";
 const MAX_MACRO_TURNS = 5;
+// Normal macro runs complete within tens of seconds. A persisted run older than
+// two minutes is no longer safe to resume after a page/service restart.
+const MACRO_ACTIVE_RUN_MAX_AGE_MS = 120_000;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 
 const KNOWN_PROVIDERS = [
   { id: "fred", label: "FRED", group: "经济数据" },
-  { id: "cme", label: "CME", group: "利率/期货" },
+  { id: "cme_fedwatch", label: "CME FedWatch", group: "利率/期货" },
   { id: "kalshi", label: "Kalshi", group: "预测市场" },
   { id: "kalshi_fed", label: "Kalshi Fed", group: "利率/期货" },
   { id: "deribit", label: "Deribit", group: "加密/期权" },
@@ -40,21 +45,19 @@ const KNOWN_PROVIDERS = [
   { id: "coingecko", label: "CoinGecko", group: "加密/商品" },
   { id: "bis", label: "BIS", group: "经济数据" },
   { id: "fear_greed", label: "Fear&Greed", group: "情绪/舆情" },
-  { id: "google_trends", label: "GoogleTrends", group: "情绪/舆情" },
-  { id: "news_sentiment", label: "新闻情绪", group: "情绪/舆情" },
   { id: "rss_news", label: "RSS新闻", group: "情绪/舆情" },
-  { id: "web_search", label: "网络搜索", group: "情绪/舆情" },
+  { id: "anysearch", label: "网络搜索", group: "情绪/舆情" },
   { id: "edgar", label: "EDGAR", group: "持仓/衍生品" },
-  { id: "CotReport", label: "COT报告", group: "持仓/衍生品" },
-  { id: "EconomicCalendar", label: "经济日历", group: "经济数据" },
-  { id: "WorldBank", label: "世界银行", group: "经济数据" },
-  { id: "IMF", label: "IMF", group: "经济数据" },
-  { id: "OECD", label: "OECD", group: "经济数据" },
+  { id: "cftc_cot", label: "COT报告", group: "持仓/衍生品" },
+  { id: "economic_calendar", label: "经济日历", group: "经济数据" },
+  { id: "worldbank", label: "世界银行", group: "经济数据" },
 ];
 
 type ActiveMacroRun = {
   queryKey: QueryKey;
   question: string;
+  providerIds: string[];
+  rssFeeds: RssFeed[];
   turnIndex: number;
   startedAt: number;
 };
@@ -75,6 +78,19 @@ const LOADING_STEPS = [
 
 function tx(language: Language, zh: string, en: string): string {
   return language === "en-US" ? en : zh;
+}
+
+type MacroProviderChip = { id: string; label: string; group: string; status?: string };
+
+function providerChipsFromStatus(rows: MacroProviderStatusRow[]): MacroProviderChip[] {
+  return rows
+    .filter((row) => row.provider_id)
+    .map((row) => ({
+      id: row.provider_id,
+      label: row.name || row.provider_id,
+      group: row.dimensions?.[0] || "宏观数据",
+      status: row.status,
+    }));
 }
 
 function defaultMacroQuestion(language: Language): string {
@@ -161,10 +177,44 @@ function macroActionCopy(rec: string, evidence?: MacroEvidenceCoverage): string 
   return "先看结论再看证据：以下判断只基于本轮宏观信号，不构成投资建议。";
 }
 
+function publicMacroError(value: unknown): string {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  if (/(prompt injection|system message|ignore previous|tool_call|stack trace|Traceback)/i.test(text)) {
+    return "数据源暂时不可用，请稍后重试。";
+  }
+  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+}
+
 function normalizeMacroDisplayText(value: string | undefined | null): string {
   return String(value || "")
     .toLowerCase()
     .replace(/[\s\u3000，。；：、,.!?！？…()（）\[\]【】‘’“”'"、/\\_—-]+/g, "");
+}
+
+function cleanMacroPunctuation(value: string | undefined | null): string {
+  let text = String(value || "").trim();
+  let previous = "";
+  while (text && text !== previous) {
+    previous = text;
+    text = text.replace(/([。！？!?；;，,])\s*(?=[。！？!?；;，,])/g, "$1");
+  }
+  return text.replace(/\s+([。！？!?；;，,])/g, "$1");
+}
+
+function formatMacroTimestamp(value: string | undefined | null, language: Language): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "-";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw.replace("T", " ").slice(0, 16);
+  return new Intl.DateTimeFormat(language === "zh-CN" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function macroTextsAreDuplicate(first: string | undefined | null, second: string | undefined | null): boolean {
@@ -175,7 +225,7 @@ function macroTextsAreDuplicate(first: string | undefined | null, second: string
 }
 
 function compactMacroAction(value: string | undefined | null): string {
-  const text = String(value || "").trim().replace(/^结论\s*[:：]\s*/, "");
+  const text = cleanMacroPunctuation(value).replace(/^结论\s*[:：]\s*/, "");
   if (!text) return "";
   const firstSentence = text.split(/[。！？!?；;]/, 1)[0]?.trim() || text;
   return firstSentence.length > 90 ? `${firstSentence.slice(0, 87)}…` : firstSentence;
@@ -268,6 +318,32 @@ function normalizeMonitoring(value: MacroMonitoringSignal[] | undefined): MacroM
   return Array.isArray(value) ? value : [];
 }
 
+function formatMacroEvidenceDate(value: string | null | undefined): string {
+  if (!value) return "日期未知";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function monitoringStatusLabel(row: MacroMonitoringSignal): string {
+  if (row.status === "verified") return "结构化数据";
+  if (row.status === "news_context") return "AnySearch 新闻";
+  return "未获取";
+}
+
+function monitoringStatusClass(row: MacroMonitoringSignal): string {
+  if (row.status === "verified") return "bg-emerald-50 text-emerald-700";
+  if (row.status === "news_context") return "bg-amber-50 text-amber-700";
+  return "bg-red-50 text-red-700";
+}
+
 function getMacroToolCall(result: AgentAnalyzeResponse | null): AgentToolCall | undefined {
   return result?.tool_calls?.find((call) => call.name === "macro_signal");
 }
@@ -321,7 +397,7 @@ function signalFreshness(signal: MacroSignal): string {
 }
 
 function providerReason(row: MacroProviderResultView): string {
-  if (row.error) return row.error;
+  if (row.error) return publicMacroError(row.error);
   const metadata = row.metadata || {};
   return String(metadata.reason || metadata.message || (row.signals?.length ? "returned signals" : "-"));
 }
@@ -478,13 +554,19 @@ function ToolCalls({ calls }: { calls: AgentToolCall[] }) {
                     {statusLabel(call.status)}
                   </span>
                 </div>
-                <p className="mt-1 break-words text-sm text-muted-foreground">{String(call.summary)}</p>
+                <p className="mt-1 break-words text-sm text-muted-foreground">{publicMacroError(call.summary)}</p>
               </div>
               <p className="shrink-0 text-xs text-muted-foreground font-mono">{formatElapsedMs(call.elapsed_ms)}</p>
             </div>
           </summary>
           <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-raised p-3 text-xs text-muted-foreground">
-            {JSON.stringify(call.metadata || {}, null, 2)}
+            {JSON.stringify({
+              provider_ids: call.metadata?.provider_ids,
+              signal_count: call.metadata?.signal_count,
+              failed_count: call.metadata?.failed_count,
+              skipped_count: call.metadata?.skipped_count,
+              dimension_coverage: call.metadata?.dimension_coverage,
+            }, null, 2)}
           </pre>
         </details>
       ))}
@@ -589,10 +671,25 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
   );
 }
 
-function ProbabilityTable({ scenarios }: { scenarios: MacroProbabilityScenario[] }) {
+function ProbabilityTable({
+  scenarios,
+  note,
+}: {
+  scenarios: MacroProbabilityScenario[];
+  note?: string;
+}) {
   if (!scenarios.length) return null;
+  const total = scenarios.reduce((sum, item) => sum + Math.max(0, Math.min(1, Number(item.probability) || 0)), 0);
+  const totalIsValid = Math.abs(total - 1) <= 0.01;
   return (
-    <div className="table-scroll rounded-lg border border-border bg-background">
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>{note || "模型情景权重，非统计校准概率。"}</span>
+        <span className={totalIsValid ? "text-emerald-700" : "text-amber-700"}>
+          合计 {(total * 100).toFixed(0)}%{totalIsValid ? "" : " · 概率总和异常"}
+        </span>
+      </div>
+      <div className="table-scroll rounded-lg border border-border bg-background">
       <table className="table-fixed min-w-[30rem] w-full text-xs sm:min-w-[40rem] sm:text-sm">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
@@ -613,6 +710,7 @@ function ProbabilityTable({ scenarios }: { scenarios: MacroProbabilityScenario[]
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -621,13 +719,15 @@ function MonitoringTable({ rows }: { rows: MacroMonitoringSignal[] }) {
   if (!rows.length) return null;
   return (
     <div className="table-scroll rounded-lg border border-border bg-background">
-      <table className="min-w-[32rem] w-full text-xs sm:min-w-[42rem] sm:text-sm">
+      <table className="min-w-[48rem] w-full text-xs sm:min-w-[64rem] sm:text-sm">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-2 text-left">监控信号</th>
             <th className="py-2 text-left">当前值</th>
             <th className="py-2 text-left">阈值</th>
             <th className="py-2 text-left">含义</th>
+            <th className="py-2 text-left">证据状态</th>
+            <th className="py-2 text-left">来源/日期</th>
           </tr>
         </thead>
         <tbody>
@@ -637,6 +737,21 @@ function MonitoringTable({ rows }: { rows: MacroMonitoringSignal[] }) {
               <td className="py-1.5 text-muted-foreground">{formatUnknownValue(item.current_value)}</td>
               <td className="py-1.5 text-muted-foreground">{item.threshold}</td>
               <td className="py-1.5 text-muted-foreground">{item.meaning}</td>
+              <td className="py-1.5">
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${monitoringStatusClass(item)}`}>
+                  {monitoringStatusLabel(item)}
+                </span>
+                {item.freshness === "stale" && <span className="ml-1 text-[11px] text-amber-700">已过期</span>}
+              </td>
+              <td className="py-1.5 text-muted-foreground">
+                <div>{item.provider || "-"}</div>
+                <div className="text-[11px]">{formatMacroEvidenceDate(item.observed_at)}</div>
+                {item.source_url && (
+                  <a href={item.source_url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                    查看来源
+                  </a>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -653,6 +768,7 @@ function MacroContent() {
   const inFlightRef = useRef(false);
   const [question, setQuestion] = useSessionState("kronos-macro-question", defaultMacroQuestion(language));
   const [selectedProviders, setSelectedProviders] = useSessionState<string[]>("kronos-macro-providers", []);
+  const [providerOptions, setProviderOptions] = useState<MacroProviderChip[]>(KNOWN_PROVIDERS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-macro-error", "");
   const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-macro-result", null);
@@ -664,6 +780,17 @@ function MacroContent() {
     exact: true,
   });
   const displayLoading = loading || activeRunFetching > 0 || Boolean(activeRun && !error);
+
+  useEffect(() => {
+    if (demoMode) return;
+    let active = true;
+    void api.macroProviderStatus("fast").then((res) => {
+      if (!active || !res.providers?.length) return;
+      setProviderOptions(providerChipsFromStatus(res.providers));
+      setSelectedProviders((current) => current.filter((id) => res.providers.some((row) => row.provider_id === id)));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [demoMode, setSelectedProviders]);
 
   // Fetch LLM-generated suggestions (cached 2h in sessionStorage)
   useEffect(() => {
@@ -699,8 +826,8 @@ function MacroContent() {
 
   const buildRequest = useCallback((run: ActiveMacroRun) => ({
     question: run.question,
-    rss_feeds: getStoredRssFeeds(),
-    provider_ids: selectedProviders.length > 0 ? selectedProviders : void 0,
+    rss_feeds: Array.isArray(run.rssFeeds) ? run.rssFeeds : getStoredRssFeeds(),
+    provider_ids: Array.isArray(run.providerIds) && run.providerIds.length > 0 ? run.providerIds : void 0,
     context: {
       entry: "web-macro",
       version: VERSION,
@@ -760,7 +887,8 @@ function MacroContent() {
     const prompt = (overrideQuestion || question).trim();
     if (!prompt) return;
     const rssFeeds = getStoredRssFeeds();
-    const key = queryKeys.macro({ question: prompt, language, rssFeeds: rssFeeds.map((feed) => feed.url) });
+    const providerIds = [...selectedProviders].sort();
+    const key = queryKeys.macro({ question: prompt, language, providers: providerIds, rssFeeds: rssFeeds.map((feed) => feed.url) });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
       applyCompletedRun(cached);
@@ -770,6 +898,8 @@ function MacroContent() {
     const run: ActiveMacroRun = {
       queryKey: [...key],
       question: prompt,
+      providerIds,
+      rssFeeds,
       turnIndex: Math.min(history.length + 1, MAX_MACRO_TURNS),
       startedAt: Date.now(),
     };
@@ -813,11 +943,18 @@ function MacroContent() {
 
   useEffect(() => {
     if (!activeRun) return;
+    const startedAt = Number(activeRun.startedAt);
+    if (!Number.isFinite(startedAt) || Date.now() - startedAt > MACRO_ACTIVE_RUN_MAX_AGE_MS) {
+      setActiveRun(null);
+      setLoading(false);
+      setError(tx(language, "上一轮宏观分析已超时，请重新提交问题。", "The previous macro analysis timed out. Please submit again."));
+      return;
+    }
     if (result) {
       setResult(null);
     }
     void resumeActiveRun(activeRun);
-  }, [activeRun, result, resumeActiveRun, setResult]);
+  }, [activeRun, language, result, resumeActiveRun, setActiveRun, setError, setResult]);
 
   useEffect(() => {
     if (!demoMode) return;
@@ -835,7 +972,7 @@ function MacroContent() {
   const providerRows = getMacroProviderRows(result);
   const evidence = result?.macro_dimension_coverage || report?.macro_evidence;
   const macroConclusion = result?.report?.conclusion || "";
-  const macroNarrative = report?.macro_analysis || report?.conclusion || "";
+  const macroNarrative = cleanMacroPunctuation(report?.macro_analysis || report?.conclusion || "");
   const macroAction = compactMacroAction(macroConclusion) || macroActionCopy(result?.recommendation || "", evidence);
   const showMacroNarrative = macroNarrative && !macroTextsAreDuplicate(macroAction, macroNarrative)
     ? macroNarrative
@@ -865,9 +1002,9 @@ function MacroContent() {
           {/* --- Data Source Toggle Chips --- */}
           <details className="rounded-lg border border-border bg-muted/30 p-3">
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none">
-              {tx(language, "macro.providers", "macro.providers")} – {selectedProviders.length > 0
+              {tx(language, "数据源", "Data sources")} – {selectedProviders.length > 0
                 ? `${selectedProviders.length} ${tx(language, "已选", "selected")}`
-                : tx(language, "macro.providersAll", "macro.providersAll")}
+                : tx(language, "智能选择", "Auto select")}
             </summary>
             <div className="mt-3 flex flex-wrap gap-1.5">
               <button
@@ -879,19 +1016,16 @@ function MacroContent() {
                     : "border border-border text-muted-foreground hover:border-accent/40"
                 }`}
               >
-                {tx(language, "macro.providersAll", "macro.providersAll")}
+                {tx(language, "智能选择", "Auto select")}
               </button>
-              {KNOWN_PROVIDERS.map((prov) => {
+              {providerOptions.map((prov) => {
                 const active = selectedProviders.includes(prov.id) || selectedProviders.length === 0;
                 return (
                   <button
                     key={prov.id}
                     type="button"
                     onClick={() => setSelectedProviders((prev) => {
-                      if (prev.length === 0) {
-                        // Transition from "All" → select everything except this one
-                        return KNOWN_PROVIDERS.filter((p) => p.id !== prov.id).map((p) => p.id);
-                      }
+                      if (prev.length === 0) return [prov.id];
                       if (prev.includes(prov.id)) {
                         const next = prev.filter((id) => id !== prov.id);
                         return next.length === 0 ? [] : next;  // empty → back to All
@@ -903,7 +1037,7 @@ function MacroContent() {
                         ? "bg-accent text-white"
                         : "border border-border text-muted-foreground hover:border-accent/40 opacity-50"
                     }`}
-                    title={prov.group}
+                    title={`${prov.group}${prov.status ? ` · ${prov.status}` : ""}`}
                   >
                     {prov.label}
                   </button>
@@ -1056,7 +1190,7 @@ function MacroContent() {
               </div>
               <div>
                 <p className="mb-1 text-sm text-muted-foreground">{tx(language, "时间", "Time")}</p>
-                <p className="text-sm font-mono text-foreground">{result.timestamp.slice(0, 19)}</p>
+                <p className="text-sm font-mono text-foreground">{formatMacroTimestamp(result.timestamp, language)}</p>
               </div>
             </div>
           </Card>
@@ -1082,7 +1216,7 @@ function MacroContent() {
           <Card>
             <CardTitle>{tx(language, "概率估计", "Probability Scenarios")}</CardTitle>
             {scenarios.length ? (
-              <ProbabilityTable scenarios={scenarios} />
+              <ProbabilityTable scenarios={scenarios} note={report?.probability_note} />
             ) : (
               <p className="text-sm text-muted-foreground">{tx(language, "暂无概率场景。", "No probability scenarios yet.")}</p>
             )}

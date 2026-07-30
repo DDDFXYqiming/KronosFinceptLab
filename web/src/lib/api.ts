@@ -116,6 +116,7 @@ export type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 const DEFAULT_TIMEOUT_MS = 45000;
+const FORECAST_TIMEOUT_MS = 120000;
 // Keep the browser budget slightly above the API's 300 s ceiling. The analysis
 // pages already reject concurrent clicks; aborting earlier releases that guard
 // while the server-side worker is still running and can create duplicate work.
@@ -370,7 +371,7 @@ export const api = {
     post<RssFetchResponse>("/news/rss", req, options),
 
   forecast: (req: ForecastRequest, options?: ApiClientOptions) =>
-    post<ForecastResponse>("/forecast", req, options),
+    post<ForecastResponse>("/forecast", req, { timeoutMs: FORECAST_TIMEOUT_MS, ...options }),
 
   batch: (assets: ForecastRequest[], pred_len: number, dry_run = false, options?: ApiClientOptions) =>
     post<BatchResponse>("/batch", { assets, pred_len, dry_run }, options),

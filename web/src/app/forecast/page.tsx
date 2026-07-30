@@ -32,6 +32,35 @@ import {
 } from "lightweight-charts";
 import type { IChartApi, ISeriesApi } from "lightweight-charts";
 
+const KRONOS_RUNTIME_LOOKBACK = 90;
+const KRONOS_TEMPERATURE = 0.5;
+
+type ForecastDatasetSnapshot = {
+  symbol: string;
+  market: Market;
+  startDate: string;
+  endDate: string;
+  rows: ForecastRow[];
+  contentHash: string;
+  loadedAt: string;
+};
+
+function hashForecastRows(rows: ForecastRow[]): string {
+  let hash = 2166136261;
+  for (const row of rows) {
+    const value = `${row.timestamp}|${row.open}|${row.high}|${row.low}|${row.close}|${row.volume ?? ""}|${row.amount ?? ""}`;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function localDateString(date: Date): string {
+  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function formatForecastDataError(
   error: unknown,
   symbol: string,
@@ -91,10 +120,10 @@ function ForecastContent() {
     { preferInitial: Boolean(symbolParam) }
   );
   const market = useMemo(() => inferMarketFromSymbol(symbol), [symbol]);
-  const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const todayStr = localDateString(new Date());
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10).replace(/-/g, "");
+  const oneYearAgoStr = localDateString(oneYearAgo);
   const [startDate, setStartDate] = useSessionState("kronos-forecast-start-v2", oneYearAgoStr);
   const [endDate, setEndDate] = useSessionState("kronos-forecast-end-v2", todayStr);
   const [modelId, setModelId] = useSessionState(
@@ -103,6 +132,7 @@ function ForecastContent() {
   );
   const [availableModelIds, setAvailableModelIds] = useState<string[]>([preferences.defaultModelId || DEFAULT_MODEL_ID]);
   const [data, setData] = useSessionState<ForecastRow[]>("kronos-forecast-data", []);
+  const [datasetSnapshot, setDatasetSnapshot] = useSessionState<ForecastDatasetSnapshot | null>("kronos-forecast-dataset-v1", null);
   const [prediction, setPrediction] = useSessionState<ForecastRow[] | null>("kronos-forecast-prediction", null);
   const [loading, setLoading] = useState(false);
   const [predLoading, setPredLoading] = useState(false);
@@ -113,7 +143,15 @@ function ForecastContent() {
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const hasChartData = data.length > 0;
+  const datasetMatchesCurrent = Boolean(
+    datasetSnapshot
+      && datasetSnapshot.symbol === normalizeSymbol(symbol)
+      && datasetSnapshot.market === market
+      && datasetSnapshot.startDate === startDate
+      && datasetSnapshot.endDate === endDate
+      && datasetSnapshot.rows.length === data.length
+  );
+  const hasChartData = data.length > 0 && datasetMatchesCurrent;
   const demoMode = searchParams.get("demo") === "1";
   const modelOptions = useMemo(() => {
     return Array.from(new Set((availableModelIds.length ? availableModelIds : [DEFAULT_MODEL_ID]).filter(Boolean)));
@@ -143,13 +181,20 @@ function ForecastContent() {
 
   const clearForecastState = useCallback(() => {
     setData([]);
+    setDatasetSnapshot(null);
     setPrediction(null);
     setPredResult(null);
-  }, [setData, setPrediction, setPredResult]);
+  }, [setData, setDatasetSnapshot, setPrediction, setPredResult]);
 
-  const applyDataResponse = useCallback((res: DataResponse) => {
+  const applyDataResponse = useCallback((res: DataResponse, request: { symbol: string; market: Market; startDate: string; endDate: string }) => {
     if (res.rows && res.rows.length > 0) {
       setData(res.rows);
+      setDatasetSnapshot({
+        ...request,
+        rows: res.rows,
+        contentHash: hashForecastRows(res.rows),
+        loadedAt: new Date().toISOString(),
+      });
       setError("");
     } else {
       setError(tx(
@@ -159,18 +204,22 @@ function ForecastContent() {
       ));
       clearForecastState();
     }
-  }, [clearForecastState, language, setData, setError, symbol, startDate, endDate]);
+  }, [clearForecastState, language, setData, setDatasetSnapshot, setError, symbol, startDate, endDate]);
 
   const handleFetchData = useCallback(async (forceRefresh = false) => {
     const requestSymbol = normalizeSymbol(symbol);
     if (!requestSymbol) return;
+    if (startDate > endDate) {
+      setError(tx(language, "开始日期不能晚于结束日期。", "Start date must not be later than end date."));
+      return;
+    }
     setError("");
     setPrediction(null);
     setPredResult(null);
     const key = queryKeys.data({ symbol: requestSymbol, market, startDate, endDate });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<DataResponse>(key);
     if (cached) {
-      applyDataResponse(cached);
+      applyDataResponse(cached, { symbol: requestSymbol, market, startDate, endDate });
       return;
     }
 
@@ -186,7 +235,7 @@ function ForecastContent() {
             ? api.getData(requestSymbol, startDate, endDate, { signal })
             : api.getGlobalData(requestSymbol, market, startDate, endDate, { signal }),
       });
-      applyDataResponse(res);
+      applyDataResponse(res, { symbol: requestSymbol, market, startDate, endDate });
     } catch (e: any) {
       setError(formatForecastDataError(e, requestSymbol, market, startDate, endDate, language));
       clearForecastState();
@@ -219,6 +268,15 @@ function ForecastContent() {
     if (!demoMode) return;
     setSymbol(DEMO_SYMBOL);
     setData(demoHistoricalRows);
+    setDatasetSnapshot({
+      symbol: DEMO_SYMBOL,
+      market: "cn",
+      startDate,
+      endDate,
+      rows: demoHistoricalRows,
+      contentHash: hashForecastRows(demoHistoricalRows),
+      loadedAt: new Date().toISOString(),
+    });
     setPrediction(demoForecastRows);
     setPredResult({
       ok: true,
@@ -227,7 +285,7 @@ function ForecastContent() {
       metadata: { device: "demo", elapsed_ms: 0, backend: "demo", warning: tx(language, "演示数据，不代表实时行情，不构成投资建议。", "Demo data only. Not real-time market data or investment advice.") },
     });
     setError("");
-  }, [demoMode, language, setData, setError, setPredResult, setPrediction, setSymbol]);
+  }, [demoMode, endDate, language, setData, setDatasetSnapshot, setError, setPredResult, setPrediction, setSymbol, startDate]);
 
   // Create/destroy chart
   useEffect(() => {
@@ -343,19 +401,23 @@ function ForecastContent() {
   }, [language, setError, setPredResult, setPrediction]);
 
   const handleRunPrediction = async (forceRefresh = false) => {
-    if (data.length === 0) {
+    if (!datasetMatchesCurrent || !datasetSnapshot || data.length === 0) {
       setError(tx(language, "请先加载数据再运行预测。", "Load market data before running a forecast."));
       return;
     }
-    const requestSymbol = normalizeSymbol(symbol);
-    if (!requestSymbol) return;
+    const requestSymbol = datasetSnapshot.symbol;
+    const requestMarket = datasetSnapshot.market;
+    const forecastRows = data.slice(-KRONOS_RUNTIME_LOOKBACK);
     const key = queryKeys.forecast({
       symbol: requestSymbol,
-      market,
+      market: requestMarket,
       predLen: 5,
       modelId,
-      rowCount: data.length,
+      rowCount: forecastRows.length,
       lastTimestamp: data[data.length - 1]?.timestamp,
+      dataHash: datasetSnapshot.contentHash,
+      sampleCount,
+      temperature: KRONOS_TEMPERATURE,
       dryRun: false,
     });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<ForecastResponse>(key);
@@ -377,10 +439,10 @@ function ForecastContent() {
             symbol: requestSymbol,
             pred_len: 5,
             model_id: modelId,
-            rows: data,
+            rows: forecastRows,
             dry_run: false,
             sample_count: sampleCount,
-            temperature: 0.5,
+            temperature: KRONOS_TEMPERATURE,
           }, { signal }),
       });
       applyForecastResponse(res);
@@ -436,7 +498,7 @@ function ForecastContent() {
                 { value: "sc8", label: "8 次（快速）" },
                 { value: "sc16", label: "16 次" },
                 { value: "sc32", label: "32 次" },
-                { value: "sc64", label: "64 次（高精度）" },
+              { value: "sc64", label: "64 次（更多采样，更慢）" },
               ]}
               ariaLabel="采样数"
               className="mt-1"
@@ -456,7 +518,7 @@ function ForecastContent() {
               onClick={() => handleRunPrediction(false)}
               loading={predLoading}
               className="w-full"
-              disabled={data.length === 0}
+              disabled={!datasetMatchesCurrent || data.length === 0}
             >
               {tx(language, "运行预测", "Run Forecast")}
             </Button>
@@ -471,7 +533,7 @@ function ForecastContent() {
               variant="secondary"
               onClick={() => handleRunPrediction(true)}
               loading={predLoading}
-              disabled={data.length === 0}
+              disabled={!datasetMatchesCurrent || data.length === 0}
             >
               {tx(language, "重新预测", "Rerun Forecast")}
             </Button>
@@ -480,6 +542,13 @@ function ForecastContent() {
       </Card>
 
       {error && <AntAlert type="error" message={error} />}
+
+      {data.length > 0 && !datasetMatchesCurrent && (
+        <AntAlert
+          type="warning"
+          message={tx(language, "当前输入已改变，页面中的行情数据已过期，请重新获取后再预测。", "The inputs changed, so the displayed market data is stale. Reload data before forecasting.")}
+        />
+      )}
 
       {hasChartData ? (
         <Card>
@@ -495,6 +564,9 @@ function ForecastContent() {
             )}
           </CardTitle>
           <div ref={chartContainerRef} className="chart-frame h-[360px] md:h-[500px]" />
+          <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
+            {tx(language, `模型实际使用最近 ${Math.min(KRONOS_RUNTIME_LOOKBACK, data.length)} 根K线；页面展示 ${data.length} 根。`, `The model uses the latest ${Math.min(KRONOS_RUNTIME_LOOKBACK, data.length)} rows; the page displays ${data.length}.`)}
+          </div>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-accent-green" />

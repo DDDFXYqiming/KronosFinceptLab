@@ -1,10 +1,10 @@
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL || "http://localhost:8000";
-const API_PROXY_TIMEOUT_MS = Number(process.env.API_PROXY_TIMEOUT_MS || 120000);
+const API_PROXY_TIMEOUT_MS = Number(process.env.API_PROXY_TIMEOUT_MS || 330000);
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 330;
 
 type RouteContext = {
   params: Promise<{

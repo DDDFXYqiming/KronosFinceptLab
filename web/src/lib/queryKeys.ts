@@ -26,6 +26,9 @@ export const queryKeys = {
     predLen: number;
     rowCount: number;
     lastTimestamp?: string;
+    dataHash?: string;
+    sampleCount?: number;
+    temperature?: number;
     modelId?: string;
     dryRun?: boolean;
   }) =>
@@ -38,6 +41,9 @@ export const queryKeys = {
       params.modelId || "",
       params.rowCount,
       params.lastTimestamp || "",
+      params.dataHash || "",
+      params.sampleCount || 1,
+      params.temperature ?? "",
       Boolean(params.dryRun),
     ] as const,
   batch: (params: { symbols: string[] | string; market: Market | string; predLen: number; modelId?: string }) =>

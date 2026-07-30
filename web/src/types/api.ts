@@ -428,8 +428,18 @@ export interface AgentReport {
   cross_validation?: string;
   contradictions?: string;
   probability_scenarios?: MacroProbabilityScenario[];
+  probability_method?: "llm_scenario_weight" | "provider_confidence_fallback" | string;
+  probability_note?: string;
   monitoring_signals?: MacroMonitoringSignal[];
   macro_evidence?: MacroEvidenceCoverage;
+  sources?: AgentReportSource[];
+}
+
+export interface AgentReportSource {
+  symbol?: string;
+  title: string;
+  url: string;
+  provider?: string;
 }
 
 export interface MacroEvidenceCoverage {
@@ -469,6 +479,15 @@ export interface MacroMonitoringSignal {
   current_value: unknown;
   threshold: string;
   meaning: string;
+  status?: "verified" | "news_context" | "unavailable" | string;
+  provider?: string | null;
+  source_url?: string | null;
+  observed_at?: string | null;
+  fetched_at?: string | null;
+  evidence_role?: string | null;
+  freshness?: "fresh" | "stale" | "unknown" | string | null;
+  threshold_source?: "model_rule" | "structured" | string | null;
+  data_quality?: string | null;
 }
 
 export interface MacroProviderResultView {

@@ -51,6 +51,12 @@ function tx(language: Language, zh: string, en: string): string {
   return language === "en-US" ? en : zh;
 }
 
+function formatDisplayTimestamp(value: string): string {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return value;
+  return `${match[1]}/${match[2]}/${match[3]} ${match[4]}:${match[5]}`;
+}
+
 function defaultAnalysisQuestion(language: Language, symbol?: string) {
   if (symbol) {
     return tx(language, `分析 ${symbol} 的短期走势和风险`, `Analyze the short-term trend and risk for ${symbol}`);
@@ -122,6 +128,7 @@ function statusLabel(status: string): string {
 const TECHNICAL_DETAIL_PATTERN = /(?:^|\s)(?:[A-Za-z_][A-Za-z0-9_]*\s*=\s*)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=$|[\s,.;，。；])/gi;
 const TECHNICAL_LABEL_PATTERN = /\b(?:request[_-]?id|trace[_-]?id|session[_-]?id|correlation[_-]?id)\s*[=:：]\s*[^\s,;，；。]+/gi;
 const TECHNICAL_NAME_PATTERN = /\b[A-Za-z]+(?:_[A-Za-z0-9]+){1,}\b/g;
+const INTERNAL_TEXT_PATTERN = /(prompt injection|system message|ignore previous|instructions|tool_call|stack trace)/i;
 
 function cleanUserVisibleText(value?: unknown): string {
   if (value === null || value === undefined) return "";
@@ -133,6 +140,12 @@ function cleanUserVisibleText(value?: unknown): string {
     .replace(/\s+([，。；：:,.])/g, "$1")
     .replace(/^[\s:：,，;；。-]+|[\s:：,，;；。-]+$/g, "")
     .trim();
+}
+
+function cleanPublicError(value?: unknown): string {
+  const text = cleanUserVisibleText(value);
+  if (!text || INTERNAL_TEXT_PATTERN.test(text)) return "本轮模型预测暂不可用，请稍后重试。";
+  return text.length > 240 ? `${text.slice(0, 237)}...` : text;
 }
 
 function parseReportLiteral(text: string): unknown {
@@ -327,6 +340,32 @@ function ReportSection({ title, value, highlight }: { title: string; value?: unk
   );
 }
 
+function ReportSources({ report, language }: { report?: AgentReport | null; language: Language }) {
+  const sources = (report?.sources || []).filter((source) => /^https?:\/\//i.test(source.url));
+  if (!sources.length) return null;
+  return (
+    <div className="border-b border-border py-4 last:border-b-0 last:pb-0">
+      <h3 className="mb-2 text-sm font-semibold text-foreground">
+        {tx(language, "公开信息来源", "Public Sources")}
+      </h3>
+      <div className="space-y-2">
+        {sources.map((source) => (
+          <a
+            key={`${source.symbol || ""}-${source.url}`}
+            href={source.url}
+            target="_blank"
+            rel="noreferrer"
+            className="block break-words text-sm font-medium text-primary underline decoration-primary/40 underline-offset-4"
+          >
+            {source.symbol ? `${source.symbol} · ` : ""}
+            {cleanUserVisibleText(source.title) || source.url}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function formatMacroValue(value: unknown): string {
   if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(2) : String(value);
   if (typeof value === "string") return value;
@@ -479,7 +518,7 @@ function ForecastTable({ asset }: { asset: AgentAssetResult }) {
   if (!forecast.length) {
     return asset.kronos_prediction_error ? (
       <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-        {asset.kronos_prediction_error}
+        {cleanPublicError(asset.kronos_prediction_error)}
       </p>
     ) : null;
   }
@@ -571,7 +610,7 @@ function KronosForecastPanel({ asset }: { asset: AgentAssetResult }) {
   if (!forecast.length) {
     return asset.kronos_prediction_error ? (
       <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-        {asset.kronos_prediction_error}
+        {cleanPublicError(asset.kronos_prediction_error)}
       </div>
     ) : null;
   }
@@ -1039,9 +1078,6 @@ function AnalysisContent() {
                     {tx(language, `${assetResults.length} 个标的`, `${assetResults.length} assets`)}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {tx(language, "多标的请求按标的拆分展示，顶部仅保留整体比较结论。", "Multi-asset requests are split by asset below; the top keeps only the overall comparison.")}
-                </p>
               </div>
               <RecommendationBadge rec={result.recommendation} />
             </div>
@@ -1071,19 +1107,19 @@ function AnalysisContent() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground mb-1">{tx(language, "时间", "Time")}</p>
-                <p className="text-sm text-foreground font-mono">{result.timestamp.slice(0, 19)}</p>
+                <p className="text-sm text-foreground font-mono">{formatDisplayTimestamp(result.timestamp)}</p>
               </div>
             </div>
           </Card>
 
           <Card>
             <CardTitle>{tx(language, "汇总研究报告", "Research Report")}</CardTitle>
-            <ReportSection title={tx(language, "结论", "Conclusion")} value={report?.conclusion} highlight />
             <ReportSection title={tx(language, "短期预测", "Short-Term Forecast")} value={report?.short_term_prediction} />
             <ReportSection title={tx(language, "技术面", "Technical View")} value={report?.technical} />
             <ReportSection title={tx(language, "基本面", "Fundamentals")} value={report?.fundamentals} />
             <ReportSection title={tx(language, "风险指标", "Risk Metrics")} value={report?.risk} />
             <ReportSection title={tx(language, "关键不确定性", "Key Uncertainties")} value={report?.uncertainties} />
+            <ReportSources report={report} language={language} />
             <MacroBackgroundDetails report={report} />
             <ReportSection title={tx(language, "非投资建议声明", "Not Investment Advice")} value={report?.disclaimer} />
           </Card>
