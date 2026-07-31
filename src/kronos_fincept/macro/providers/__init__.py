@@ -2,6 +2,7 @@
 
 from kronos_fincept.macro.providers.base import MacroProvider, MacroProviderError, MacroProviderUnavailable
 from kronos_fincept.macro.providers.cboe_vix import CboeVixProvider, CboeOptionsProvider
+from kronos_fincept.macro.providers.central_bank_gold import CentralBankGoldProvider
 from kronos_fincept.macro.providers.china_bond_yield import ChinaBondYieldProvider
 from kronos_fincept.macro.providers.china_macro import ChinaMacroAkshareProvider
 from kronos_fincept.macro.providers.economic_calendar import EconomicCalendarProvider
@@ -42,6 +43,7 @@ __all__ = [
     "AlternativeMeFearGreedProvider",
     "CboeVixProvider",
     "CboeOptionsProvider",
+    "CentralBankGoldProvider",
     "ChinaBondYieldProvider",
     "EconomicCalendarProvider",
     "BisProvider",

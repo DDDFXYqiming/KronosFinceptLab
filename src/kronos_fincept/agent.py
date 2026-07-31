@@ -221,11 +221,11 @@ MACRO_ALLOWED_PATTERNS = [
 
 MACRO_ROUTE_PROVIDER_IDS: dict[str, tuple[str, ...]] = {
     "geopolitical": ("polymarket", "kalshi", "yahoo_price", "cftc_cot", "bis"),
-    "recession": ("source_project_macro_cache", "fred", "kalshi_fed", "us_treasury", "cftc_cot", "bis", "cme_fedwatch"),
-    "asset_pricing": ("source_project_macro_cache", "yahoo_price", "us_treasury", "cftc_cot", "fear_greed", "anysearch", "rss_news"),
+    "recession": ("source_project_macro_cache", "central_bank_gold", "fred", "kalshi_fed", "us_treasury", "cftc_cot", "bis", "cme_fedwatch"),
+    "asset_pricing": ("source_project_macro_cache", "central_bank_gold", "yahoo_price", "us_treasury", "cftc_cot", "fear_greed", "anysearch", "rss_news"),
     "stock_options": ("source_project_macro_cache", "yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
     "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "anysearch", "altme_fng", "cftc_cot", "us_treasury"),
-    "default": ("source_project_macro_cache", "fred", "us_treasury", "cftc_cot", "rss_news", "anysearch"),
+    "default": ("source_project_macro_cache", "central_bank_gold", "fred", "us_treasury", "cftc_cot", "rss_news", "anysearch"),
 }
 
 ALLOWED_MACRO_PROVIDER_IDS = frozenset(
@@ -257,6 +257,7 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "china_nbs_live",
         "china_bond_yield",
         "cboe_vix",
+        "central_bank_gold",
     }
 )
 MACRO_REQUIRED_DIMENSION_COUNT = 3
@@ -284,6 +285,7 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "china_macro_akshare": "official_macro",
     "china_macro_chinalive": "official_macro",
     "china_nbs_live": "official_macro",
+    "central_bank_gold": "official_macro",
     "edgar": "filings",
     "bis": "official_macro",
     "worldbank": "official_macro",
@@ -3024,6 +3026,7 @@ def _ensure_macro_provider_dimension_floor(
     candidates = [
         "china_bond_yield",
         "cboe_vix",
+        "central_bank_gold",
         "us_treasury",
         "cftc_cot",
         "source_project_macro_cache",
@@ -5020,6 +5023,7 @@ time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长
 time_layered_conclusions 为数组，每项包含 tier（S/M/L）、label（短期/中期/长期）、time_range（对应时间范围的中文描述）、judgment（该时间层的核心判断）、confidence（该层的数值置信度，0到1之间）。至少输出 S/M/L 三层；某层无足够信号时 judgment 写"信号暂时不足"并设 confidence≤0.25。
 cross_validation 和 contradictions 合起来视为“信号一致性评估”区块：前者写共振信号，后者写矛盾信号及原因。
 contradictions 中每个矛盾必须用中文散文写明两个具体信号及其来源/Provider 名称与 observed_at（示例：“实际利率 2.41%（us_treasury，2026-07-29）与 CFTC 黄金净多 124831 手（cftc_cot，2026-07-21）方向矛盾：……”），严禁输出 signal_a/signal_b/reason 或 Signal a/Signal b/Reason 等键名式标签。
+黄金/央行类问题必须引用央行购金数据（central_bank_gold，WGC/中国央行）作为长期供需信号，并在 monitoring_signals 中给出央行购金趋势监控项（如“全球央行单月净购金跌破 0 吨”作为风险阈值）。
 probability_scenarios 为数组，每项包含 scenario, probability, basis。必须读取 trusted_project_context.macro.dimension_coverage；只有 sufficient_evidence=true 才能输出高置信度方向判断。少于 3 个独立宏观维度时必须明确说明缺口，不要编造，confidence 不得超过 0.45，recommendation 使用“观察”或“需更多证据”。概率总和应接近 1。
 monitoring_signals 为数组，每项包含 signal, current_value, threshold, meaning；至少给出 3 条可操作监控项（不足时说明原因）。
 asset_reports: [

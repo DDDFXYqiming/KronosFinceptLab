@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 SIGNAL_SOURCE_PRIORITY: dict[str, int] = {
     "source_project_macro_cache": 0,
+    "central_bank_gold": 45,
     "fred": 10,
     "china_macro_akshare": 10,
     "china_macro_chinalive": 10,

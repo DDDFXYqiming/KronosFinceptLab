@@ -36,6 +36,7 @@ const MACRO_ACTIVE_RUN_MAX_AGE_MS = 120_000;
 const DEFAULT_QUESTION = "现在适合买黄金吗";
 
 const KNOWN_PROVIDERS = [
+  { id: "central_bank_gold", label: "央行购金", group: "经济数据" },
   { id: "fred", label: "FRED", group: "经济数据" },
   { id: "cme_fedwatch", label: "CME FedWatch", group: "利率/期货" },
   { id: "kalshi", label: "Kalshi", group: "预测市场" },
