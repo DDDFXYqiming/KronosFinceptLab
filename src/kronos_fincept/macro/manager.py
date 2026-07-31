@@ -93,14 +93,24 @@ class MacroDataManager:
         """Return provider runtime/cache/cooldown status for operational dashboards."""
         now = time.time()
         rows: list[dict] = []
+        from kronos_fincept.agent import MACRO_DIMENSION_LABELS, MACRO_PROVIDER_DIMENSIONS
+
         with self._state_lock:
             for provider in self.providers.values():
                 provider_id = provider.provider_id
                 cached_entries = sum(1 for key in self._cache if key.startswith(f"{provider_id}|"))
                 suspended_until = self._suspended_until.get(provider_id)
                 remaining = int(max(0, suspended_until - now)) if suspended_until else 0
+                dimension_key = MACRO_PROVIDER_DIMENSIONS.get(provider_id)
+                dimensions = (
+                    [MACRO_DIMENSION_LABELS.get(dimension_key, dimension_key)]
+                    if dimension_key
+                    else []
+                )
                 rows.append({
                     **provider.describe().to_dict(),
+                    "name": provider.display_name,
+                    "dimensions": dimensions,
                     "status": "suspended" if remaining > 0 else "ready",
                     "failure_count": self._failure_counts.get(provider_id, 0),
                     "suspended_remaining_seconds": remaining,

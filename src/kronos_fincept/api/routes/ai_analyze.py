@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import json
 import asyncio
+import threading
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -23,6 +24,21 @@ def _public_analysis_failure(kind: str) -> tuple[str, str]:
         return "宏观分析暂时不可用，请稍后重试。", "macro_analysis_failed"
     return "AI 分析暂时不可用，请稍后重试。", "agent_analysis_failed"
 router = APIRouter(prefix="/api/v1/analyze", tags=["analysis"])
+
+
+_macro_manager_cache: dict[str, Any] = {}
+_macro_manager_lock = threading.Lock()
+
+
+def _get_macro_data_manager(mode: str) -> Any:
+    """Return a per-mode cached macro manager (keeps circuit-breaker state)."""
+    key = "fast" if mode == "fast" else "complete"
+    with _macro_manager_lock:
+        if key not in _macro_manager_cache:
+            from kronos_fincept.agent import _create_macro_data_manager
+
+            _macro_manager_cache[key] = _create_macro_data_manager(fast_mode=(key == "fast"))
+        return _macro_manager_cache[key]
 
 
 # ── Pydantic models ──
@@ -287,9 +303,7 @@ async def macro_analyze(req: MacroAnalyzeRequest) -> AgentAnalyzeResponse:
 @router.get("/macro/providers/status")
 async def macro_provider_status(mode: Literal["fast", "complete"] = Query("fast")) -> dict[str, Any]:
     """Return macro provider operational status without running LLM synthesis."""
-    from kronos_fincept.agent import _create_macro_data_manager
-
-    manager = _create_macro_data_manager(fast_mode=(mode == "fast"))
+    manager = _get_macro_data_manager(mode)
     return {"ok": True, "mode": mode, "providers": manager.provider_status()}
 
 

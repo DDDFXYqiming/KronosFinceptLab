@@ -743,6 +743,26 @@ function AssetAnalysisCard({ asset, hideTextSections }: { asset: AgentAssetResul
   );
 }
 
+interface AnalysisRunSummary {
+  question: string;
+  timestamp: string;
+  confidence: number | null;
+  recommendation: string | null;
+  conclusion: string;
+  symbols: string[];
+}
+
+function toAnalysisRunSummary(entry: AgentAnalyzeResponse): AnalysisRunSummary {
+  return {
+    question: entry.question,
+    timestamp: entry.timestamp,
+    confidence: entry.confidence ?? null,
+    recommendation: entry.recommendation ?? null,
+    conclusion: cleanUserVisibleText(entry.report?.conclusion || entry.final_report || "").slice(0, 160),
+    symbols: Array.isArray(entry.symbols) ? entry.symbols : [],
+  };
+}
+
 function AnalysisContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -761,8 +781,9 @@ function AnalysisContent() {
   const [loading, setLoading] = useState(false);
   const inFlightRef = useRef(false);
   const [error, setError] = useSessionState("kronos-analysis-error", "");
-  const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-analysis-result", null);
-  const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-analysis-history", []);
+  const [result, setResult] = useState<AgentAnalyzeResponse | null>(null);
+  const [history, setHistory] = useState<AgentAnalyzeResponse[]>([]);
+  const [historySummary, setHistorySummary] = useSessionState<AnalysisRunSummary[]>("kronos-analysis-history-summary", []);
   const [activeRun, setActiveRun] = useSessionState<ActiveAnalysisRun | null>("kronos-analysis-active-run", null);
   const [examples, setExamples] = useState<string[]>(() => fallbackAnalysisExamples(language));
   const activeRunFetching = useIsFetching({
@@ -801,7 +822,14 @@ function AnalysisContent() {
       );
       return [...deduped, entry].slice(-MAX_ANALYSIS_TURNS);
     });
-  }, [setHistory]);
+    setHistorySummary((current) => {
+      const summary = toAnalysisRunSummary(entry);
+      const deduped = current.filter(
+        (item) => !(item.timestamp === entry.timestamp && item.question === entry.question)
+      );
+      return [...deduped, summary].slice(-MAX_ANALYSIS_TURNS);
+    });
+  }, [setHistory, setHistorySummary]);
 
   const buildRequest = useCallback((run: ActiveAnalysisRun) => ({
     question: run.question,
@@ -922,7 +950,7 @@ function AnalysisContent() {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    handleAnalyze();
+    handleAnalyze(undefined, true);
   };
 
   const handleNewChat = () => {
@@ -930,6 +958,7 @@ function AnalysisContent() {
     setQuestion(defaultAnalysisQuestion(language));
     setResult(null);
     setHistory([]);
+    setHistorySummary([]);
     setActiveRun(null);
     setError("");
   };
@@ -954,9 +983,10 @@ function AnalysisContent() {
     setQuestion(demoAgentResult.question);
     setResult(demoAgentResult);
     setHistory([demoAgentResult]);
+    setHistorySummary([toAnalysisRunSummary(demoAgentResult)]);
     setError("");
     setActiveRun(null);
-  }, [demoMode, setActiveRun, setError, setHistory, setQuestion, setResult]);
+  }, [demoMode, setActiveRun, setError, setHistory, setHistorySummary, setQuestion, setResult]);
 
   const report = result?.report;
   const assetResults = result ? getAssetResults(result) : [];
@@ -1029,7 +1059,7 @@ function AnalysisContent() {
         </Card>
       )}
 
-      {history.length > 1 && (
+      {historySummary.length > 1 && (
         <Card>
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <CardTitle>{tx(language, "本轮历史", "Current Session History")}</CardTitle>
@@ -1038,14 +1068,12 @@ function AnalysisContent() {
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {[...history].reverse().map((item, index) => (
+            {[...historySummary].reverse().map((item, index) => (
               <button
                 key={`${item.timestamp}-${index}`}
                 type="button"
                 onClick={() => {
-                  setResult(item);
-                  setQuestion(item.question);
-                  setError("");
+                  handleAnalyze(item.question, true);
                 }}
                 className="rounded-xl border border-border bg-card p-3 text-left transition-all duration-200 hover:border-accent/30 hover:shadow-accent-sm hover:-translate-y-0.5"
               >
@@ -1054,10 +1082,12 @@ function AnalysisContent() {
                     {item.symbols.length ? item.symbols.join(" / ") : tx(language, "待澄清", "Needs clarification")}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {(item.confidence * 100).toFixed(0)}%
+                    {item.confidence != null ? `${(item.confidence * 100).toFixed(0)}%` : "-"}
                   </span>
                 </div>
-                <p className="line-clamp-2 text-xs text-muted-foreground">{item.question}</p>
+                <p className="line-clamp-2 text-xs text-muted-foreground">
+                  {item.conclusion || item.question}
+                </p>
               </button>
             ))}
           </div>

@@ -761,6 +761,22 @@ function MonitoringTable({ rows }: { rows: MacroMonitoringSignal[] }) {
   );
 }
 
+interface MacroRunSummary {
+  question: string;
+  timestamp: string;
+  confidence: number | null;
+  summary: string;
+}
+
+function toMacroRunSummary(entry: AgentAnalyzeResponse): MacroRunSummary {
+  return {
+    question: entry.question,
+    timestamp: entry.timestamp,
+    confidence: entry.confidence ?? null,
+    summary: (entry.report?.macro_analysis || entry.report?.conclusion || "").slice(0, 160),
+  };
+}
+
 function MacroContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -772,8 +788,9 @@ function MacroContent() {
   const [providerOptions, setProviderOptions] = useState<MacroProviderChip[]>(KNOWN_PROVIDERS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-macro-error", "");
-  const [result, setResult] = useSessionState<AgentAnalyzeResponse | null>("kronos-macro-result", null);
-  const [history, setHistory] = useSessionState<AgentAnalyzeResponse[]>("kronos-macro-history", []);
+  const [result, setResult] = useState<AgentAnalyzeResponse | null>(null);
+  const [history, setHistory] = useState<AgentAnalyzeResponse[]>([]);
+  const [historySummary, setHistorySummary] = useSessionState<MacroRunSummary[]>("kronos-macro-history-summary", []);
   const [activeRun, setActiveRun] = useSessionState<ActiveMacroRun | null>("kronos-macro-active-run", null);
   const [examples, setExamples] = useState<string[]>(() => fallbackMacroExamples(language));
   const activeRunFetching = useIsFetching({
@@ -823,7 +840,14 @@ function MacroContent() {
       );
       return [...deduped, entry].slice(-MAX_MACRO_TURNS);
     });
-  }, [setHistory]);
+    setHistorySummary((current) => {
+      const summary = toMacroRunSummary(entry);
+      const deduped = current.filter(
+        (item) => !(item.timestamp === entry.timestamp && item.question === entry.question)
+      );
+      return [...deduped, summary].slice(-MAX_MACRO_TURNS);
+    });
+  }, [setHistory, setHistorySummary]);
 
   const buildRequest = useCallback((run: ActiveMacroRun) => ({
     question: run.question,
@@ -930,7 +954,7 @@ function MacroContent() {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    handleAnalyze();
+    handleAnalyze(undefined, true);
   };
 
   const handleNewChat = () => {
@@ -938,6 +962,7 @@ function MacroContent() {
     setQuestion(defaultMacroQuestion(language));
     setResult(null);
     setHistory([]);
+    setHistorySummary([]);
     setActiveRun(null);
     setError("");
   };
@@ -962,9 +987,10 @@ function MacroContent() {
     setQuestion(demoMacroResult.question);
     setResult(demoMacroResult);
     setHistory([demoMacroResult]);
+    setHistorySummary([toMacroRunSummary(demoMacroResult)]);
     setError("");
     setActiveRun(null);
-  }, [demoMode, setActiveRun, setError, setHistory, setQuestion, setResult]);
+  }, [demoMode, setActiveRun, setError, setHistory, setHistorySummary, setQuestion, setResult]);
 
   const report = result?.report;
   const macroSignals = normalizeSignals(report?.macro_signals);
@@ -1020,7 +1046,7 @@ function MacroContent() {
                 {tx(language, "智能选择", "Auto select")}
               </button>
               {providerOptions.map((prov) => {
-                const active = selectedProviders.includes(prov.id) || selectedProviders.length === 0;
+                const active = selectedProviders.includes(prov.id);
                 return (
                   <button
                     key={prov.id}
@@ -1093,7 +1119,7 @@ function MacroContent() {
         </Card>
       )}
 
-      {history.length > 1 && (
+      {historySummary.length > 1 && (
         <Card>
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <CardTitle>{tx(language, "本轮历史", "Current Session History")}</CardTitle>
@@ -1102,25 +1128,23 @@ function MacroContent() {
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {[...history].reverse().map((item, index) => (
+            {[...historySummary].reverse().map((item, index) => (
               <button
                 key={`${item.timestamp}-${index}`}
                 type="button"
                 onClick={() => {
-                  setResult(item);
-                  setQuestion(item.question);
-                  setError("");
+                  handleAnalyze(item.question, true);
                 }}
                 className="rounded-xl border border-border bg-card p-3 text-left transition-all duration-200 hover:border-accent/30 hover:shadow-accent-sm hover:-translate-y-0.5"
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium text-foreground">{item.question}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {(item.confidence * 100).toFixed(0)}%
+                    {item.confidence != null ? `${(item.confidence * 100).toFixed(0)}%` : "-"}
                   </span>
                 </div>
                 <p className="line-clamp-2 text-xs text-muted-foreground">
-                  {item.report?.macro_analysis || item.report?.conclusion || tx(language, "无摘要", "No summary")}
+                  {item.summary || tx(language, "无摘要", "No summary")}
                 </p>
               </button>
             ))}

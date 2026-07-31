@@ -40,7 +40,7 @@ type ForecastDatasetSnapshot = {
   market: Market;
   startDate: string;
   endDate: string;
-  rows: ForecastRow[];
+  rowsCount: number;
   contentHash: string;
   loadedAt: string;
 };
@@ -131,25 +131,27 @@ function ForecastContent() {
     preferences.defaultModelId || DEFAULT_MODEL_ID
   );
   const [availableModelIds, setAvailableModelIds] = useState<string[]>([preferences.defaultModelId || DEFAULT_MODEL_ID]);
-  const [data, setData] = useSessionState<ForecastRow[]>("kronos-forecast-data", []);
-  const [datasetSnapshot, setDatasetSnapshot] = useSessionState<ForecastDatasetSnapshot | null>("kronos-forecast-dataset-v1", null);
-  const [prediction, setPrediction] = useSessionState<ForecastRow[] | null>("kronos-forecast-prediction", null);
+  const [data, setData] = useState<ForecastRow[]>([]);
+  const [datasetSnapshot, setDatasetSnapshot] = useState<ForecastDatasetSnapshot | null>(null);
+  const [prediction, setPrediction] = useState<ForecastRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [predLoading, setPredLoading] = useState(false);
   const [error, setError] = useSessionState("kronos-forecast-error", "");
-  const [predResult, setPredResult] = useSessionState<ForecastResponse | null>("kronos-forecast-result", null);
+  const [predResult, setPredResult] = useState<ForecastResponse | null>(null);
   const [sampleCount, setSampleCount] = useSessionState("kronos-forecast-sample-count", 8);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const dataHash = useMemo(() => (data.length ? hashForecastRows(data) : ""), [data]);
   const datasetMatchesCurrent = Boolean(
     datasetSnapshot
       && datasetSnapshot.symbol === normalizeSymbol(symbol)
       && datasetSnapshot.market === market
       && datasetSnapshot.startDate === startDate
       && datasetSnapshot.endDate === endDate
-      && datasetSnapshot.rows.length === data.length
+      && datasetSnapshot.rowsCount === data.length
+      && datasetSnapshot.contentHash === dataHash
   );
   const hasChartData = data.length > 0 && datasetMatchesCurrent;
   const demoMode = searchParams.get("demo") === "1";
@@ -191,7 +193,7 @@ function ForecastContent() {
       setData(res.rows);
       setDatasetSnapshot({
         ...request,
-        rows: res.rows,
+        rowsCount: res.rows.length,
         contentHash: hashForecastRows(res.rows),
         loadedAt: new Date().toISOString(),
       });
@@ -273,7 +275,7 @@ function ForecastContent() {
       market: "cn",
       startDate,
       endDate,
-      rows: demoHistoricalRows,
+      rowsCount: demoHistoricalRows.length,
       contentHash: hashForecastRows(demoHistoricalRows),
       loadedAt: new Date().toISOString(),
     });
