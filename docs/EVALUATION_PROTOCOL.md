@@ -1,7 +1,7 @@
 # Kronos 紧凑评测协议
 
 > 文档状态：Current
-> 最后核对：2026-07-30
+> 最后核对：2026-07-31
 
 ## 时间和数据边界
 
@@ -57,6 +57,11 @@ screen 同时比较：
 DirectionAccuracy 不低于基线、MeanDailyRankIC 不低于基线。confirm 中配对日期 Bootstrap
 的 Score 增量 95% CI 下界还必须大于 0；否则保留官方基线并停止。
 
+当评测 continuation checkpoint 时，固定 screen 还必须加入原父模型作为比较对象。
+只有新 checkpoint 同时超过父模型和官方基线，才允许进入 600 样本 confirm；验证损失改善
+不能替代预测 screen 的晋级条件。若所有 checkpoint 都未超过父模型，立即停止该 continuation
+路线，不追加 epoch 或参数搜索。
+
 ## 执行入口
 
 ```powershell
@@ -78,6 +83,7 @@ DirectML 只允许单进程顺序执行。评测器支持进度文件和中断�
 
 - 不用 AER/IR 选模；
 - 不搜索 temperature、sample_count、指标权重或新损失；
-- 不追加 epoch、continuation 或第四个新模型；
+- 不无限追加 epoch、continuation 或第四个新模型；
+- continuation 最多按预先配置的 epoch 执行一次；checkpoint screen 未超过父模型时停止；
 - 没有候选通过时保留官方模型，下一轮只改数据；
 - 严格 OOS 只从 2026-08-01 后新产生的数据积累。

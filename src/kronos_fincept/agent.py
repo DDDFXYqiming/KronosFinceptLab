@@ -144,7 +144,11 @@ DIGITAL_ORACLE_IRON_RULES = (
     "当前价格、买卖价位、支撑位或阻力位；直接价格源不可用时必须明确说明价格缺失。\n"
     "7. 矛盾检测与解决：当不同 provider 的信号互相矛盾时（例如实际利率下降但结论说加息周期），"
     "必须在 contradictions 字段明确列出矛盾双方、各自来源和 observed_at 时间戳，"
-    "并在 cross_validation 中说明无法确认的方面。禁止用笼统表述掩盖信号冲突。\n"
+    "并在 cross_validation 中说明无法确认的方面。禁止用笼统表述掩盖信号冲突。"
+    "contradictions 必须用中文散文直接描述，格式示例："
+    "“实际利率 2.41%（us_treasury，2026-07-29）与 CFTC 黄金净多 124831 手（cftc_cot，2026-07-21）方向矛盾："
+    "实际利率高位利空黄金，但资金面仍偏多”。"
+    "严禁输出 signal_a/signal_b/reason 或 Signal a/Signal b/Reason 等键名式标签，统一使用中文。\n"
     "8. 事实查询不拒绝：对于“谁担任某职位”“当前某数值是多少”等事实性查询，"
     "直接使用 anysearch/web_search 信号中的最新信息回答。时间敏感事实必须标注来源 URL "
     "及发布时间。不得以“不属于分析范围”为由拒绝回答；找不到可靠信息时在结论中"
@@ -4173,15 +4177,43 @@ def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
     fact_text = "，".join(facts) if facts else "可用方向信号不足"
 
     if bearish:
-        judgment = "短期不支持看多"
+        judgment = "短期不支持看多，当前不宜追涨，建议谨慎/观望"
         recommendation = "谨慎/观望"
     elif bullish:
-        judgment = "短期信号偏强"
+        judgment = "短期信号偏强，可关注但不宜追高"
         recommendation = "关注"
     else:
-        judgment = "短期信号分化"
+        judgment = "短期信号分化，当前建议观察，等待更多确认信号"
         recommendation = "观察"
     return f"{label}：{fact_text}，{judgment}。", recommendation
+
+
+def _conclusion_contains_unverified_numbers(
+    conclusion: Any,
+    asset_contexts: list[dict[str, Any]],
+) -> bool:
+    """Reject only numeric claims that are absent from verified tool summaries."""
+    text = str(conclusion or "").strip()
+    numbers = re.findall(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", text)
+    if not numbers:
+        return False
+    verified_parts: list[str] = []
+    for asset in asset_contexts:
+        verified_parts.extend(
+            [
+                _deterministic_asset_outlook(asset)[0],
+                _deterministic_technical_summary(asset),
+                _deterministic_fundamentals_summary(asset),
+                _deterministic_risk_summary(asset)[0],
+                _prediction_summary(
+                    asset.get("market_data") or {},
+                    asset.get("kronos_prediction") or {},
+                    asset.get("kronos_prediction_error"),
+                )[0],
+            ]
+        )
+    verified_text = " ".join(verified_parts)
+    return any(number not in verified_text for number in numbers)
 
 
 def _asset_display_label(asset: dict[str, Any]) -> str:
@@ -4248,6 +4280,7 @@ def _enforce_report_data_quality(
     valid_market_count = 0
     confidence_caps: list[float] = []
     long_horizon = any(term in question for term in ("年内", "年底", "今年", "未来一年"))
+    strict_consistency = len(asset_contexts) > 1 or long_horizon
 
     for asset in asset_contexts:
         symbol = str(asset.get("symbol") or "")
@@ -4335,11 +4368,12 @@ def _enforce_report_data_quality(
             _deterministic_asset_outlook(asset)
             for asset in asset_contexts
         ]
-        guarded["conclusion"] = " ".join(item[0] for item in deterministic_outlooks)
-        if long_horizon:
-            guarded["conclusion"] += (
-                " 当前工具主要验证最新行情与5日预测，不能把短期信号直接外推为确定的年内走势。"
-            )
+        if strict_consistency or _conclusion_contains_unverified_numbers(guarded.get("conclusion"), asset_contexts):
+            guarded["conclusion"] = " ".join(item[0] for item in deterministic_outlooks)
+            if long_horizon:
+                guarded["conclusion"] += (
+                    " 当前工具主要验证最新行情与5日预测，不能把短期信号直接外推为确定的年内走势。"
+                )
         guarded["recommendation"] = "；".join(
             f"{str(asset.get('name') or asset.get('symbol') or '标的')}：{outlook[1]}"
             for asset, outlook in zip(asset_contexts, deterministic_outlooks)
@@ -4985,6 +5019,7 @@ macro_signals 可省略或最多返回 5 条最关键摘要；后端会用真实
 time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。时间分层规则：S-短期（天到周）关注预测市场近月、价格动量、VIX、期权 skew、FOMC实时概率；M-中期（周到月）关注收益率曲线变化、CFTC持仓变动、信用利差、宏观数据发布；L-长期（月到季度）关注信用周期拐点、GDP预测修正、BIS信用缺口、行业库存周期。每层必须给出独立的 judgment 和该层的 confidence，不同层的 confidence 可以不同。
 time_layered_conclusions 为数组，每项包含 tier（S/M/L）、label（短期/中期/长期）、time_range（对应时间范围的中文描述）、judgment（该时间层的核心判断）、confidence（该层的数值置信度，0到1之间）。至少输出 S/M/L 三层；某层无足够信号时 judgment 写"信号暂时不足"并设 confidence≤0.25。
 cross_validation 和 contradictions 合起来视为“信号一致性评估”区块：前者写共振信号，后者写矛盾信号及原因。
+contradictions 中每个矛盾必须用中文散文写明两个具体信号及其来源/Provider 名称与 observed_at（示例：“实际利率 2.41%（us_treasury，2026-07-29）与 CFTC 黄金净多 124831 手（cftc_cot，2026-07-21）方向矛盾：……”），严禁输出 signal_a/signal_b/reason 或 Signal a/Signal b/Reason 等键名式标签。
 probability_scenarios 为数组，每项包含 scenario, probability, basis。必须读取 trusted_project_context.macro.dimension_coverage；只有 sufficient_evidence=true 才能输出高置信度方向判断。少于 3 个独立宏观维度时必须明确说明缺口，不要编造，confidence 不得超过 0.45，recommendation 使用“观察”或“需更多证据”。概率总和应接近 1。
 monitoring_signals 为数组，每项包含 signal, current_value, threshold, meaning；至少给出 3 条可操作监控项（不足时说明原因）。
 asset_reports: [
@@ -6197,6 +6232,11 @@ def _report_text(value: Any) -> str:
                 "source": "来源",
                 "sources": "来源",
                 "observed_at": "时间",
+                "signal_a": "信号一",
+                "signal a": "信号一",
+                "signal_b": "信号二",
+                "signal b": "信号二",
+                "reason": "原因",
             }.get(label.lower(), label)
             if re.fullmatch(r"[\s:：;,；，、|/\-]+", display_label):
                 display_label = ""
@@ -6234,6 +6274,20 @@ def _report_source_text(value: Any) -> str:
     return ""
 
 
+_CONTRADICTION_LABEL_REPLACEMENTS = (
+    (re.compile(r"(?i)\bsignal\s*[_-]?\s*a\b"), "信号一"),
+    (re.compile(r"(?i)\bsignal\s*[_-]?\s*b\b"), "信号二"),
+    (re.compile(r"(?i)\breason\b"), "原因"),
+)
+
+
+def _clean_contradiction_labels(text: str) -> str:
+    """Translate LLM key-style contradiction labels into Chinese labels."""
+    for pattern, replacement in _CONTRADICTION_LABEL_REPLACEMENTS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
     confidence = payload.get("confidence", 0.5)
     try:
@@ -6264,7 +6318,10 @@ def _normalize_report(payload: dict[str, Any]) -> dict[str, Any]:
         normalized["macro_signals"] = macro_signals
     for key in ("macro_analysis", "cross_validation", "contradictions"):
         if payload.get(key):
-            normalized[key] = _report_text(payload.get(key))
+            value = _report_text(payload.get(key))
+            if key == "contradictions":
+                value = _clean_contradiction_labels(value)
+            normalized[key] = value
     probability_scenarios = _normalize_probability_scenarios(payload.get("probability_scenarios"))
     if probability_scenarios:
         normalized["probability_scenarios"] = probability_scenarios

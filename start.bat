@@ -9,6 +9,16 @@ echo.
 
 cd /d "%~dp0"
 
+set "PROJECT_ROOT=%~dp0"
+set "PYTHON_EXE=%PROJECT_ROOT%.venv311\Scripts\python.exe"
+
+if not exist "%PYTHON_EXE%" (
+    echo   未找到项目虚拟环境：%PYTHON_EXE%
+    echo   请先创建 .venv311 并安装项目依赖后重新运行 start.bat
+    pause
+    exit /b 1
+)
+
 REM 低内存默认值：必须在 NumPy/Pandas/OpenBLAS 导入前设置
 set KRONOS_LOW_MEMORY_DEFAULTS=1
 set OPENBLAS_NUM_THREADS=1
@@ -20,16 +30,11 @@ set TOKENIZERS_PARALLELISM=false
 
 REM 检查并安装 Python 依赖
 echo [0/3] 检查 Python 依赖...
-python -c "import fastapi, uvicorn" >nul 2>&1
+"%PYTHON_EXE%" -c "import fastapi, uvicorn" >nul 2>&1
 if errorlevel 1 (
-    echo   正在安装缺失的依赖...
-    pip install fastapi "uvicorn[standard]" pydantic python-multipart --quiet
-    if errorlevel 1 (
-        echo   依赖安装失败！请手动运行: pip install fastapi "uvicorn[standard]" pydantic python-multipart
-        pause
-        exit /b 1
-    )
-    echo   依赖安装完成！
+    echo   项目虚拟环境依赖不完整，请使用 .venv311 中的 Python 安装依赖后重试。
+    pause
+    exit /b 1
 ) else (
     echo   依赖已就绪
 )
@@ -64,7 +69,7 @@ echo.
 set API_RELOAD_FLAG=
 if "%KRONOS_API_RELOAD%"=="1" set API_RELOAD_FLAG=--reload
 
-start "KronosFinceptLab API" cmd /k "cd /d ""%~dp0"" && set PYTHONPATH=src && python -m uvicorn kronos_fincept.api.app:app --host 0.0.0.0 --port 8000 %API_RELOAD_FLAG%"
+start "KronosFinceptLab API" cmd /k "cd /d ""%~dp0"" && set PYTHONPATH=src && ""%PYTHON_EXE%"" -m uvicorn kronos_fincept.api.app:app --host 127.0.0.1 --port 8000 %API_RELOAD_FLAG%"
 
 timeout /t 2 /nobreak >nul
 

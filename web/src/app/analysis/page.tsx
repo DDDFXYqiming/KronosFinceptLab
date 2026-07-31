@@ -1083,6 +1083,9 @@ function AnalysisContent() {
             </div>
 
             <div className="mt-3 rounded-xl border border-accent/20 bg-accent/[0.03] p-4 text-base font-semibold leading-relaxed text-foreground">
+              <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">
+                {tx(language, "结论", "Conclusion")}
+              </p>
               <MarkdownText text={formatReportText(report?.conclusion)} />
             </div>
 

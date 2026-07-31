@@ -221,6 +221,42 @@ def test_quality_guard_rejects_bullish_recommendation_when_tools_are_bearish():
     assert "Kronos 5 日" in asset_report["conclusion"]
 
 
+def test_single_asset_summary_conclusion_answers_buy_timing_directly():
+    from kronos_fincept import agent
+
+    report = agent._normalize_report(
+        {
+            "conclusion": "结论：招商银行当前处于短期强势上行通道，但估值已不便宜，建议观望或轻仓参与，不宜追高。",
+            "recommendation": "观察",
+            "confidence": 0.6,
+            "risk_level": "中",
+        }
+    )
+    contexts = [
+        {
+            "symbol": "600036",
+            "market": "cn",
+            "name": "招商银行",
+            "market_data": {
+                "current_price": 40.55,
+                "price_change_1w": 3.44,
+            },
+            "technical_indicators": {
+                "sma_20": {"values": [37.99]},
+                "sma_50": {"values": [37.15]},
+            },
+            "risk_metrics": {"volatility": 0.1769},
+            "kronos_prediction": {"forecast": [{"close": 40.21}]},
+        }
+    ]
+
+    guarded = agent._enforce_report_data_quality(report, contexts)
+
+    assert "建议观望或轻仓参与" in guarded["conclusion"]
+    assert "不宜追高" in guarded["conclusion"]
+    assert "当前建议观察" not in guarded["conclusion"]
+
+
 def test_quality_guard_replaces_multi_asset_llm_technical_text_and_exposes_sources():
     from kronos_fincept import agent
 

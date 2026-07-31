@@ -1,5 +1,6 @@
 # Core
 pandas>=2.0
+pyarrow>=14
 numpy>=1.24
 
 # API (Phase A)

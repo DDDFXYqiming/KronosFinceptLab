@@ -1,8 +1,8 @@
 # Kronos 紧凑微调与评测报告
 
 > 文档状态：Current
-> 最后核对：2026-07-30
-> 当前状态：紧凑数据、三模型训练和验证集 screen/confirm 均已完成；本轮停止并保留官方预训练基线
+> 最后核对：2026-07-31
+> 当前状态：L2 多轮 continuation 已完成，5 个 checkpoint 的固定 screen 已完成；没有 checkpoint 超过 L2，停止继续训练与 confirm
 
 ## 当前实验问题
 
@@ -155,12 +155,41 @@ L1 在 600 样本确认中相对官方基线的综合分增量为 `+0.0335`，50
 相对官方基线的综合分增量为 `+0.0383`，置信区间为 `[-0.0560, 0.1416]`。两者的区间下界都不
 大于 0，因此均没有通过冻结晋级规则。
 
-当前决定：保留官方 `Kronos-small`，不运行本轮 2026-04～07 诊断测试，不追加 epoch、学习率、
-temperature 或新的 continuation 模型。后续若继续推进，只允许改善股票池和数据质量后原样重跑
-这两条训练线。
+当前决定：生产仍保留官方 `Kronos-small`，不运行本轮 2026-04～07 诊断测试，不追加学习率、
+temperature 或新的 continuation 模型。L2 continuation 已按最多 5 个 epoch 执行完毕，但固定
+screen 未超过 L2，因此不进入 600 样本 confirm。后续若继续推进，只允许改善股票池和数据质量后
+原样重跑训练线。
 
 当前结果说明：将训练对象收敛到大盘股后，旧微调权重可以带来局部提升，但目前仍不能证明微调
-模型稳定优于官方模型。
+模型稳定优于官方模型。L2 continuation 的验证损失继续下降，但预测 screen 指标在第 2 轮后
+没有继续改善，说明继续拟合训练损失/验证损失没有转化为固定预测评测收益。
+
+## L2 多轮 continuation（已完成）
+
+L3 从 `largecap_l2_v3cont/basemodel/best_model` 继续训练，使用同一份
+`clean_v6_largecap`、同一 tokenizer、`lookback=90`、`predict_window=5`、学习率 `1e-6`、
+`market_stock_balanced` 采样，最多 5 个 epoch。训练最终完成 5 个 epoch，没有覆盖 L2 原始权重。
+
+训练损失从 L2 的基准继续下降，验证损失从 `3.1394` 降到第 3 轮 `3.1180`、第 5 轮 `3.1164`；
+但这只代表训练目标改善，不代表预测质量改善。
+
+所有 checkpoint 使用与 L2、官方基线完全相同的 150 个 screen 样本（样本哈希
+`93cc00cdc97a12c9a144a0807b101fd8f9769abf199b164e8581c63535666bf3`）、`pred_len=5`、
+`sample_count=1`、`temperature=0.3`、`top_p=0.9` 和 DirectML 单进程评测：
+
+| 模型 | DirectionAccuracy | MeanDailyRankIC | Score | 相对 L2 Score |
+|---|---:|---:|---:|---:|
+| 官方 `Kronos-small` | 51.33% | 0.0378 | 0.5156 | -0.0472 |
+| L2 原模型 | 56.67% | 0.1135 | 0.5627 | 0 |
+| L3 `epoch_1` | 55.33% | 0.1014 | 0.5523 | -0.0104 |
+| L3 `epoch_2` | 58.00% | 0.0418 | 0.5564 | -0.0064 |
+| L3 `epoch_3` | 58.00% | 0.0440 | 0.5568 | -0.0059 |
+| L3 `epoch_4` | 58.00% | 0.0440 | 0.5568 | -0.0059 |
+| L3 `epoch_5` | 58.00% | 0.0440 | 0.5568 | -0.0059 |
+
+L3 的 `epoch_3`～`epoch_5` 是本轮最高，但仍同时低于 L2 的综合分和 MeanDailyRankIC，
+因此没有 checkpoint 满足晋级条件，不执行 600 样本 Bootstrap confirm，也不再继续同数据训练。
+明细结果位于 `output/evaluation_largecap_v1/screen/l3_l2cont_epoch*.json`。
 
 当前已准备好下一轮开发训练输入：
 

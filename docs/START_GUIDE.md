@@ -2,7 +2,7 @@
 
 > 本文档提供首次运行 KronosFinceptLab 的逐步指引。
 >
-> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-31
 
 ---
 
@@ -76,6 +76,34 @@ graph LR
 ---
 
 ## 手动启动
+
+### Windows PowerShell（本机已验证）
+
+本地开发必须分别启动 API 和 Next.js 开发服务器，并从项目根目录/`web` 目录启动对应进程。不要使用 `next start`，也不要让 Web 服务因为端口占用自动漂移到 3001。
+
+终端 1：启动 API（保持窗口运行）
+
+```powershell
+Set-Location 'E:\AI_Projects\KronosFinceptLab'
+$env:PYTHONPATH = 'src'
+& 'E:\AI_Projects\KronosFinceptLab\.venv311\Scripts\python.exe' -m uvicorn kronos_fincept.api.app:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+终端 2：启动 Web（保持窗口运行）
+
+```powershell
+Set-Location 'E:\AI_Projects\KronosFinceptLab\web'
+& 'D:\nodejs\npm.cmd' run dev
+```
+
+启动后检查：
+
+```powershell
+Invoke-WebRequest 'http://127.0.0.1:8000/api/health' -UseBasicParsing
+Invoke-WebRequest 'http://127.0.0.1:3000/macro' -UseBasicParsing
+```
+
+如果页面能返回 HTML 但 CSS/JS 资源出现 404，说明旧的 Next 进程或 `.next` 开发缓存不同步。停止占用 3000 端口的旧 Node/Next 进程后，在 `web` 目录重新执行 `npm run dev`；必要时仅清理项目内生成缓存 `web\.next`，不要改用 `next start`。
 
 ### 启动 API 后端
 
