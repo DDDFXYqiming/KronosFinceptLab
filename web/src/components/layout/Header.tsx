@@ -10,7 +10,7 @@ import { t } from "@/lib/i18n";
 import { queryKeys } from "@/lib/queryKeys";
 import { navItems } from "@/components/layout/Sidebar";
 
-const VERSION = "v10.8.8";
+const VERSION = "v10.9.0";
 
 function compactModelName(modelId?: string): string {
   return modelId?.split("/").pop() || "Kronos";

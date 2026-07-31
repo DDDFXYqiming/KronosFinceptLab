@@ -1,7 +1,7 @@
 # Kronos 紧凑微调与评测报告
 
 > 文档状态：Current
-> 最后核对：2026-07-31
+> 最后核对：2026-08-01
 > 当前状态：L2 多轮 continuation 已完成，5 个 checkpoint 的固定 screen 已完成；没有 checkpoint 超过 L2，停止继续训练与 confirm
 
 ## 当前实验问题
@@ -71,8 +71,22 @@ Validation Loss 只用于确认训练正常，不作为金融预测模型排名�
 | `validation_2026_q1` | 1,749 | 1,172 / 577 | screen/confirm |
 | `diagnostic_2026_04_07` | 2,366 | 1,595 / 771 | 近期诊断 |
 
-当前实际数据截止 2026-07-29。2026-07-31 尚未发生，
+当前实际数据截止 2026-07-29（07-31 当日数据在本次核对时尚未产生），
 manifest 会记录实际 `observed_data_end`，不会伪造未来数据。
+
+## 生产运行时权重（事实记录）
+
+当前生产页面实际加载的模型权重由 `external/Kronos-small` junction 指向
+`external/Kronos/finetune_csv/finetuned_v3_fromFTv1_cont/basemodel/epoch_2`，
+`KRONOS_MODEL_ID=NeoQuasar/Kronos-small` 仅用于标识与 HF 回退。预测器解析顺序为
+外部目录（`external/<repo_id 末段>`）→ HF 本地缓存 → HF Hub（见
+`predictor.py::_resolve_pretrained_source`），因此本机运行时加载的是
+`v3_from_ftv1_cont` epoch_2 微调权重，而不是官方预训练基线。
+
+该 junction 属于生产路径诊断配置：它让页面在 90 根输入、T=0.5、页面侧 sample_count
+（分析页 16、预测页默认 8）的生产参数下运行同一套模型路径，便于对比候选权重；此配置不等于协议级“晋级”，
+也未经过密封 OOS 验证。若切换 junction 或删除外部目录，行为会回退到 HF 官方权重。
+协议层面的结论（当前证据不足以证明微调稳定超过官方基线）保持不变。
 
 ## 历史模型处理
 

@@ -94,5 +94,6 @@ HSI、HSCEI、HSTECH 指数页面及方法文件。当前 AKShare 可以返回 2
 
 市值、指数成分、停牌和涨跌停状态先用于股票池筛选、窗口过滤和分层抽样，不立即扩展 Kronos
 的 OHLCVA 输入维度。训练与评测仍保持 `lookback=90`、`predict_window=5` 和同一时间边界。
-下一轮只比较两个模型：官方 `Kronos-small` 起点，以及在明确新增或实质修正窗口上以极低学习率
-继续训练的 `v3_from_ftv1_cont`；旧模型仍只是挑战者，不能自动成为生产父模型。
+该轮开发实验已执行：除官方 `Kronos-small` 起点外，还加入了 `v3_from_ftv1_cont`
+及基于其权重的 continuation（largecap L1/L2/L3），完整结论见
+[`FINETUNE_REPORT.md`](FINETUNE_REPORT.md)；旧模型仍只是挑战者，不能自动成为生产父模型。

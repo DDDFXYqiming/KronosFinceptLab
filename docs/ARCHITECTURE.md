@@ -2,7 +2,7 @@
 
 > 文档状态：Current
 > 项目版本：10.9.0
-> 最后核对：2026-07-29
+> 最后核对：2026-08-01
 > 本文档聚焦当前已实现架构，不使用历史迭代编号描述现状。
 
 ---
@@ -146,7 +146,7 @@ API、CLI、MCP 层调用此共享服务，而非重复实现预测逻辑。
 | 批量 | `POST /api/batch` |
 | 数据 | `POST /api/data/batch`, `GET /api/data/global/{symbol}`, `GET /api/data/indicator/{symbol}`, `GET /api/data/a-stock/{symbol}`, `GET /api/data/search`, `GET /api/data/money-flow/{symbol}`, `GET /api/data/sector-flow`, `GET /api/data/hsgt-flow`, `GET /api/data/source-market/{artifact}` |
 | 回测 | `POST /api/backtest/ranking`, `POST /api/backtest/report`, `POST /api/backtest/strategy`, `POST /api/backtest/strategy/scan`, `POST /api/backtest/strategy/rolling` |
-| 分析 | `POST /api/v1/analyze/agent`, `/macro`, `/ai`, `/dcf`, `/risk`, `/portfolio`, `/derivative` |
+| 分析 | `POST /api/v1/analyze/agent`, `/macro`, `/ai`, `/dcf`, `/risk`, `/portfolio`, `/derivative`, `GET /api/v1/analyze/macro/providers/status` |
 | 预警 | `POST /api/alert/rules`, `GET /api/alert/rules`, `DELETE /api/alert/rules/{rule_id}`, `POST /api/alert/check`, `POST /api/alert/presets/prediction-deviation` |
 | 新闻 | `POST /api/news/rss` |
 | 建议 | `GET /api/v1/suggestions` |

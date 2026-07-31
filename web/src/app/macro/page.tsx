@@ -28,7 +28,7 @@ import type {
   RssFeed,
 } from "@/types/api";
 
-const VERSION = "v10.8.8";
+const VERSION = "v10.9.0";
 const MAX_MACRO_TURNS = 5;
 // Normal macro runs complete within tens of seconds. A persisted run older than
 // two minutes is no longer safe to resume after a page/service restart.

@@ -2,7 +2,7 @@
 
 > 本文档描述所有 CLI 命令、参数和用法示例。
 >
-> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-08-01
 
 ---
 
@@ -373,9 +373,6 @@ kronos watchlist list
 
 # 创建自选
 kronos watchlist create --name "我的自选" --symbols 600036,000858
-
-# 更新自选
-kronos watchlist update {id} --name "更新后的自选"
 
 # 删除自选
 kronos watchlist delete {id}

@@ -2,7 +2,7 @@
 
 > 本文档描述所有 REST 端点、认证机制、请求/响应格式。
 >
-> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-08-01
 
 ---
 
@@ -65,6 +65,7 @@ graph LR
     subgraph analyze_api["[ 分析端点 ]"]
         AnalyzeAgent["POST /api/v1/analyze/agent"]
         AnalyzeMacro["POST /api/v1/analyze/macro"]
+        AnalyzeMacroStatus["GET /api/v1/analyze/macro/providers/status"]
         AnalyzeAI["POST /api/v1/analyze/ai"]
         AnalyzeDCF["POST /api/v1/analyze/dcf"]
         AnalyzeRisk["POST /api/v1/analyze/risk"]
@@ -134,6 +135,7 @@ graph LR
 | 回测 | POST | `/api/backtest/strategy/rolling` | 滚动验证 | 用户密钥 |
 | 分析 | POST | `/api/v1/analyze/agent` | 自然语言无状态分析智能体 | 用户密钥 |
 | 分析 | POST | `/api/v1/analyze/macro` | 宏观与跨市场信号分析 | 用户密钥 |
+| 分析 | GET | `/api/v1/analyze/macro/providers/status` | 宏观 provider 运行时状态（不触发 LLM） | 用户密钥 |
 | 分析 | POST | `/api/v1/analyze/ai` | AI 个股分析报告 | 用户密钥 |
 | 分析 | POST | `/api/v1/analyze/dcf` | DCF 估值 | 用户密钥 |
 | 分析 | POST | `/api/v1/analyze/risk` | 风险指标 | 用户密钥 |

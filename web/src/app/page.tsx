@@ -196,7 +196,7 @@ export default function Dashboard() {
       <motion.div variants={fadeInUp} initial="hidden" whileInView="visible" viewport={viewportOnce} className="py-6 text-center">
         <div className="divider-accent" />
         <p className="text-xs text-muted-foreground">
-          {tx(language, "仅供研究参考，不构成投资建议", "For research only. Not investment advice")} &middot; KronosFinceptLab v10.8.8
+          {tx(language, "仅供研究参考，不构成投资建议", "For research only. Not investment advice")} &middot; KronosFinceptLab v10.9.0
         </p>
       </motion.div>
     </div>

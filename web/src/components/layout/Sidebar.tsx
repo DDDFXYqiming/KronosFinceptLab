@@ -87,7 +87,7 @@ export function Sidebar() {
       </nav>
       {sidebarOpen && (
         <div className="absolute bottom-4 left-0 right-0 px-4">
-          <div className="text-xs text-muted-foreground text-center font-mono">v10.8.8 - {t(preferences.language, "common.researchOnly")}</div>
+          <div className="text-xs text-muted-foreground text-center font-mono">v10.9.0 - {t(preferences.language, "common.researchOnly")}</div>
         </div>
       )}
     </aside>

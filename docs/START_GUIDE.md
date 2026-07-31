@@ -2,7 +2,7 @@
 
 > 本文档提供首次运行 KronosFinceptLab 的逐步指引。
 >
-> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-31
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-08-01
 
 ---
 
@@ -176,7 +176,7 @@ kronos analyze macro --question "美债收益率如何影响黄金？" --symbols
 kronos news rss --feed "fed|Federal Reserve|https://www.federalreserve.gov/feeds/press_all.xml" --limit 5
 ```
 
-`source-market` 依赖 `KRONOS_SOURCE_PROJECT_ROOT`。`hsgt-flow` 依赖 `TUSHARE_TOKEN`。未配置时命令/API 返回正常错误，不阻塞启动。
+`source-market` 依赖源项目路径配置（`STOCK_ANALYSIS_SYSTEM_DIR` / `STOCK_ANALYSIS_MARKET_REVIEW_DIR`）。`hsgt-flow` 依赖 `TUSHARE_TOKEN`。未配置时命令/API 返回正常错误，不阻塞启动。
 
 ---
 

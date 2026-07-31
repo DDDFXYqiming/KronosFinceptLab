@@ -2,7 +2,7 @@
 
 > 本文档描述本地开发、Docker、Zeabur 等部署方式。
 >
-> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-07-29
+> 文档状态：Current | 项目版本：10.9.0 | 最后核对：2026-08-01
 
 ---
 
@@ -194,7 +194,9 @@ node /app/web/server.js on $PORT
 | `LLM_MODEL` | 路由、宏观分析、报告合成的 LLM 模型 ID |
 | `TUSHARE_TOKEN` | 可选 Tushare Pro 密钥（港股通和 A股增强） |
 | `FRED_API_KEY` | 可选 FRED 密钥（美国宏观数据） |
-| `KRONOS_SOURCE_PROJECT_ROOT` | 可选源项目根目录（验证市场和宏观缓存复用） |
+| `STOCK_ANALYSIS_SYSTEM_DIR` | 可选源项目根目录（验证市场/宏观缓存复用） |
+| `STOCK_ANALYSIS_MACRO_DIR` | 可选源项目宏观缓存目录（默认 `<SYSTEM_DIR>/data/macro`） |
+| `STOCK_ANALYSIS_MARKET_REVIEW_DIR` | 可选源项目市场复盘缓存目录 |
 | `KRONOS_ENABLE_TDX_NETWORK` | 可选 TDX 网络源；默认禁用（Linux/Zeabur 安全） |
 | `KRONOS_ENABLE_TICKFLOW` | 可选 TickFlow 源；依赖不可用时跳过 |
 | `KRONOS_ENABLE_NBS_LIVE` | 可选 NBS 实时客户端；默认禁用 |
