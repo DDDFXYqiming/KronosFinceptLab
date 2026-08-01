@@ -219,9 +219,9 @@ function getConfidenceBg(value: number): string {
 function RecommendationBadge({ rec }: { rec: string }) {
   const lower = rec.toLowerCase();
   let bg = "bg-muted text-muted-foreground border-border";
-  if (lower.includes("buy") || rec.includes("买")) {
+  if (lower.includes("buy") || rec.includes("买") || rec.includes("加仓")) {
     bg = "bg-green-50 text-green-700 border-green-200";
-  } else if (lower.includes("sell") || rec.includes("卖")) {
+  } else if (lower.includes("sell") || rec.includes("卖") || rec.includes("减仓")) {
     bg = "bg-red-50 text-red-700 border-red-200";
   } else if (lower.includes("hold") || rec.includes("持")) {
     bg = "bg-amber-50 text-amber-700 border-amber-200";

@@ -1219,6 +1219,20 @@ def analyze_investment_question(
             )
 
     resolved = route.symbols or resolve_symbols(clean_question, explicit_symbol=symbol, explicit_market=market)
+    # Deduplicate aliases of the same instrument (e.g. 0700.HK vs 腾讯控股).
+    seen_symbol_keys: set[tuple[str, str]] = set()
+    deduped_symbols: list[ResolvedSymbol] = []
+    for item in resolved:
+        raw_symbol = str(item.symbol or "").strip().upper()
+        for suffix in (".HK", ".SS", ".SZ", ".US", ".CN"):
+            if raw_symbol.endswith(suffix):
+                raw_symbol = raw_symbol[: -len(suffix)]
+        symbol_key = (str(item.market or "").lower(), raw_symbol.lstrip("0") or "0")
+        if symbol_key in seen_symbol_keys:
+            continue
+        seen_symbol_keys.add(symbol_key)
+        deduped_symbols.append(item)
+    resolved = deduped_symbols
     if resolved and any(_asset_needs_macro_context(item, clean_question) for item in resolved):
         route = replace(route, needs_macro=True)
     if web_analysis and _should_delegate_web_analysis_to_macro(clean_question, resolved, route=route):
@@ -4127,10 +4141,11 @@ def _prediction_expected_return(asset: dict[str, Any]) -> float | None:
     return _pct_change(predicted, current)
 
 
-def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
-    symbol = str(asset.get("symbol") or "标的")
-    name = str(asset.get("name") or "").strip()
-    label = f"{name}({symbol})" if name else symbol
+_RECOMMENDATION_ACTIONS = ("买入", "加仓", "持有", "观察", "减仓", "卖出")
+
+
+def _asset_signal_state(asset: dict[str, Any]) -> str:
+    """Classify the deterministic tool-based signal state (bearish/bullish/mixed)."""
     market_data = asset.get("market_data") or {}
     indicators = asset.get("technical_indicators") or {}
     current = _last_indicator_value(market_data.get("current_price"))
@@ -4154,17 +4169,47 @@ def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
         and current > sma20
         and current > sma50
     )
-    bearish = (
-        (expected is not None and expected <= -2.0)
-        or (below_averages and weekly is not None and weekly < 0)
-    )
-    bullish = (
+    if (expected is not None and expected <= -2.0) or (below_averages and weekly is not None and weekly < 0):
+        return "bearish"
+    if (
         expected is not None
         and expected >= 2.0
         and above_averages
         and weekly is not None
         and weekly > 0
         and risk_level != "高"
+    ):
+        return "bullish"
+    return "mixed"
+
+
+def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
+    """Pure fallback outlook based on deterministic tool signals (six-action taxonomy)."""
+    symbol = str(asset.get("symbol") or "标的")
+    name = str(asset.get("name") or "").strip()
+    label = f"{name}({symbol})" if name else symbol
+    market_data = asset.get("market_data") or {}
+    indicators = asset.get("technical_indicators") or {}
+    current = _last_indicator_value(market_data.get("current_price"))
+    weekly = _last_indicator_value(market_data.get("price_change_1w"))
+    sma20 = _last_indicator_value(indicators.get("sma_20"))
+    sma50 = _last_indicator_value(indicators.get("sma_50"))
+    expected = _prediction_expected_return(asset)
+    _, risk_level = _deterministic_risk_summary(asset)
+    state = _asset_signal_state(asset)
+    below_averages = (
+        current is not None
+        and sma20 is not None
+        and sma50 is not None
+        and current < sma20
+        and current < sma50
+    )
+    above_averages = (
+        current is not None
+        and sma20 is not None
+        and sma50 is not None
+        and current > sma20
+        and current > sma50
     )
 
     facts: list[str] = []
@@ -4180,27 +4225,19 @@ def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
         facts.append(f"量化风险{risk_level}")
     fact_text = "，".join(facts) if facts else "可用方向信号不足"
 
-    if bearish:
-        judgment = "短期不支持看多，当前不宜追涨，建议谨慎/观望"
-        recommendation = "谨慎/观望"
-    elif bullish:
-        judgment = "短期信号偏强，可关注但不宜追高"
-        recommendation = "关注"
+    if state == "bearish":
+        judgment = "短期信号偏空，当前不支持看多，不建议新建仓位"
+        recommendation = "观察"
+    elif state == "bullish":
+        judgment = "短期信号偏强，适合分批建仓，但不宜追高"
+        recommendation = "买入"
     else:
         judgment = "短期信号分化，当前建议观察，等待更多确认信号"
         recommendation = "观察"
     return f"{label}：{fact_text}，{judgment}。", recommendation
 
 
-def _conclusion_contains_unverified_numbers(
-    conclusion: Any,
-    asset_contexts: list[dict[str, Any]],
-) -> bool:
-    """Reject only numeric claims that are absent from verified tool summaries."""
-    text = str(conclusion or "").strip()
-    numbers = re.findall(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", text)
-    if not numbers:
-        return False
+def _verified_asset_text(asset_contexts: list[dict[str, Any]]) -> str:
     verified_parts: list[str] = []
     for asset in asset_contexts:
         verified_parts.extend(
@@ -4216,8 +4253,62 @@ def _conclusion_contains_unverified_numbers(
                 )[0],
             ]
         )
-    verified_text = " ".join(verified_parts)
-    return any(number not in verified_text for number in numbers)
+        prediction = asset.get("kronos_prediction")
+        if isinstance(prediction, dict):
+            verified_parts.append(json.dumps(prediction, ensure_ascii=False, default=str))
+    return " ".join(verified_parts)
+
+
+def _sanitize_unverified_numbers(text: Any, asset_contexts: list[dict[str, Any]]) -> str:
+    """Keep model wording but flag numbers absent from verified tool output."""
+    raw = str(text or "").strip()
+    if not raw:
+        return raw
+    verified_text = _verified_asset_text(asset_contexts)
+    changed = False
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal changed
+        token = match.group(0)
+        prev_char = raw[match.start() - 1] if match.start() > 0 else ""
+        next_char = raw[match.end()] if match.end() < len(raw) else ""
+        if re.fullmatch(r"(?:19|20)\d{2}", token):
+            return token
+        if prev_char.isdigit() or next_char.isdigit():
+            return token
+        if prev_char in "-/—" or next_char in "-/—年月日周":
+            return token
+        if token in verified_text:
+            return token
+        changed = True
+        return "待验证"
+
+    result = re.sub(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", _replace, raw)
+    if changed:
+        result = result.rstrip() + "（提示：部分具体数字未能从本轮工具数据中核对，请以数据卡片为准。）"
+    return result
+
+
+def _normalize_action(value: Any) -> str | None:
+    """Map a model recommendation string onto the six-action taxonomy."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for action in _RECOMMENDATION_ACTIONS:
+        if text == action:
+            return action
+    if re.search(r"不\s*建议?\s*(买入|买)|勿买|别买|不建议追", text):
+        return "观察"
+    for action in ("加仓", "减仓", "买入", "卖出", "持有", "观察"):
+        if action in text:
+            return action
+    if "买" in text or "增持" in text:
+        return "买入"
+    if "卖" in text or "减持" in text:
+        return "卖出"
+    if "持" in text:
+        return "持有"
+    return None
 
 
 def _asset_display_label(asset: dict[str, Any]) -> str:
@@ -4284,7 +4375,6 @@ def _enforce_report_data_quality(
     valid_market_count = 0
     confidence_caps: list[float] = []
     long_horizon = any(term in question for term in ("年内", "年底", "今年", "未来一年"))
-    strict_consistency = len(asset_contexts) > 1 or long_horizon
 
     for asset in asset_contexts:
         symbol = str(asset.get("symbol") or "")
@@ -4312,8 +4402,31 @@ def _enforce_report_data_quality(
             asset_report["risk"] = risk_summary
             asset_report["risk_level"] = risk_level
             deterministic_conclusion, deterministic_recommendation = _deterministic_asset_outlook(asset)
-            asset_report["conclusion"] = deterministic_conclusion
-            asset_report["recommendation"] = deterministic_recommendation
+            llm_conclusion = str(asset_report.get("conclusion") or "").strip()
+            if llm_conclusion and llm_conclusion != deterministic_conclusion:
+                asset_report["conclusion"] = _sanitize_unverified_numbers(llm_conclusion, [asset])
+            else:
+                asset_report["conclusion"] = deterministic_conclusion
+            llm_action = _normalize_action(asset_report.get("recommendation"))
+            guard_reasons: list[str] = []
+            if llm_action is None:
+                llm_action = deterministic_recommendation
+                guard_reasons.append("模型未给出六档动作，已用确定性信号兜底")
+            if llm_action in {"买入", "卖出"} and not (asset.get("kronos_prediction") and asset.get("risk_metrics")):
+                llm_action = "观察"
+                guard_reasons.append("缺少Kronos预测或量化风险指标，强动作已降级为观察")
+            state = _asset_signal_state(asset)
+            if state == "bearish" and llm_action in {"买入", "加仓"}:
+                llm_action = "观察"
+                guard_reasons.append("模型看多动作与Kronos/均线偏空信号冲突，已保守降为观察")
+            elif state == "bullish" and llm_action in {"卖出", "减仓"}:
+                llm_action = "观察"
+                guard_reasons.append("模型看空动作与Kronos/均线偏多信号冲突，已保守降为观察")
+            if guard_reasons:
+                asset_report["conclusion"] = (
+                    f"{asset_report['conclusion']}（数据校验：{'；'.join(guard_reasons)}。）".strip()
+                )
+            asset_report["recommendation"] = llm_action
             confidence_cap = 0.7 if asset.get("kronos_prediction") and asset.get("risk_metrics") else 0.55
             if long_horizon:
                 confidence_cap = min(confidence_cap, 0.55)
@@ -4368,19 +4481,15 @@ def _enforce_report_data_quality(
         guarded["recommendation"] = "数据不完整，暂不进行跨标的排序"
         guarded["confidence"] = min(float(guarded.get("confidence") or 0.5), 0.4)
     elif confidence_caps:
-        deterministic_outlooks = [
-            _deterministic_asset_outlook(asset)
-            for asset in asset_contexts
-        ]
-        if strict_consistency or _conclusion_contains_unverified_numbers(guarded.get("conclusion"), asset_contexts):
-            guarded["conclusion"] = " ".join(item[0] for item in deterministic_outlooks)
-            if long_horizon:
-                guarded["conclusion"] += (
-                    " 当前工具主要验证最新行情与5日预测，不能把短期信号直接外推为确定的年内走势。"
-                )
+        guarded["conclusion"] = _sanitize_unverified_numbers(guarded.get("conclusion"), asset_contexts)
+        if long_horizon:
+            guarded["conclusion"] = (
+                f"{guarded['conclusion']} "
+                "当前工具主要验证最新行情与5日预测，不能把短期信号直接外推为确定的年内走势。"
+            ).strip()
         guarded["recommendation"] = "；".join(
-            f"{str(asset.get('name') or asset.get('symbol') or '标的')}：{outlook[1]}"
-            for asset, outlook in zip(asset_contexts, deterministic_outlooks)
+            f"{str(asset.get('name') or asset.get('symbol') or '标的')}：{action}"
+            for asset, action in zip(asset_contexts, (item["recommendation"] for item in guarded_asset_reports))
         )
         guarded["confidence"] = min(
             float(guarded.get("confidence") or 0.5),
@@ -4506,9 +4615,9 @@ def _default_asset_report(asset: dict[str, Any]) -> dict[str, Any]:
     recommendation = "持有"
     if expected_return is not None:
         if expected_return >= 2 and risk_level != "高":
-            recommendation = "关注"
+            recommendation = "买入"
         elif expected_return <= -2:
-            recommendation = "谨慎"
+            recommendation = "观察"
 
     return _normalize_report(
         {
@@ -5019,6 +5128,7 @@ conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties,
 macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions, time_layered_conclusions。
 宏观问题的 conclusion 必须第一字符起直接回答用户问题，格式为“结论：……”，只写核心判断和行动方向；macro_analysis 必须只写支撑判断的事实、信号和不确定性，禁止重复 conclusion，也不要以“结论：”开头。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
 conclusion 必须直接回应问题中的具体对象（问题提到 A股/黄金/美联储/比特币等，结论必须出现对应对象），并给出明确倾向（如“偏多/偏空/震荡/磨底/尚未确认/仍偏强”等）；禁止用“证据满足/需观察/等待确认”等与问题无关的套话充当结论主体；即使证据不足，也要先给出基于现有信号的当前倾向，再说明不确定性与监控条件。
+recommendation 必须是六档动作之一：买入（空仓/低仓且信号偏多，适合建仓）、加仓（已有仓位且信号进一步偏多）、持有（已有仓位且方向中性偏多，维持）、观察（方向不明或证据不足，暂不操作）、减仓（已有仓位且信号转弱/风险上升）、卖出（趋势破坏或风险显著恶化）。必须结合 Kronos 5 日预期、均线/周线、量化风险、基本面和宏观信号给出其中一档，并在 conclusion 中包含一句动作理由；禁止“谨慎/观望”“谨慎”“观望”“建议关注”等合并词充当 recommendation。视角规则：问题属建仓视角（如“现在能买吗”“能不能买”）时只能输出 买入/持有/观察；问题明确提及已有持仓、减仓或卖出时输出 加仓/持有/减仓/卖出；未说明视角时默认按建仓视角处理。
 宏观问题每个文字字段最多 2 句，避免长篇解释导致 JSON 被截断。
 macro_signals 可省略或最多返回 5 条最关键摘要；后端会用真实 provider 结构化信号补齐。每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
 time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。时间分层规则：S-短期（天到周）关注预测市场近月、价格动量、VIX、期权 skew、FOMC实时概率；M-中期（周到月）关注收益率曲线变化、CFTC持仓变动、信用利差、宏观数据发布；L-长期（月到季度）关注信用周期拐点、GDP预测修正、BIS信用缺口、行业库存周期。每层必须给出独立的 judgment 和该层的 confidence，不同层的 confidence 可以不同。
@@ -5039,7 +5149,7 @@ asset_reports: [
     "fundamentals": "该标的基本面",
     "risk": "该标的风险",
     "uncertainties": "该标的不确定性",
-    "recommendation": "持有",
+    "recommendation": "买入",
     "confidence": 0.6,
     "risk_level": "中",
     "disclaimer": "仅供研究"
@@ -5575,7 +5685,7 @@ def _apply_macro_evidence_guard(report: dict[str, Any], macro_context: dict[str,
             f"（{', '.join(dimension_labels) if dimension_labels else '无'}），不能给出高置信度强结论。"
         )
     report["confidence"] = min(float(report.get("confidence") or 0.0), cap)
-    if str(report.get("recommendation") or "") in {"买入", "强烈买入", "增持"}:
+    if str(report.get("recommendation") or "") in {"买入", "强烈买入", "增持", "加仓"}:
         report["recommendation"] = "观察"
     for key in ("macro_analysis", "cross_validation", "uncertainties"):
         value = str(report.get(key) or "").strip()
