@@ -10,9 +10,10 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
-from kronos_fincept.runtime_env import apply_low_memory_defaults
+from kronos_fincept.runtime_env import apply_low_memory_defaults, apply_pandas_string_compat
 
 apply_low_memory_defaults()
+apply_pandas_string_compat()
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError

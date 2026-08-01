@@ -26,3 +26,20 @@ def apply_low_memory_defaults() -> None:
         return
     for key, value in LOW_MEMORY_ENV_DEFAULTS.items():
         os.environ.setdefault(key, value)
+
+
+def apply_pandas_string_compat() -> None:
+    """Disable pandas 3 Arrow-backed string inference to avoid native crashes.
+
+    pandas 3.0.x defaults to ``future.infer_string=True``; with pyarrow 25 on
+    Windows, concurrent DataFrame construction inside akshare can hit a native
+    access violation in ``pandas.core.arrays.string_arrow`` and kill the whole
+    process (no Python traceback). Object-dtype strings restore pandas 2.x
+    behavior and bypass that code path entirely.
+    """
+    try:
+        import pandas as _pandas
+
+        _pandas.set_option("future.infer_string", False)
+    except Exception:
+        pass
