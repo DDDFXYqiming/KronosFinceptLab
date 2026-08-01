@@ -5017,6 +5017,7 @@ conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties,
 如果 trusted_project_context.macro 存在，还必须输出：
 macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions, time_layered_conclusions。
 宏观问题的 conclusion 必须第一字符起直接回答用户问题，格式为“结论：……”，只写核心判断和行动方向；macro_analysis 必须只写支撑判断的事实、信号和不确定性，禁止重复 conclusion，也不要以“结论：”开头。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
+conclusion 必须直接回应问题中的具体对象（问题提到 A股/黄金/美联储/比特币等，结论必须出现对应对象），并给出明确倾向（如“偏多/偏空/震荡/磨底/尚未确认/仍偏强”等）；禁止用“证据满足/需观察/等待确认”等与问题无关的套话充当结论主体；即使证据不足，也要先给出基于现有信号的当前倾向，再说明不确定性与监控条件。
 宏观问题每个文字字段最多 2 句，避免长篇解释导致 JSON 被截断。
 macro_signals 可省略或最多返回 5 条最关键摘要；后端会用真实 provider 结构化信号补齐。每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
 time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。时间分层规则：S-短期（天到周）关注预测市场近月、价格动量、VIX、期权 skew、FOMC实时概率；M-中期（周到月）关注收益率曲线变化、CFTC持仓变动、信用利差、宏观数据发布；L-长期（月到季度）关注信用周期拐点、GDP预测修正、BIS信用缺口、行业库存周期。每层必须给出独立的 judgment 和该层的 confidence，不同层的 confidence 可以不同。
@@ -5196,26 +5197,6 @@ def _macro_question_focus(question: str) -> str:
     return "general"
 
 
-def _macro_fallback_conclusion_is_too_generic(question: str, conclusion: Any) -> bool:
-    """Reject a syntactically valid but non-responsive macro conclusion."""
-
-    text = str(conclusion or "").strip().lower()
-    if not text:
-        return True
-    focus = _macro_question_focus(question)
-    if focus == "rate_direction":
-        return not bool(re.search(r"加息|降息|维持|无法确认|观望", text, re.IGNORECASE))
-    if focus == "commodity":
-        return not bool(re.search(r"黄金|白银|原油|商品|锂矿|碳酸锂|锂电|供需|买|追高|观望|分批", text, re.IGNORECASE))
-    if focus == "crypto":
-        return not bool(re.search(r"比特币|加密|反转|见底|买|追高|观望", text, re.IGNORECASE))
-    if focus == "growth_assets":
-        return not bool(re.search(r"科技|ai|人工智能|半导体|泡沫|估值|买|追高|观望", text, re.IGNORECASE))
-    if focus == "equities":
-        return not bool(re.search(r"股票|股市|指数|大盘|买|追高|观望|配置", text, re.IGNORECASE))
-    return False
-
-
 def _macro_local_conclusion(
     question: str,
     *,
@@ -5380,9 +5361,6 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
         normalized["macro_analysis"] = _macro_analysis_from_signals(
             _normalize_macro_signals(macro_context.get("signals"))
         )
-    if _macro_fallback_conclusion_is_too_generic(macro_context.get("question", ""), normalized.get("conclusion")):
-        normalized["conclusion"] = fallback.get("conclusion")
-        normalized["recommendation"] = fallback.get("recommendation", normalized.get("recommendation"))
     normalized = _annotate_macro_monitoring_signals(normalized, macro_context)
     normalized = _guard_unverified_commodity_prices(normalized, macro_context, fallback)
     normalized = _apply_macro_evidence_guard(normalized, macro_context)
