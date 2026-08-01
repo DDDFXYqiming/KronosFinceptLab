@@ -63,8 +63,8 @@ type ActiveMacroRun = {
   startedAt: number;
 };
 const _HARDCODED_EXAMPLES = [
-  "WW3 的概率是多少",
   "现在适合买黄金吗",
+  "美联储下一步会加息还是降息",
   "AI 是不是泡沫",
   "比特币到底了吗",
 ];

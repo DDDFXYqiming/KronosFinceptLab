@@ -41,7 +41,7 @@ const LOADING_STEPS = [
 const _HARDCODED_EXAMPLES = [
   `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`,
   "比较招商银行和贵州茅台的中短期风险",
-  "分析一下 AAPL 和 NVDA 最近走势",
+  "腾讯控股技术面怎么看",
 ];
 
 const DEFAULT_QUESTION = `帮我看看${DEFAULT_SYMBOL_NAME}现在能不能买`;

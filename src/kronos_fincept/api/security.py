@@ -262,7 +262,7 @@ def _rate_policy(category: str) -> tuple[int, int]:
         "batch": (10, 60),
         "backtest": (6, 60),
         "llm": (20, 3600),
-        "suggestions": (10, 3600),
+        "suggestions": (60, 3600),
         "data": (60, 60),
         "alert": (20, 60),
         "default": (120, 60),

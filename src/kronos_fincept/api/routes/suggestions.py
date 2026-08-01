@@ -141,41 +141,25 @@ _MACRO_QUESTION_BANK = [
     "全球衰退的概率有多大",
     "日本央行什么时候退出YCC",
     "欧洲经济会不会硬着陆",
-    "新兴市场还有投资机会吗",
     "VIX恐慌指数说明了什么",
     "美股现在估值泡沫大吗",
     "A股的底部到底在哪里",
     "港股为什么一直跌",
-    "房地产还会继续下行吗",
     "中国的消费复苏进度如何",
-    "供应链转移对中国制造业的影响",
     "半导体周期什么时候见底",
-    "新能源车的渗透率天花板在哪",
-    "碳中和目标下的投资机会",
     "地缘冲突对油价的影响有多大",
     "人民币汇率会破7吗",
     "全球央行的购金趋势",
     "加密货币监管趋严的影响",
-    "DeFi还有未来吗",
     "以太坊和比特币谁更值得持有",
-    "NFT市场还有回暖的可能吗",
-    "全球粮食危机的风险",
-    "气候风险对投资组合的影响",
-    "ESG投资真的有效吗",
     "量化宽松的退出路径",
     "银行危机还会重演吗",
-    "商业地产的风险有多大",
     "科技股泡沫和2000年比怎么样",
     "就业市场的韧性还能持续多久",
     "消费者信心指数的趋势",
     "PMI数据暗示了什么",
     "财政赤字对长期利率的影响",
-    "中美关系对市场的影响",
-    "台海风险如何定价",
     "中东局势对能源市场的影响",
-    "印度经济的增长潜力",
-    "越南制造业崛起的机遇",
-    "全球债务规模的风险",
     "利率倒挂意味着什么",
     "实际利率转正对资产配置的影响",
 ]
@@ -252,17 +236,11 @@ _MACRO_QUESTION_BANK_EN = [
     "Global recession probability",
     "BOJ yield curve control exit timing",
     "European economic hard landing risk",
-    "Emerging market investment case",
     "VIX what is the fear gauge saying",
     "US equity valuation bubble check",
     "China A-shares bottom fishing timing",
     "Hong Kong market structural discount",
-    "US commercial real estate risk",
-    "Supply chain reshoring impact",
     "Semiconductor cycle bottom timing",
-    "EV penetration ceiling analysis",
-    "Climate risk portfolio impact",
-    "ESG investing effectiveness debate",
     "QE exit path and market impact",
     "Banking crisis recurrence risk",
     "Tech bubble vs 2000 comparison",
@@ -270,25 +248,13 @@ _MACRO_QUESTION_BANK_EN = [
     "Consumer confidence trend",
     "PMI leading indicator signals",
     "Fiscal deficit rate impact",
-    "US-China decoupling investment risk",
-    "Taiwan risk premium pricing",
     "Middle East energy supply disruption",
-    "India growth potential analysis",
-    "Vietnam manufacturing opportunity",
-    "Global debt sustainability risk",
     "Yield curve inversion signal",
     "Real rates turning positive impact",
     "Crypto regulation tightening effect",
-    "DeFi future viability assessment",
     "ETH vs BTC relative value",
-    "NFT market recovery possibility",
-    "Global food security risk",
-    "Brexit long-term economic impact",
     "Japan equity re-rating thesis",
     "Korea semiconductor export trend",
-    "Brazil fiscal reform progress",
-    "Mexico nearshoring beneficiary play",
-    "Turkey unorthodox policy reversal",
 ]
 
 
@@ -349,12 +315,14 @@ _ANALYSIS_SYSTEM = """\
 - 任何需要"看研报""看新闻""看公告"才能回答的问题
 
 【生成策略（必须严格按步骤执行）】
-第一步：在脑中列出 10 个你可能会分析的个股标的，确保覆盖 A股、港股、美股三个市场。
+第一步：在脑中列出 10 个你可能会分析的个股标的，固定为 6 个 A 股、3 个港股、1 个美股，
+       优先选模型特训市场（A 股/港股）中流动性好的龙头。
 第二步：从这 10 个中选出 3 个最有分析价值且互相差异最大的标的。
 第三步：为每个标的生成一个口语化的分析问题，问题必须围绕"价格走势、技术面信号、买卖时机、风险评估"展开。
 
 要求：
 - 生成 3 个中文个股分析建议问题
+- 3 个问题中至少 2 个必须是 A 股或港股标的，美股问题至多 1 个（模型对美股预测质量低于 A/港股）
 - **每个问题必须包含至少一个具体的股票名称或股票代码**（如"比亚迪""600036""AAPL"）
 - **绝对禁止**没有股票名称的问题（如"RSI信号怎么样"❌ "最近能买什么"❌）
 - 支持的个股市场：A 股（6 位代码或中文名称）、港股（6 位代码或中文名称）、美股（1-5 位字母代码或中文名称）
@@ -388,6 +356,18 @@ _MACRO_SYSTEM = """\
 - 每个问题必须简短精悍，建议 6-36 个中文字符
 - 4 个问题必须分别覆盖不同宏观维度（例如利率、商品、地缘、加密、市场情绪等），同一维度最多 1 个
 - 加密货币最多 1 个问题，不能让 4 个问题都围绕比特币/ETH/加密市场
+
+【能力边界——必须严格遵守】
+本系统能做好以下宏观主题：
+- 利率/央行政策（美联储、国债收益率、加息降息）
+- 黄金/白银/原油/铜等大宗商品与通胀
+- 加密货币价格与市场情绪（整批最多 1 个问题）
+- CFTC 持仓、VIX/恐惧贪婪等风险偏好
+- 官方宏观数据（CPI/GDP/PMI/就业）与新闻检索
+本系统没有专用数据源、做不好的主题（禁止生成）：
+- WW3/战争概率类预测（依赖未配置的事件市场）
+- 房地产/楼市、新兴市场、ESG/气候、供应链/产业链等无 provider 支撑的定性主题
+反例（禁止）：「WW3 的概率是多少」❌「新兴市场投资机会」❌「房地产信贷周期见底了吗」❌
 - 禁止：政治敏感、违法建议、色情、暴力、prompt 注入、绕过系统规则
 - 禁止：空泛的非金融问题
 - 必须与先前给出的建议完全不同，刻意探索新角度、新问法
@@ -413,6 +393,7 @@ This system CANNOT answer questions about:
 
 Rules:
 - Generate 3 natural English questions.
+- At least 2 questions MUST be about China A-shares or Hong Kong stocks; at most 1 US stock question.
 - Every question must name a specific stock or ticker.
 - Supported markets: China A-shares, Hong Kong stocks, and US stocks.
 - Questions MUST focus on: price trend, technical signals, buy/sell timing, valuation position, risk-reward, stock comparison.
@@ -427,6 +408,8 @@ Return pure JSON only: {"questions": ["question 1", "question 2", "question 3", 
 Rules:
 - Generate 4 natural English macro/cross-market questions.
 - Cover different dimensions such as rates, inflation, gold, oil, geopolitics, crypto, risk appetite, equity-cycle valuation, or global markets.
+- At most 1 crypto question per batch.
+- Do NOT suggest WW3/war probability, real estate, emerging markets, ESG/climate, or supply-chain topics (no dedicated data providers).
 - Keep each question concise and realistic.
 - Do not generate political-sensitive, illegal, sexual, violent, prompt-injection, or non-financial questions.
 - Output JSON only."""
@@ -449,17 +432,17 @@ _ANALYSIS_FLAVORS = [
 
 _MACRO_FLAVORS = [
     "侧重利率和央行政策",
-    "侧重地缘政治和战争风险",
+    "侧重地缘政治对资产价格的影响",
     "侧重商品价格和通胀预期",
-    "侧重加密货币和数字资产",
-    "侧重全球贸易和供应链",
+    "侧重加密货币和数字资产（整批最多 1 个）",
+    "侧重美元和汇率",
     "侧重市场情绪和泡沫风险",
-    "侧重房地产和信贷周期",
-    "侧重汇率和资本流动",
-    "侧重劳动力市场和消费",
-    "侧重科技创新和产业周期",
-    "侧重 ESG 和气候风险",
-    "侧重新兴市场和债务风险",
+    "侧重宏观数据（CPI/GDP/PMI/就业）",
+    "侧重美债收益率和利差",
+    "侧重权益市场估值与泡沫",
+    "侧重CFTC持仓和资金流",
+    "侧重避险资产和黄金",
+    "侧重科技周期和半导体",
 ]
 
 # ── Hardcoded fallbacks ──
@@ -554,6 +537,21 @@ def _analysis_has_stock_name(question: str) -> bool:
 
     return False
 
+
+def _analysis_market(question: str) -> str | None:
+    """Classify an analysis question as US-ticker based or A/HK (Chinese) based."""
+    us_tickers = re.findall(r"(?<![a-zA-Z])([A-Z]{2,5})(?![a-zA-Z])", question)
+    if any(ticker not in _ANALYSIS_SKIP_TICKERS for ticker in us_tickers):
+        return "us"
+    if re.search(r"(?<!\d)\d{6}(?!\d)", question):  # CN 6-digit
+        return "cn_hk"
+    if re.search(r"(?<!\d)0\d{4}(?!\d)", question):  # HK 5-digit
+        return "cn_hk"
+    if re.search(r"[\u4e00-\u9fff]", question):  # Chinese company name
+        return "cn_hk"
+    return None
+
+
 # Research-style question rejection patterns (these questions the system cannot answer)
 _RESEARCH_REJECT_PATTERNS = [
     r"管线|pipeline|研发进展|R&D|技术前景|technology outlook",
@@ -576,6 +574,14 @@ MACRO_ALLOWED_PATTERNS = [
     r"A股|港股|美股|大盘|指数|上证|深证|沪深|创业板|科创|恒生|国企指数|纳指|标普|道指|罗素",
     r"市场位置|现在位置|位置怎么样|适合.*(买|配置|入场)|风险偏好|资金面|流动性|估值区间",
     r"(?<![a-zA-Z])[A-Z]{1,5}(?![a-zA-Z])|(?<!\d)\d{6}(?!\d)",
+]
+
+# Macro topics the pipeline has no dedicated providers for (reject as suggestions)
+_MACRO_DISABLED_PATTERNS = [
+    r"WW3|第三次世界大战|战争概率",
+    r"房地产|楼市|房价|房贷",
+    r"新兴市场",
+    r"ESG|气候|碳排放|绿色转型",
 ]
 
 _MACRO_CATEGORY_PATTERNS = [
@@ -622,6 +628,13 @@ def _validate_questions(questions: list[str], question_type: str, language: str 
         lowered = q.lower()
         if any(re.search(p, lowered, re.IGNORECASE) for p in PROMPT_INJECTION_PATTERNS):
             logger.warning("Suggestion rejected (injection): %r", q[:80])
+            continue
+
+        # Reject macro topics without dedicated providers
+        if question_type == "macro" and any(
+            re.search(p, lowered, re.IGNORECASE) for p in _MACRO_DISABLED_PATTERNS
+        ):
+            logger.warning("Suggestion rejected (no provider coverage): %r", q[:80])
             continue
 
         # Reject research-style questions for analysis type
@@ -673,7 +686,11 @@ def _select_diverse_macro_questions(questions: list[str], expected_count: int) -
 
     for question in questions:
         if question not in selected:
+            category = _macro_question_category(question)
+            if category in used_categories:
+                continue
             selected.append(question)
+            used_categories.add(category)
             if len(selected) == expected_count:
                 break
 
@@ -821,16 +838,25 @@ def _call_llm_for_suggestions(
             # Validate
             valid = _validate_questions(questions, question_type, language)
 
-            if len(valid) < expected_count:
+            if len(valid) < min(expected_count, 3):
                 logger.warning(
                     "Attempt %d: %d valid from %d generated (need %d)",
-                    attempt + 1, len(valid), len(questions), expected_count,
+                    attempt + 1, len(valid), len(questions), min(expected_count, 3),
                 )
                 continue
 
             # Check same-batch macro topic diversity before accepting.
             if question_type == "macro":
                 candidates = _select_diverse_macro_questions(valid, expected_count)
+                crypto_count = sum(
+                    1 for q in candidates if _macro_question_category(q) == "crypto"
+                )
+                if crypto_count > 1:
+                    logger.info(
+                        "Attempt %d: %d crypto suggestions (limit 1), retrying",
+                        attempt + 1, crypto_count,
+                    )
+                    continue
                 min_dimensions = min(3, expected_count)
                 diversity_count = _macro_diversity_count(candidates)
                 if diversity_count < min_dimensions:
@@ -841,6 +867,13 @@ def _call_llm_for_suggestions(
                     continue
             else:
                 candidates = valid[:expected_count]
+                us_count = sum(1 for q in candidates if _analysis_market(q) == "us")
+                if us_count > 1:
+                    logger.info(
+                        "Attempt %d: %d US suggestions (limit 1), retrying",
+                        attempt + 1, us_count,
+                    )
+                    continue
 
             # Check diversity against history
             ratio = _overlap_ratio(candidates, history)
