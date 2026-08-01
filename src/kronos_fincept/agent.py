@@ -66,6 +66,7 @@ MACRO_MONITOR_FALLBACK_TOTAL_TIMEOUT_SECONDS = max(
     MACRO_MONITOR_FALLBACK_ITEM_TIMEOUT_SECONDS,
     float(os.getenv("KRONOS_MACRO_MONITOR_FALLBACK_TOTAL_TIMEOUT_SECONDS", "8")),
 )
+MACRO_MONITOR_BACKFILL_MAX_ITEMS = max(1, env_int("KRONOS_MACRO_MONITOR_BACKFILL_MAX_ITEMS", 3))
 # Compatibility name for integrations that imported the old constant. The
 # embedded path now follows complete-mode semantics instead of the old 8s cap.
 EMBEDDED_MACRO_PER_PROVIDER_TIMEOUT_SECONDS = COMPLETE_MACRO_PER_PROVIDER_TIMEOUT_SECONDS
@@ -5026,7 +5027,7 @@ cross_validation 和 contradictions 合起来视为“信号一致性评估”�
 contradictions 中每个矛盾必须用中文散文写明两个具体信号及其来源/Provider 名称与 observed_at（示例：“实际利率 2.41%（us_treasury，2026-07-29）与 CFTC 黄金净多 124831 手（cftc_cot，2026-07-21）方向矛盾：……”），严禁输出 signal_a/signal_b/reason 或 Signal a/Signal b/Reason 等键名式标签。
 黄金/央行类问题必须引用央行购金数据（central_bank_gold，WGC/中国央行）作为长期供需信号，并在 monitoring_signals 中给出央行购金趋势监控项（如“全球央行单月净购金跌破 0 吨”作为风险阈值）。
 probability_scenarios 为数组，每项包含 scenario, probability, basis。必须读取 trusted_project_context.macro.dimension_coverage；只有 sufficient_evidence=true 才能输出高置信度方向判断。少于 3 个独立宏观维度时必须明确说明缺口，不要编造，confidence 不得超过 0.45，recommendation 使用“观察”或“需更多证据”。概率总和应接近 1。
-monitoring_signals 为数组，每项包含 signal, current_value, threshold, meaning；至少给出 3 条可操作监控项（不足时说明原因）。
+monitoring_signals 为数组，每项包含 signal, current_value, threshold, meaning；至少给出 3 条可操作监控项（不足时说明原因）。signal 必须优先从本轮真实结构化信号（trusted_project_context.macro.signals 的 source/signal_type/interpretation）中选具体指标，使用与信号一致的具体名称（如“美国10Y实际收益率”“CFTC黄金净多持仓”“VIX指数”“全球央行单月净购金”“中国官方制造业PMI”），禁止“市场情绪”“资金面”“风险偏好”“经济前景”“复苏力度”等无法对应具体数据源或事件的抽象词；至少 2 条必须能对应具体结构化信号，其余才允许是事件型监控项（如 FOMC 会议、经济数据发布）。current_value 必须使用信号实际值，没有对应真实信号时写“未获取”，不得编造数值。
 asset_reports: [
   {{
     "symbol": "600036",
@@ -5631,15 +5632,280 @@ def _default_probability_scenarios(signals: list[dict[str, Any]]) -> list[dict[s
     ]
 
 
+_MACRO_MONITOR_SOURCE_LABELS: dict[str, str] = {
+    "us_treasury": "美国国债收益率",
+    "fred": "美联储FRED宏观数据",
+    "cftc_cot": "CFTC持仓",
+    "fear_greed": "CNN恐惧贪婪指数",
+    "altme_fng": "加密市场恐惧贪婪指数",
+    "china_macro_akshare": "中国宏观数据",
+    "china_macro_chinalive": "中国宏观实时数据",
+    "china_macro_nbs": "中国国家统计局数据",
+    "china_nbs_live": "中国国家统计局数据",
+    "china_bond_yield": "中国国债收益率",
+    "cboe_vix": "CBOE VIX波动率",
+    "cboe_options": "CBOE期权市场",
+    "central_bank_gold": "全球央行购金",
+    "polymarket": "Polymarket预测市场",
+    "kalshi": "Kalshi预测市场",
+    "kalshi_fed": "Kalshi美联储决议预测",
+    "cme_fedwatch": "CME FedWatch加息概率",
+    "source_project_macro_cache": "宏观缓存数据",
+    "dbnomics": "DBnomics宏观数据",
+    "bis": "BIS国际清算银行数据",
+    "worldbank": "世界银行数据",
+    "economic_calendar": "经济日历",
+    "yfinance_options": "Yahoo期权市场",
+    "deribit": "Deribit加密衍生品",
+    "coingecko": "CoinGecko加密行情",
+    "yahoo_price": "Yahoo行情",
+    "stooq": "Stooq行情",
+    "currency": "外汇汇率",
+    "edgar": "SEC EDGAR披露",
+    "rss_news": "RSS新闻",
+    "web_search": "网页搜索",
+    "anysearch": "网页搜索",
+}
+
+_MACRO_MONITOR_SIGNAL_TYPE_LABELS: dict[str, str] = {
+    "real_yield_10y": "美国10Y TIPS实际收益率",
+    "yield_curve_10y_2y_spread": "美国10Y-2Y名义收益率利差",
+    "breakeven_10y": "美国10Y盈亏平衡通胀率",
+    "managed_money_net_position": "CFTC管理资金净持仓",
+    "fomc_rate_probability": "美联储FOMC利率决议概率",
+    "fed_decision_probability": "美联储利率决议概率",
+    "prediction_market_probability": "预测市场价格",
+    "regulated_event_probability": "监管事件概率",
+    "market_sentiment": "市场情绪指数",
+    "vix_fear_proxy": "VIX恐惧指标",
+    "price_trend_1m": "月度价格趋势",
+    "price_update": "最新价格",
+    "central_bank_gold_pboc": "中国人民银行黄金储备",
+    "central_bank_gold_net": "全球央行单月净购金",
+    "central_bank_gold_trend": "全球央行购金趋势",
+    "central_bank_gold_top_buyer": "全球央行购金最大买家",
+    "central_bank_gold_survey": "全球央行黄金配置调查",
+    "crypto_global_risk_appetite": "加密市场风险偏好",
+    "real_gdp_growth": "实际GDP增速",
+    "policy_rate": "政策利率",
+    "inflation": "通胀",
+    "pmi": "PMI景气指数",
+    "rates": "利率/收益率",
+    "commodity": "大宗商品",
+    "flow": "资金流",
+    "liquidity": "流动性",
+    "growth": "经济增长",
+    "housing": "房地产",
+    "credit": "信贷",
+    "sentiment": "景气/信心",
+    "calendar": "经济日历事件",
+    "public_web_result": "公开网页信息",
+    "rss_news_item": "新闻事件",
+    "options_atm_iv": "期权ATM隐含波动率",
+    "options_skew_proxy": "期权偏斜指标",
+    "options_iv_term_structure": "期权隐含波动率期限结构",
+    "options_put_call_open_interest": "期权看跌/看涨持仓比",
+    "options_put_call_volume": "期权看跌/看涨成交量比",
+    "options_max_pain": "期权最大痛点",
+    "deribit_atm_iv": "Deribit ATM隐含波动率",
+    "deribit_skew_proxy": "Deribit偏斜指标",
+    "deribit_iv_term_structure": "Deribit隐含波动率期限结构",
+    "crypto_futures_basis": "加密期货基差",
+    "fx_rate_1m_change": "汇率1个月变动",
+    "treasury_fx_exchange_rate": "美债外汇汇率",
+    "sec_recent_filing": "SEC最新披露",
+    "risk": "风险指标",
+    "options": "期权市场",
+    "macro": "宏观指标",
+    "crypto": "加密市场",
+}
+
+_MACRO_MONITOR_SIGNAL_TYPE_ALIASES: dict[str, str] = {
+    "managed_money_net_position": "净多持仓 净空持仓 净持仓 持仓 净多",
+    "real_yield_10y": "实际收益率 实际利率 美债实际收益率",
+    "yield_curve_10y_2y_spread": "收益率曲线 利差 期限利差 倒挂",
+    "breakeven_10y": "盈亏平衡 通胀预期 通胀率",
+    "market_sentiment": "市场情绪 情绪 恐慌贪婪",
+    "vix_fear_proxy": "VIX 恐慌 波动率 恐惧贪婪",
+    "central_bank_gold_net": "央行购金 净购金 央行买金",
+    "central_bank_gold_trend": "央行购金 购金趋势",
+    "central_bank_gold_pboc": "中国央行 人民银行 黄金储备",
+    "fomc_rate_probability": "美联储 加息概率 降息概率 FOMC",
+    "fed_decision_probability": "美联储 加息概率 降息概率",
+    "prediction_market_probability": "预测市场 概率 隐含概率",
+    "price_trend_1m": "价格 涨跌 趋势 月度",
+    "price_update": "价格 最新价",
+    "real_gdp_growth": "GDP 增长 增速",
+    "policy_rate": "政策利率 基准利率",
+    "inflation": "通胀 CPI PPI",
+    "pmi": "PMI 制造业 景气",
+    "rates": "利率 收益率 国债",
+    "commodity": "大宗商品 原油 黄金 铜",
+    "flow": "资金流 资金面 净流入 北向",
+    "liquidity": "流动性 资金面 回购 逆回购",
+    "growth": "经济增长 增长 增速",
+    "credit": "信贷 社融 贷款",
+    "housing": "房地产 房价",
+    "sentiment": "景气 信心 情绪",
+}
+
+_MACRO_MONITOR_SERIES_LABELS: dict[str, str] = {
+    "china_gdp": "中国GDP同比",
+    "china_gdp_absolute": "中国GDP总量",
+    "china_pmi": "中国官方制造业PMI",
+    "caixin_pmi": "财新制造业PMI",
+    "china_non_man_pmi": "中国非制造业PMI",
+    "china_pmi_new_orders": "中国PMI新订单",
+    "china_bci": "中国企业景气指数",
+    "china_cpi_yoy": "中国CPI同比",
+    "china_ppi_yoy": "中国PPI同比",
+    "china_lpr_1y": "中国1年期LPR",
+    "china_lpr_5y": "中国5年期LPR",
+    "china_bond_1y": "中国1年期国债收益率",
+    "china_bond_5y": "中国5年期国债收益率",
+    "china_bond_10y": "中国10年期国债收益率",
+    "china_bond_30y": "中国30年期国债收益率",
+    "cn_us_bond_spread": "中美10年期国债利差",
+    "china_r007": "中国R007回购利率",
+    "china_shibor_overnight": "中国隔夜SHIBOR",
+    "china_omo_7d": "中国7天逆回购利率",
+    "china_slf_7d": "中国7天常备借贷便利利率",
+    "central_bank_oml": "中国央行公开市场流动性",
+    "local_gov_bond": "中国地方政府债券发行",
+    "china_industrial_growth_yoy": "中国工业增加值同比",
+    "china_retail_sales_yoy": "中国社会消费品零售同比",
+    "china_fai_yoy": "中国固定资产投资同比",
+    "china_real_estate_investment_yoy": "中国房地产投资同比",
+    "china_house_price_index": "中国房价指数",
+    "city_house_sales": "中国城市楼市成交",
+    "china_industrial_profit": "中国工业企业利润",
+    "china_electricity": "中国发电量",
+    "car_retail_sales": "中国乘用车零售销量",
+    "excavator_sales": "中国挖掘机销量",
+    "china_consumer_confidence": "中国消费者信心指数",
+    "china_loan_yoy": "中国人民币贷款同比",
+    "china_social_financing_yoy": "中国社融同比",
+    "china_social_financing_stock": "中国社融存量",
+    "china_m1_m2": "中国M1-M2剪刀差",
+    "m2_supply": "中国M2供应量",
+    "china_household_deposit": "中国居民存款",
+    "china_savings_rate": "中国储蓄率",
+    "china_forex_reserve": "中国外汇储备",
+    "china_unemployment_rate": "中国城镇调查失业率",
+    "china_export_yoy": "中国出口同比",
+    "china_import_usd": "中国进口额",
+    "china_trade_total": "中国进出口总额",
+    "nbs_v32_pmi": "中国官方制造业PMI",
+    "nbs_v32_cpi_yoy": "中国CPI同比",
+    "nbs_v32_ppi_yoy": "中国PPI同比",
+    "cnstats_pmi": "中国官方制造业PMI",
+    "cnstats_cpi_yoy": "中国CPI同比",
+    "cnstats_ppi_yoy": "中国PPI同比",
+    "cnstats_m2_yoy": "中国M2同比",
+    "cnstats_m2_level": "中国M2存量",
+    "cnstats_fixed_investment_yoy": "中国固定资产投资同比",
+    "cnstats_industrial_value_added_yoy": "中国工业增加值同比",
+    "cnstats_retail_sales_yoy": "中国社会消费品零售同比",
+    "hsgt_north": "北向资金净流入",
+    "hsgt_south": "南向资金净流入",
+    "market_volume": "A股市场成交额",
+    "china_margin_balance": "A股融资融券余额",
+    "usa_gdp": "美国GDP同比",
+    "usa_pmi": "美国ISM制造业PMI",
+    "ism_pmi": "美国ISM制造业PMI",
+    "usa_retail_sales_yoy": "美国零售销售同比",
+    "usa_industrial_production": "美国工业产出",
+    "usa_cpi_yoy": "美国CPI同比",
+    "usa_core_cpi_yoy": "美国核心CPI同比",
+    "usa_ppi_yoy": "美国PPI同比",
+    "usa_pce_core_yoy": "美国核心PCE同比",
+    "usa_pce_price_index": "美国PCE物价指数",
+    "usa_unrate": "美国失业率",
+    "usa_nonfarm_payrolls": "美国非农就业",
+    "usa_initial_claims_weekly": "美国当周初请失业金",
+    "usa_initial_claims_4w": "美国初请失业金四周均值",
+    "usa_jolts": "美国JOLTS职位空缺",
+    "usa_adp_employment": "美国ADP就业",
+    "usa_fed_funds_rate": "美国有效联邦基金利率",
+    "usa_fed_funds_target_lower": "美国联邦基金利率目标下限",
+    "usa_fed_funds_target_upper": "美国联邦基金利率目标上限",
+    "usa_bond_5y": "美国5年期国债收益率",
+    "usa_bond_10y": "美国10年期国债收益率",
+    "usa_real_rate_10y": "美国10Y TIPS实际收益率",
+    "usa_t10y2y_spread": "美国10Y-2Y国债利差",
+    "t10y2y_spread": "美国10Y-2Y国债利差",
+    "usa_breakeven_inflation_10y": "美国10年期盈亏平衡通胀率",
+    "usa_high_yield_spread": "美国高收益债信用利差",
+    "usa_m2_supply": "美国M2供应量",
+    "usa_fed_balance_sheet": "美联储资产负债表规模",
+    "fed_balance_sheet": "美联储资产负债表规模",
+    "usa_vix": "CBOE VIX指数",
+    "usa_consumer_confidence": "美国消费者信心指数",
+    "usa_housing_starts": "美国新屋开工",
+    "usa_building_permits": "美国营建许可",
+    "dollar_index": "美元指数",
+    "usa_dollar_index": "美元指数",
+    "wti_crude_oil": "WTI原油价格",
+    "usa_brent_crude_oil": "布伦特原油价格",
+    "london_gold": "伦敦金价格",
+    "usa_gold_price": "黄金价格",
+    "usa_gold_volatility": "黄金波动率",
+    "silver_price": "白银价格",
+    "lme_copper": "LME铜价",
+    "bdi": "波罗的海干散货指数",
+    "semiconductor_sales": "全球半导体销售额",
+    "eurozone_pmi": "欧元区制造业PMI",
+    "eurozone_services_pmi": "欧元区服务业PMI",
+    "bitcoin_price": "比特币价格",
+    "ethereum_price": "以太坊价格",
+    "FEDFUNDS": "美国有效联邦基金利率",
+    "DGS10": "美国10年期国债收益率",
+    "T10Y2Y": "美国10Y-2Y国债利差",
+    "T10YIE": "美国10年期盈亏平衡通胀率",
+    "CPIAUCSL": "美国CPI指数",
+    "PCEPI": "美国PCE物价指数",
+    "PAYEMS": "美国非农就业",
+    "UNRATE": "美国失业率",
+    "GDP": "美国GDP",
+    "INDPRO": "美国工业产出",
+    "RSAFS": "美国零售销售",
+    "WALCL": "美联储资产负债表规模",
+    "M2SL": "美国M2供应量",
+    "DCOILWTICO": "WTI原油价格",
+    "DCOILBRENTEU": "布伦特原油价格",
+    "VIXCLS": "CBOE VIX指数",
+    "BAMLH0A0HYM2": "美国高收益债信用利差",
+}
+
+_MACRO_MONITOR_SERIES_ID_LABELS: dict[str, str] = {
+    "VIX": "CBOE VIX指数",
+    "SKEW": "CBOE Skew偏斜指数",
+    "GVZ": "CBOE GVZ黄金波动率",
+    "OVX": "CBOE OVX原油波动率",
+    "TYVIX": "CBOE TYVIX国债波动率",
+}
+
+
 def _macro_monitoring_signal_label(signal: dict[str, Any]) -> str:
+    metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+    series_id = str(metadata.get("series_id") or metadata.get("series") or metadata.get("indicator") or "").strip()
+    series_label = _MACRO_MONITOR_SERIES_LABELS.get(series_id) or _MACRO_MONITOR_SERIES_ID_LABELS.get(series_id)
+    if series_label:
+        return series_label
     signal_type = str(signal.get("signal_type") or "").strip()
-    if signal_type == "real_yield_10y":
-        return "美国10Y TIPS实际收益率"
-    if signal_type == "yield_curve_10y_2y_spread":
-        return "美国10Y-2Y名义收益率利差"
-    if signal_type == "breakeven_10y":
-        return "美国10Y盈亏平衡通胀率"
-    return str(signal.get("source") or signal_type or "macro_signal")
+    label = _MACRO_MONITOR_SIGNAL_TYPE_LABELS.get(signal_type)
+    if label:
+        return label
+    meta_label = str(metadata.get("label") or "").strip()
+    if meta_label:
+        return meta_label
+    source = str(signal.get("source") or "").strip()
+    source_label = _MACRO_MONITOR_SOURCE_LABELS.get(source)
+    if source_label:
+        if signal_type and signal_type not in {"macro", "mixed"}:
+            return f"{source_label}·{signal_type}"
+        return source_label
+    return source or signal_type or "macro_signal"
 
 
 def _treasury_nominal_degradation(signals: list[dict[str, Any]]) -> str:
@@ -5691,8 +5957,17 @@ def _annotate_macro_monitoring_rows(
 
 def _monitoring_text_tokens(value: Any) -> set[str]:
     text = str(value or "").lower()
-    tokens = set(re.findall(r"[a-z0-9_]{2,}|[\u4e00-\u9fff]{2,}", text))
-    return {token for token in tokens if token not in {"当前", "信号", "数据", "市场", "可能", "需要", "如果"}}
+    raw_tokens = set(re.findall(r"[a-z0-9_]{2,}|[\u4e00-\u9fff]{2,}", text))
+    tokens = {token for token in raw_tokens if token not in {"当前", "信号", "数据", "市场", "可能", "需要", "如果"}}
+    # Chinese long runs are single tokens under the regex; add 2/3-gram shingles so
+    # names like "黄金净多持仓" can overlap with "净多持仓" / "黄金净多" variants.
+    for token in list(tokens):
+        if re.fullmatch(r"[\u4e00-\u9fff]{4,}", token):
+            chars = list(token)
+            for size in (2, 3):
+                for start in range(len(chars) - size + 1):
+                    tokens.add("".join(chars[start : start + size]))
+    return tokens
 
 
 def _monitoring_match_score(row: dict[str, Any], signal: dict[str, Any]) -> int:
@@ -5711,7 +5986,12 @@ def _monitoring_match_score(row: dict[str, Any], signal: dict[str, Any]) -> int:
     if row_name in {label, source, signal_type} or label in row_name:
         return 80
     row_tokens = _monitoring_text_tokens(row_name)
-    signal_tokens = _monitoring_text_tokens(f"{label} {signal_type} {source} {signal.get('interpretation')}")
+    metadata = signal.get("metadata") if isinstance(signal.get("metadata"), dict) else {}
+    meta_label = str(metadata.get("label") or metadata.get("series_id") or "").strip()
+    alias_tokens = _MACRO_MONITOR_SIGNAL_TYPE_ALIASES.get(signal_type, "")
+    signal_tokens = _monitoring_text_tokens(
+        f"{label} {signal_type} {source} {alias_tokens} {meta_label} {signal.get('interpretation')}"
+    )
     overlap = row_tokens & signal_tokens
     if not overlap:
         return 0
@@ -5876,6 +6156,55 @@ def _search_anysearch_monitoring_row(question: str, row: dict[str, Any]) -> dict
     return None
 
 
+def _backfill_verified_monitoring_signals(
+    rows: list[dict[str, Any]],
+    signals: list[dict[str, Any]],
+    referenced: set[tuple[str, str]],
+) -> list[dict[str, Any]]:
+    """Append the highest-confidence structured signals not referenced by any row."""
+    excluded_sources = {"anysearch", "web_search", "rss_news"}
+    candidates = [
+        signal
+        for signal in signals
+        if (str(signal.get("source") or "").lower(), str(signal.get("signal_type") or "").lower()) not in referenced
+        and str(signal.get("source") or "").lower() not in excluded_sources
+        and signal.get("value") is not None
+    ]
+
+    def _sort_key(signal: dict[str, Any]) -> tuple[float, float]:
+        observed = _parse_monitoring_datetime(signal.get("observed_at"))
+        timestamp = observed.timestamp() if observed else 0.0
+        confidence = float(signal.get("confidence") or 0.5)
+        return (confidence, timestamp)
+
+    candidates.sort(key=_sort_key, reverse=True)
+    existing_labels = {str(row.get("signal") or "").strip() for row in rows}
+    added = 0
+    for signal in candidates:
+        if added >= MACRO_MONITOR_BACKFILL_MAX_ITEMS:
+            break
+        label = _macro_monitoring_signal_label(signal)
+        if label in existing_labels:
+            continue
+        row = {
+            "signal": label,
+            "current_value": signal.get("value"),
+            "threshold": "方向变化或置信度低于 0.5",
+            "meaning": signal.get("interpretation"),
+        }
+        rows.append(
+            _monitoring_evidence_fields(
+                row,
+                signal,
+                status="verified",
+                evidence_role="structured_current",
+            )
+        )
+        existing_labels.add(label)
+        added += 1
+    return rows
+
+
 def _enrich_macro_monitoring_signals(
     rows: list[dict[str, Any]],
     signals: list[dict[str, Any]],
@@ -5884,11 +6213,13 @@ def _enrich_macro_monitoring_signals(
 ) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     fallback_rows: list[tuple[int, dict[str, Any]]] = []
+    referenced: set[tuple[str, str]] = set()
     for index, row in enumerate(rows):
         matched = _best_monitoring_signal(row, signals)
         if matched:
             source = str(matched.get("source") or "").lower()
             metadata = matched.get("metadata") if isinstance(matched.get("metadata"), dict) else {}
+            referenced.add((source, str(matched.get("signal_type") or "").lower()))
             if _monitoring_is_numeric(row) and (source in {"anysearch", "web_search"} or metadata.get("price_eligible") is False):
                 enriched.append(_unavailable_monitoring_row(row, reason="网页摘要不能作为数值行情来源"))
             else:
@@ -5902,6 +6233,7 @@ def _enrich_macro_monitoring_signals(
             enriched.append(_unavailable_monitoring_row(row, reason="等待 AnySearch 带日期的事件证据"))
             fallback_rows.append((index, row))
 
+    enriched = _backfill_verified_monitoring_signals(enriched, signals, referenced)
     if not fallback_rows or not question:
         return enriched
     fallback_rows = fallback_rows[:MACRO_MONITOR_FALLBACK_MAX_ITEMS]
@@ -5931,11 +6263,9 @@ def _enrich_macro_monitoring_signals(
 
 def _annotate_macro_monitoring_signals(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
     rows = _normalize_monitoring_signals(report.get("monitoring_signals"))
-    if not rows:
-        return report
     signals = _normalize_macro_signals(macro_context.get("signals")) or _normalize_macro_signals(report.get("macro_signals"))
     report = dict(report)
-    annotated = _annotate_macro_monitoring_rows(rows, signals)
+    annotated = _annotate_macro_monitoring_rows(rows, signals) if rows else []
     report["monitoring_signals"] = _enrich_macro_monitoring_signals(
         annotated,
         signals,
