@@ -146,6 +146,8 @@ def _fetch_a_symbol(
     symbol: str,
     start: str,
     end: str,
+    price_path: Path | None = None,
+    event_path: Path | None = None,
 ) -> dict[str, Any]:
     code = f"sh.{symbol}" if symbol.startswith(("5", "6", "9")) else f"sz.{symbol}"
     fields = "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,isST"
@@ -214,8 +216,8 @@ def _fetch_a_symbol(
 
     price_frame = pd.DataFrame(prices, columns=REQUIRED_COLUMNS)
     event_frame = pd.DataFrame(events)
-    price_path = RAW_DIR / f"cn_{symbol}.csv"
-    event_path = EVENT_DIR / f"cn_{symbol}.csv"
+    price_path = price_path or RAW_DIR / f"cn_{symbol}.csv"
+    event_path = event_path or EVENT_DIR / f"cn_{symbol}.csv"
     digest = _atomic_csv(price_frame, price_path)
     _atomic_csv(event_frame, event_path)
     return {
@@ -230,7 +232,15 @@ def _fetch_a_symbol(
     }
 
 
-def _fetch_hk_symbol(*, symbol: str, start: str, end: str, old_tail: dict[str, float] | None = None) -> dict[str, Any]:
+def _fetch_hk_symbol(
+    *,
+    symbol: str,
+    start: str,
+    end: str,
+    old_tail: dict[str, float] | None = None,
+    price_path: Path | None = None,
+    event_path: Path | None = None,
+) -> dict[str, Any]:
     import akshare as ak
 
     frame = ak.stock_hk_daily(symbol=symbol, adjust="qfq")
@@ -272,8 +282,8 @@ def _fetch_hk_symbol(*, symbol: str, start: str, end: str, old_tail: dict[str, f
             "source": "akshare_sina_qfq",
         }
     )
-    price_path = RAW_DIR / f"hk_{symbol}.csv"
-    event_path = EVENT_DIR / f"hk_{symbol}.csv"
+    price_path = price_path or RAW_DIR / f"hk_{symbol}.csv"
+    event_path = event_path or EVENT_DIR / f"hk_{symbol}.csv"
     digest = _atomic_csv(prices, price_path)
     _atomic_csv(events, event_path)
     entry = {
@@ -294,6 +304,111 @@ def _fetch_hk_symbol(*, symbol: str, start: str, end: str, old_tail: dict[str, f
             entry["seam_error"] = seam_error
         else:
             entry["status"] = "refreshed"
+    return entry
+
+
+def _append_incremental(
+    *,
+    symbol: str,
+    market: str,
+    price_path: Path,
+    event_path: Path,
+    new_price_path: Path,
+    new_event_path: Path,
+    seam_tolerance: float,
+) -> tuple[str | None, int, dict[str, Any]]:
+    """Append rows newer than the existing file; returns (seam_error, appended, digest_meta)."""
+    old_prices = pd.read_csv(price_path, dtype={"timestamp": str})
+    old_events = pd.read_csv(event_path, dtype={"timestamp": str, "date": str})
+    last_date = str(old_prices["timestamp"].max())
+
+    new_prices = pd.read_csv(new_price_path, dtype={"timestamp": str})
+    new_events = pd.read_csv(new_event_path, dtype={"timestamp": str, "date": str})
+    overlap = new_prices[new_prices["timestamp"] == last_date]
+    seam_error: str | None = None
+    if not overlap.empty and not old_prices.empty:
+        old_last = float(old_prices[old_prices["timestamp"] == last_date]["close"].iloc[0])
+        new_at_last = float(overlap["close"].iloc[0])
+        if abs(new_at_last - old_last) / max(old_last, 1e-9) > seam_tolerance:
+            seam_error = (
+                f"{symbol}: qfq seam mismatch on {last_date} "
+                f"(old={old_last:.6f} new={new_at_last:.6f})"
+            )
+
+    append_prices = new_prices[new_prices["timestamp"] > last_date]
+    append_events = new_events[new_events["date"] > last_date] if not new_events.empty else new_events.iloc[0:0]
+    if seam_error is None:
+        combined_prices = pd.concat([old_prices, append_prices], ignore_index=True)
+        combined_events = pd.concat([old_events, append_events], ignore_index=True)
+        price_digest = _atomic_csv(combined_prices, price_path)
+        event_digest = _atomic_csv(combined_events, event_path)
+        digest_meta = {"price_sha256": price_digest, "events_sha256": event_digest}
+    else:
+        digest_meta = {}
+    new_price_path.unlink(missing_ok=True)
+    new_event_path.unlink(missing_ok=True)
+    return seam_error, int(len(append_prices)), digest_meta
+
+
+def _incremental_a_symbol(*, bs: Any, symbol: str, end: str, seam_tolerance: float) -> dict[str, Any]:
+    price_path = RAW_DIR / f"cn_{symbol}.csv"
+    event_path = EVENT_DIR / f"cn_{symbol}.csv"
+    if not price_path.exists() or not event_path.exists():
+        return _fetch_a_symbol(bs, symbol=symbol, start="2021-08-01", end=end)
+    last_date = str(pd.read_csv(price_path, dtype={"timestamp": str})["timestamp"].max())
+    tmp_price = price_path.with_name(f".{price_path.stem}.incr.csv")
+    tmp_event = event_path.with_name(f".{event_path.stem}.incr.csv")
+    _fetch_a_symbol(bs, symbol=symbol, start=last_date, end=end, price_path=tmp_price, event_path=tmp_event)
+    seam_error, appended, digest_meta = _append_incremental(
+        symbol=symbol,
+        market="A",
+        price_path=price_path,
+        event_path=event_path,
+        new_price_path=tmp_price,
+        new_event_path=tmp_event,
+        seam_tolerance=seam_tolerance,
+    )
+    entry = {
+        "file": price_path.name,
+        "market": "A",
+        "status": "incremental",
+        "appended_rows": appended,
+    }
+    entry.update(digest_meta)
+    if seam_error is not None:
+        entry["status"] = "seam_error"
+        entry["seam_error"] = seam_error
+    return entry
+
+
+def _incremental_hk_symbol(*, symbol: str, end: str, seam_tolerance: float) -> dict[str, Any]:
+    price_path = RAW_DIR / f"hk_{symbol}.csv"
+    event_path = EVENT_DIR / f"hk_{symbol}.csv"
+    if not price_path.exists() or not event_path.exists():
+        return _fetch_hk_symbol(symbol=symbol, start="2021-08-01", end=end)
+    last_date = str(pd.read_csv(price_path, dtype={"timestamp": str})["timestamp"].max())
+    tmp_price = price_path.with_name(f".{price_path.stem}.incr.csv")
+    tmp_event = event_path.with_name(f".{event_path.stem}.incr.csv")
+    _fetch_hk_symbol(symbol=symbol, start=last_date, end=end, price_path=tmp_price, event_path=tmp_event)
+    seam_error, appended, digest_meta = _append_incremental(
+        symbol=symbol,
+        market="HK",
+        price_path=price_path,
+        event_path=event_path,
+        new_price_path=tmp_price,
+        new_event_path=tmp_event,
+        seam_tolerance=seam_tolerance,
+    )
+    entry = {
+        "file": price_path.name,
+        "market": "HK",
+        "status": "incremental",
+        "appended_rows": appended,
+    }
+    entry.update(digest_meta)
+    if seam_error is not None:
+        entry["status"] = "seam_error"
+        entry["seam_error"] = seam_error
     return entry
 
 
@@ -326,7 +441,15 @@ def _verify_continuity(path: Path, snapshot: dict[str, float], symbol: str) -> s
     return None
 
 
-def fetch_market_data(*, start: str, end: str, resume: bool, hk_workers: int, refresh: bool = False) -> dict[str, Any]:
+def fetch_market_data(
+    *,
+    start: str,
+    end: str,
+    resume: bool,
+    hk_workers: int,
+    refresh: bool = False,
+    incremental: bool = False,
+) -> dict[str, Any]:
     if not MEMBERSHIP_PATH.exists():
         raise FileNotFoundError(f"build universe first: {MEMBERSHIP_PATH}")
     membership = pd.read_csv(MEMBERSHIP_PATH, dtype={"symbol": str})
@@ -350,23 +473,32 @@ def fetch_market_data(*, start: str, end: str, resume: bool, hk_workers: int, re
         for index, symbol in enumerate(a_symbols, start=1):
             price_path = RAW_DIR / f"cn_{symbol}.csv"
             event_path = EVENT_DIR / f"cn_{symbol}.csv"
-            if resume and not refresh and price_path.exists() and event_path.exists():
-                report["files"].append({"file": price_path.name, "market": "A", "status": "resumed"})
-                continue
-            old_tail = _tail_close_snapshot(price_path) if refresh else {}
-            try:
-                entry = _fetch_a_symbol(bs, symbol=symbol, start=start, end=end)
-                if refresh and old_tail:
-                    seam_error = _verify_continuity(price_path, old_tail, symbol)
-                    if seam_error is not None:
-                        entry["status"] = "seam_error"
-                        entry["seam_error"] = seam_error
-                        report["errors"].append({"file": price_path.name, "error": seam_error})
-                    else:
-                        entry["status"] = "refreshed"
-                report["files"].append(entry)
-            except Exception as exc:
-                report["errors"].append({"file": price_path.name, "error": f"{type(exc).__name__}: {exc}"})
+            if incremental:
+                try:
+                    entry = _incremental_a_symbol(bs=bs, symbol=symbol, end=end, seam_tolerance=0.005)
+                    if entry.get("seam_error"):
+                        report["errors"].append({"file": price_path.name, "error": entry["seam_error"]})
+                    report["files"].append(entry)
+                except Exception as exc:
+                    report["errors"].append({"file": price_path.name, "error": f"{type(exc).__name__}: {exc}"})
+            else:
+                if resume and not refresh and price_path.exists() and event_path.exists():
+                    report["files"].append({"file": price_path.name, "market": "A", "status": "resumed"})
+                    continue
+                old_tail = _tail_close_snapshot(price_path) if refresh else {}
+                try:
+                    entry = _fetch_a_symbol(bs, symbol=symbol, start=start, end=end)
+                    if refresh and old_tail:
+                        seam_error = _verify_continuity(price_path, old_tail, symbol)
+                        if seam_error is not None:
+                            entry["status"] = "seam_error"
+                            entry["seam_error"] = seam_error
+                            report["errors"].append({"file": price_path.name, "error": seam_error})
+                        else:
+                            entry["status"] = "refreshed"
+                    report["files"].append(entry)
+                except Exception as exc:
+                    report["errors"].append({"file": price_path.name, "error": f"{type(exc).__name__}: {exc}"})
             if index % 20 == 0 or index == len(a_symbols):
                 _atomic_json(report, ACQUISITION_REPORT)
                 print(f"[A] {index}/{len(a_symbols)} errors={len(report['errors'])}", flush=True)
@@ -378,13 +510,16 @@ def fetch_market_data(*, start: str, end: str, resume: bool, hk_workers: int, re
         for symbol in hk_symbols:
             price_path = RAW_DIR / f"hk_{symbol}.csv"
             event_path = EVENT_DIR / f"hk_{symbol}.csv"
-            if resume and not refresh and price_path.exists() and event_path.exists():
-                report["files"].append({"file": price_path.name, "market": "HK", "status": "resumed"})
-                continue
-            old_tail = _tail_close_snapshot(price_path) if refresh else {}
-            futures[
-                pool.submit(_fetch_hk_symbol, symbol=symbol, start=start, end=end, old_tail=old_tail)
-            ] = symbol
+            if incremental:
+                futures[pool.submit(_incremental_hk_symbol, symbol=symbol, end=end, seam_tolerance=0.005)] = symbol
+            else:
+                if resume and not refresh and price_path.exists() and event_path.exists():
+                    report["files"].append({"file": price_path.name, "market": "HK", "status": "resumed"})
+                    continue
+                old_tail = _tail_close_snapshot(price_path) if refresh else {}
+                futures[
+                    pool.submit(_fetch_hk_symbol, symbol=symbol, start=start, end=end, old_tail=old_tail)
+                ] = symbol
         for index, future in enumerate(as_completed(futures), start=1):
             symbol = futures[future]
             try:
@@ -502,6 +637,7 @@ def main() -> None:
     parser.add_argument("--end", default="2026-07-31")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument("--incremental", action="store_true")
     parser.add_argument("--hk-workers", type=int, default=4)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--evaluation-manifest", type=Path, default=None)
@@ -544,6 +680,7 @@ def main() -> None:
                 resume=args.resume,
                 hk_workers=args.hk_workers,
                 refresh=args.refresh,
+                incremental=args.incremental,
             )
         elif stage == "clean":
             result = clean_dataset(start=args.start, end=args.end)

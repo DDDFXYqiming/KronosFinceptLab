@@ -212,6 +212,7 @@ def main() -> None:
     parser.add_argument("--end", default="2026-08-06")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument("--incremental", action="store_true")
     parser.add_argument("--hk-workers", type=int, default=4)
     parser.add_argument("--no-delistings", action="store_true")
     parser.add_argument("--no-dividends", action="store_true")
@@ -236,6 +237,7 @@ def main() -> None:
                 resume=args.resume,
                 hk_workers=args.hk_workers,
                 refresh=args.refresh,
+                incremental=args.incremental,
             )
         elif stage == "clean":
             result = clean_dataset(start=args.start, end=args.end, v7=v7)
