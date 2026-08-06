@@ -30,6 +30,8 @@ def model_paths() -> dict[str, Path]:
         "sff_fullv3_epoch3": base / "finetuned_largecap_sff_fullv3" / "basemodel" / "epoch_3",
         "sff_v3cont_best": base / "finetuned_largecap_sff_v3cont" / "basemodel" / "best_model",
         "sff_v3cont_epoch3": base / "finetuned_largecap_sff_v3cont" / "basemodel" / "epoch_3",
+        "fttok_predictor_best": base / "finetuned_largecap_v8_fttok_predictor" / "basemodel" / "best_model",
+        "fttok_predictor_epoch3": base / "finetuned_largecap_v8_fttok_predictor" / "basemodel" / "epoch_3",
     }
 
 
@@ -38,6 +40,7 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--samples-file", type=Path, required=True)
     parser.add_argument("--tokenizer-path", type=Path, required=True)
+    parser.add_argument("--fttok-tokenizer-path", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--fold", default="validation_2026_05_07")
     parser.add_argument("--device", choices=("directml", "cpu", "cuda"), default="directml")
@@ -45,9 +48,13 @@ def main() -> None:
     args = parser.parse_args()
 
     paths = model_paths()
+    fttok_keys = {"fttok_predictor_best", "fttok_predictor_epoch3"}
+    if args.fttok_tokenizer_path is None and any(paths[key].exists() for key in fttok_keys):
+        raise SystemExit("--fttok-tokenizer-path required when tokenizer-predictor checkpoints exist")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summary: list[dict[str, object]] = []
     for key, path in paths.items():
+        tokenizer_path = args.fttok_tokenizer_path if key in fttok_keys else args.tokenizer_path
         output = args.output_dir / f"{key}.json"
         if not path.exists():
             summary.append({"model_key": key, "model_path": str(path), "error": "model path not found"})
@@ -61,7 +68,7 @@ def main() -> None:
             "--fold", args.fold,
             "--samples-file", str(args.samples_file),
             "--model-path", str(path),
-            "--tokenizer-path", str(args.tokenizer_path),
+            "--tokenizer-path", str(tokenizer_path),
             "--output", str(output),
             "--device", args.device,
             "--batch-size", str(args.batch_size),
