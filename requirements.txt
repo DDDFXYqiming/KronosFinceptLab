@@ -19,6 +19,8 @@ baostock>=0.8.8
 tushare>=1.4
 yfinance>=0.2
 requests>=2.31
+openpyxl>=3.1
+pdfplumber>=0.11
 
 # Kronos model
 torch>=2.0

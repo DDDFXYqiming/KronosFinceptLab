@@ -42,7 +42,14 @@ class TushareSource(DataSource):
 
     @classmethod
     def configured(cls) -> bool:
-        return bool(os.environ.get("TUSHARE_TOKEN", "").strip())
+        if os.environ.get("TUSHARE_TOKEN", "").strip():
+            return True
+        try:
+            import tushare as ts
+
+            return bool(ts.get_token())
+        except Exception:
+            return False
 
     def fetch(self, endpoint: str, **kwargs) -> dict[str, Any]:
         started = time.perf_counter()
@@ -76,12 +83,14 @@ class TushareSource(DataSource):
         if self._client is not None:
             return self._client
         token = os.environ.get("TUSHARE_TOKEN", "").strip()
-        if not token:
-            raise RuntimeError("TUSHARE_TOKEN 未配置")
         try:
             import tushare as ts
         except ImportError as exc:
             raise RuntimeError("tushare 未安装，请安装 kronos-fincept-lab[astock] 或 pip install tushare") from exc
+        if not token:
+            token = str(ts.get_token() or "").strip()
+            if not token:
+                raise RuntimeError("TUSHARE_TOKEN 未配置（环境变量或 ts.set_token 本地存储）")
         ts.set_token(token)
         self._client = ts.pro_api()
         return self._client
