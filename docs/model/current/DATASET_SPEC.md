@@ -87,7 +87,7 @@ timestamp, open, high, low, close, volume, amount
 当前版本已解决历史指数成员的 PIT 选择，但还不是完整 point-in-time 交易数据库。后续数据工作只
 解决以下生产性问题，不围绕相同数据继续搜索局部训练参数：
 
-- 独立复权因子及公司行动事件；
+- 独立复权因子及公司行动事件；状态：Tushare 抽样验证已加入（`examples/build_clean_v7_largecap.py --stage tushare-sample`，当前 token 高频接口 1次/小时，单次验证 1 只），结果输出到 `output/tushare_validation/`，尚未切换 fetch 主路径；
 - 停牌、涨跌停和不可交易状态；
 - 退市日至最后可交易日的状态确认；
 - 模型冻结后新增数据的严格 OOS 标记。

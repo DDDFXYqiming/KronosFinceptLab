@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -44,6 +44,7 @@ MEMBERSHIP_PATH = RAW_DIR / "metadata" / "universe_membership.csv"
 EVENT_DIR = RAW_DIR / "metadata" / "events"
 ACQUISITION_REPORT = RAW_DIR / "acquisition_report.json"
 EVALUATION_MANIFEST = PROJECT_ROOT / "output" / "evaluation_manifest_largecap_v7_pit.json"
+TUSHARE_VALIDATION_DIR = PROJECT_ROOT / "output" / "tushare_validation"
 DATASET_VERSION = "clean_v7_largecap_pit"
 SPLITS = {
     "train_start": "2022-01-01",
@@ -630,15 +631,318 @@ def build_evaluation_manifest() -> dict[str, Any]:
     return manifest
 
 
+class _TushareRateLimited(RuntimeError):
+    pass
+
+
+def _tushare_pro() -> Any:
+    import tushare as ts
+
+    token = os.environ.get("TUSHARE_TOKEN", "").strip() or str(ts.get_token() or "").strip()
+    if not token:
+        raise RuntimeError("TUSHARE_TOKEN 未配置（环境变量或 ts.set_token 本地存储）")
+    ts.set_token(token)
+    return ts.pro_api(token)
+
+
+def _pro_call(fn: Any) -> Any:
+    try:
+        return fn()
+    except Exception as exc:
+        if "频率超限" in str(exc):
+            raise _TushareRateLimited(str(exc)[:200]) from exc
+        raise
+
+
+def _compact_date(value: str) -> str:
+    return str(value or "").replace("-", "").replace("/", "")
+
+
+def _ts_code(symbol: str) -> str:
+    cleaned = str(symbol).strip().upper()
+    if cleaned.endswith(".HK"):
+        return cleaned
+    if "." in cleaned:
+        base, suffix = cleaned.split(".", 1)
+        if suffix in {"SH", "SZ", "BJ"}:
+            return f"{base}.{suffix}"
+        if suffix == "SS":
+            return f"{base}.SH"
+    base = cleaned.removeprefix("SH").removeprefix("SZ").removeprefix("BJ")
+    if base.startswith(("6", "5", "9")):
+        return f"{base}.SH"
+    if base.startswith(("4", "8")):
+        return f"{base}.BJ"
+    return f"{base}.SZ"
+
+
+def _baostock_code(symbol: str) -> str:
+    return f"sh.{symbol}" if symbol.startswith(("5", "6", "9")) else f"sz.{symbol}"
+
+
+def _baostock_qfq_close(symbol: str, start: str, end: str) -> pd.DataFrame:
+    """Read-only BaoStock qfq close series; never writes RAW_DIR."""
+    import baostock as bs
+
+    login = bs.login()
+    if login.error_code != "0":
+        raise RuntimeError(f"BaoStock login failed: {login.error_msg}")
+    try:
+        result = bs.query_history_k_data_plus(
+            code=_baostock_code(symbol),
+            fields="date,close",
+            start_date=start,
+            end_date=end,
+            frequency="d",
+            adjustflag="2",
+        )
+        rows: list[list[str]] = []
+        while result.error_code == "0" and result.next():
+            rows.append(result.get_row_data())
+        if result.error_code != "0":
+            raise RuntimeError(f"BaoStock {symbol}: {result.error_msg}")
+    finally:
+        bs.logout()
+    frame = pd.DataFrame(rows, columns=["date", "close"])
+    frame["date"] = pd.to_datetime(frame["date"])
+    frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+    return frame.dropna(subset=["close"]).sort_values("date").reset_index(drop=True)
+
+
+def _validate_a_share_tushare(pro: Any, symbol: str, start: str, end: str) -> dict[str, Any]:
+    ts_code = _ts_code(symbol)
+    limited: list[str] = []
+
+    def safe(label: str, fn: Any) -> Any:
+        try:
+            return _pro_call(fn)
+        except _TushareRateLimited as exc:
+            limited.append(f"{label}: {exc}")
+            return None
+
+    daily = safe("daily", lambda: pro.daily(ts_code=ts_code, start_date=_compact_date(start), end_date=_compact_date(end)))
+    factor = safe(
+        "adj_factor",
+        lambda: pro.adj_factor(ts_code=ts_code, start_date=_compact_date(start), end_date=_compact_date(end)),
+    )
+    dividend = safe("dividend", lambda: pro.dividend(ts_code=ts_code))
+
+    payload: dict[str, Any] = {
+        "symbol": symbol,
+        "ts_code": ts_code,
+        "market": "A",
+        "provider": "tushare",
+        "run_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "window": {"start": start, "end": end},
+        "limited_endpoints": limited,
+        "notes": [],
+        "methodology": "qfq_close = close * adj_factor / latest_adj_factor；与 BaoStock adjustflag=2 前复权收盘对比",
+    }
+
+    if daily is None or daily.empty:
+        payload["status"] = "limited" if limited else "unverified"
+        payload["notes"].append("daily 数据不可用，未生成对比。")
+        return payload
+
+    daily = daily.sort_values("trade_date").reset_index(drop=True)
+    daily["trade_date"] = pd.to_datetime(daily["trade_date"])
+    payload["rows"] = len(daily)
+    payload["latest_close"] = float(daily["close"].iloc[-1])
+
+    if factor is None or factor.empty:
+        payload["status"] = "limited" if limited else "unverified"
+        payload["notes"].append("adj_factor 不可用，无法自算前复权。")
+        return payload
+
+    factor = factor.sort_values("trade_date").reset_index(drop=True)
+    factor["trade_date"] = pd.to_datetime(factor["trade_date"])
+    latest_factor = float(factor["adj_factor"].iloc[-1])
+    merged = daily.merge(factor[["trade_date", "adj_factor"]], on="trade_date", how="left")
+    merged["qfq_close"] = merged["close"] * merged["adj_factor"] / latest_factor
+    payload["latest_adj_factor"] = latest_factor
+    payload["factor_rows"] = len(factor)
+
+    factor_changes = factor.loc[factor["adj_factor"].diff().fillna(0) != 0, "trade_date"].dt.strftime("%Y-%m-%d").tolist()
+    event_dates: set[str] = set(factor_changes)
+    if dividend is not None and not dividend.empty and "ex_date" in dividend.columns:
+        div_dates = pd.to_datetime(dividend["ex_date"], errors="coerce").dropna().dt.strftime("%Y-%m-%d")
+        event_dates.update(div_dates.tolist())
+        payload["dividend_rows"] = len(dividend)
+        payload["dividend_ex_dates"] = sorted(div_dates.tolist())
+    else:
+        payload["dividend_rows"] = 0
+        payload["notes"].append("dividend 不可用或为空。")
+    payload["factor_change_dates"] = sorted(factor_changes)
+
+    try:
+        bs_frame = _baostock_qfq_close(symbol, _compact_date(start), _compact_date(end))
+    except Exception as exc:
+        payload["status"] = "unverified"
+        payload["notes"].append(f"BaoStock 对比失败：{type(exc).__name__}: {str(exc)[:200]}")
+        return payload
+
+    comparison = merged.merge(
+        bs_frame,
+        left_on="trade_date",
+        right_on="date",
+        how="inner",
+        suffixes=("_ts", "_bs"),
+    )
+    comparison["pct_diff"] = (comparison["qfq_close"] - comparison["close_bs"]) / comparison["close_bs"] * 100.0
+    payload["compare_rows"] = len(comparison)
+    if comparison.empty:
+        payload["status"] = "unverified"
+        payload["notes"].append("与 BaoStock 无重叠交易日。")
+        return payload
+
+    abs_diff = comparison["pct_diff"].abs()
+    payload["max_abs_pct_diff"] = round(float(abs_diff.max()), 4)
+    payload["mean_abs_pct_diff"] = round(float(abs_diff.mean()), 4)
+    gt05 = comparison.loc[abs_diff > 0.5]
+    payload["gt05_count"] = len(gt05)
+    off_event = gt05.loc[~gt05["trade_date"].dt.strftime("%Y-%m-%d").isin(event_dates)]
+    payload["off_event_gt05_count"] = len(off_event)
+    if len(gt05) == 0:
+        payload["status"] = "verified"
+    elif len(off_event) == 0 and float(abs_diff.max()) < 3.0:
+        payload["status"] = "event_mismatch"
+        payload["notes"].append("偏差集中在除权除息/因子变化日，判定为事件口径差异，非价格错误。")
+    else:
+        payload["status"] = "unverified"
+        payload["notes"].append("存在非事件日偏差大于 0.5%。")
+    return payload
+
+
+def _validate_hk_tushare(pro: Any, symbol: str, start: str, end: str) -> dict[str, Any]:
+    ts_code = _ts_code(symbol)
+    limited: list[str] = []
+
+    def safe(label: str, fn: Any) -> Any:
+        try:
+            return _pro_call(fn)
+        except _TushareRateLimited as exc:
+            limited.append(f"{label}: {exc}")
+            return None
+
+    hk = safe(
+        "hk_daily",
+        lambda: pro.hk_daily(ts_code=ts_code, start_date=_compact_date(start), end_date=_compact_date(end)),
+    )
+    payload: dict[str, Any] = {
+        "symbol": symbol,
+        "ts_code": ts_code,
+        "market": "HK",
+        "provider": "tushare_hk_daily",
+        "run_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "window": {"start": start, "end": end},
+        "limited_endpoints": limited,
+        "notes": [],
+        "methodology": "hk_daily 与 AkShare/Sina qfq 收盘交叉验证",
+    }
+    if hk is None or hk.empty:
+        payload["status"] = "limited" if limited else "unverified"
+        payload["notes"].append("hk_daily 不可用。")
+        return payload
+
+    hk = hk.sort_values("trade_date").reset_index(drop=True)
+    hk["trade_date"] = pd.to_datetime(hk["trade_date"])
+    payload["rows"] = len(hk)
+    try:
+        import akshare as ak
+
+        ak_frame = ak.stock_hk_daily(symbol=str(symbol).replace(".HK", ""), adjust="qfq")
+        ak_frame = ak_frame.reset_index(drop=True)
+        ak_frame["date"] = pd.to_datetime(ak_frame["date"])
+        ak_frame["close"] = pd.to_numeric(ak_frame["close"], errors="coerce")
+        ak_frame = ak_frame.dropna(subset=["close"])
+    except Exception as exc:
+        payload["status"] = "unverified"
+        payload["notes"].append(f"AkShare 对比失败：{type(exc).__name__}: {str(exc)[:200]}")
+        return payload
+
+    comparison = hk.merge(
+        ak_frame[["date", "close"]],
+        left_on="trade_date",
+        right_on="date",
+        how="inner",
+        suffixes=("_ts", "_ak"),
+    )
+    comparison["pct_diff"] = (comparison["close_ts"] - comparison["close_ak"]) / comparison["close_ak"] * 100.0
+    payload["compare_rows"] = len(comparison)
+    if comparison.empty:
+        payload["status"] = "unverified"
+        payload["notes"].append("与 AkShare 无重叠交易日。")
+        return payload
+
+    abs_diff = comparison["pct_diff"].abs()
+    payload["max_abs_pct_diff"] = round(float(abs_diff.max()), 4)
+    payload["mean_abs_pct_diff"] = round(float(abs_diff.mean()), 4)
+    payload["gt05_count"] = int((abs_diff > 0.5).sum())
+    payload["status"] = "verified" if payload["gt05_count"] == 0 else "unverified"
+    return payload
+
+
+def run_tushare_sample(*, symbol: str, start: str, end: str, output_dir: Path) -> dict[str, Any]:
+    """Validate Tushare adjustment-factor methodology on a single sample symbol."""
+    pro = _tushare_pro()
+    if str(symbol).strip().upper().endswith(".HK"):
+        payload = _validate_hk_tushare(pro, symbol, start, end)
+    else:
+        payload = _validate_a_share_tushare(pro, symbol, start, end)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    slug = str(symbol).replace(".", "_")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    report_path = output_dir / f"{slug}_{stamp}.json"
+    _atomic_json(payload, report_path)
+
+    summary_path = output_dir / "summary.json"
+    summary: dict[str, Any] = {"runs": []}
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception:
+            summary = {"runs": []}
+    summary.setdefault("runs", []).append(
+        {
+            key: payload.get(key)
+            for key in (
+                "symbol",
+                "market",
+                "provider",
+                "status",
+                "run_at_utc",
+                "rows",
+                "compare_rows",
+                "max_abs_pct_diff",
+                "mean_abs_pct_diff",
+                "gt05_count",
+                "off_event_gt05_count",
+                "limited_endpoints",
+                "notes",
+            )
+        }
+    )
+    _atomic_json(summary, summary_path)
+    return {
+        "report": str(report_path),
+        "summary": str(summary_path),
+        "status": payload.get("status"),
+        "notes": payload.get("notes"),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", choices=("universe", "fetch", "clean", "manifest", "all"), default="all")
+    parser.add_argument("--stage", choices=("universe", "fetch", "clean", "manifest", "tushare-sample", "all"), default="all")
     parser.add_argument("--start", default="2021-08-01")
     parser.add_argument("--end", default="2026-07-31")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--incremental", action="store_true")
     parser.add_argument("--hk-workers", type=int, default=4)
+    parser.add_argument("--symbol", default="600519.SH")
+    parser.add_argument("--validation-output-dir", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--evaluation-manifest", type=Path, default=None)
     parser.add_argument("--dataset-version", default=None)
@@ -684,6 +988,13 @@ def main() -> None:
             )
         elif stage == "clean":
             result = clean_dataset(start=args.start, end=args.end)
+        elif stage == "tushare-sample":
+            result = run_tushare_sample(
+                symbol=args.symbol,
+                start=args.start,
+                end=args.end,
+                output_dir=args.validation_output_dir or TUSHARE_VALIDATION_DIR,
+            )
         else:
             result = build_evaluation_manifest()
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str)[:8000])
