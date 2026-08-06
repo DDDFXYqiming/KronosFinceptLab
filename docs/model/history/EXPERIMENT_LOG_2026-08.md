@@ -50,3 +50,42 @@
 
 冠军 `fullv3_ep3cont_best` 进入第二批（tokenizer 两阶段 + Qlib 回测）；生产 junction 保持
 `v3-cont epoch_2` 不变；SFF 路线停止。2026-08-01 后数据仍封存，未参与任何调参。
+
+## 2026-08-07 batch-2：tokenizer 两阶段微调（GPU-only）
+
+### DML 修复
+
+tokenizer 训练在 DirectML 上崩溃的根因：验证阶段 eval 模式下 `BSQuantizer.forward` 执行
+`torch.unique(indices)`，DML 无该算子（fatal `dml_tensor_desc.cc:76 broadcast_sizes.size() >=
+sizes.size()`）。探针确认 train 模式（batch 8/32、真实数据 61 批）前后向全部通过、eval 模式必崩。
+修复：`external/Kronos/model/module.py` 将 `used_codes`（仅报告指标、不参与 loss/早停）改到
+CPU 计算，训练/验证计算全部留在 DML GPU。回归：原崩溃探针通过，train loss 与修复前完全一致。
+
+### tokenizer 阶段（DML，LR 2e-4，2 epoch，2048 batch cap）
+
+每 epoch 约 14 分钟；epoch1 val loss 0.0096、epoch2 0.0094；
+`finetuned_largecap_v8_tokenizer/tokenizer/best_model` 已保存。另修复 tokenizer 训练循环
+未应用 `max_train_batches` 的问题（`finetune_tokenizer.py`）。
+
+### predictor 阶段（DML，父=fullv3_ep3cont_best + 微调 tokenizer，LR 5e-7，3 epoch）
+
+| Epoch | Validation Loss |
+|---|---:|
+| 1 | 3.3551 |
+| 2 | 3.3062 |
+| 3 | 3.3037 |
+
+输出 `finetuned_largecap_v8_fttok_predictor/basemodel/`（best_model = epoch_3）。
+
+### 600 样本 Confirm（sc8/T0.5，样本哈希 b54adb…）
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | v2 通过 |
+|---|---:|---:|---:|---:|---|
+| fullv3_ep3cont_best | **0.1193** | **0.1097** | 53.33% | **0.0463** | **是** |
+| fttok_predictor best | 0.0906 | 0.0667 | 53.33% | 0.0495 | 否（p=0.2687） |
+| 官方 Kronos-small | -0.0646 | -0.0374 | 47.83% | 0.0604 | 基线 |
+
+结论：tokenizer 两阶段在 clean_v8 上未带来排序增益——fttok_predictor 的 Pooled RankIC 与 MAE
+均落后父线 `fullv3_ep3cont_best`，配对 Bootstrap p=0.2687 未过门槛。按决策门：tokenizer 候选
+不切换生产，生产 junction 保持 `v3-cont epoch_2`，`fullv3_ep3cont_best` 仍为下一轮严格 OOS
+首要研究候选。MAE 改善（CI [-0.0215, -0.0005]）稳定但不足以单独晋级。

@@ -149,3 +149,20 @@ A 股为主。
 
 仅 sc16 业务收益信号的配对 CI 不含 0；该指标仍是上游对齐诊断，不是含换手/涨跌停/滑点的完整
 Qlib 回测。
+
+## 2026-08-07 batch-2 Confirm：tokenizer 两阶段
+
+tokenizer 在 clean_v8 上微调（LR 2e-4、2 epoch、val loss 0.0094），predictor 从
+`fullv3_ep3cont_best` 出发使用微调 tokenizer（LR 5e-7、3 epoch、best val 3.3037）。固定 600
+样本、`sample_count=8, T=0.5`，样本哈希 `b54adb…`：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | v2 通过 |
+|---|---:|---:|---:|---:|---|
+| fullv3_ep3cont_best | **0.1193** | **0.1097** | 53.33% | **0.0463** | **是** |
+| fttok_predictor best | 0.0906 | 0.0667 | 53.33% | 0.0495 | 否 |
+| 官方 Kronos-small | -0.0646 | -0.0374 | 47.83% | 0.0604 | 基线 |
+
+`fttok_predictor_best` 相对官方：RankIC 增量 `+0.1552`，配对 Bootstrap 95% CI
+`[-0.0966, 0.4263]`、`p=0.2687`；MAE 增量 CI `[-0.0215, -0.0005]` 稳定改善但不足以单独晋级。
+分市场同样以 A 股为主。结论：tokenizer 两阶段在 clean_v8 上未超过 predictor-only 的
+`fullv3_ep3cont_best`，按决策门不切换生产。原始结果：`output/evaluation_batch2/`。

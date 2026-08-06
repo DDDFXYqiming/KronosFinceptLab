@@ -244,5 +244,20 @@ sc16 复核同样通过（DirAcc 53.50% vs 48.17%，Pooled RankIC 0.1122 vs -0.0
 SFF 两个臂验证损失未收敛回父模型（3.3158/3.4105 vs 3.05/2.96），Confirm 明显落后，按停止
 规则关闭该路线；后续不再对该起点追加 epoch。
 
+## 11. 2026-08-07 batch-2 tokenizer 两阶段判定
+
+tokenizer（LR 2e-4、2 epoch）与 predictor（父=fullv3_ep3cont_best + 微调 tokenizer、LR 5e-7、
+3 epoch）均全程 DirectML GPU 完成。600 样本 Confirm（sc8/T0.5）：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | 晋级 |
+|---|---:|---:|---:|---:|---|
+| fullv3_ep3cont_best | **0.1193** | **0.1097** | 53.33% | **0.0463** | **是** |
+| fttok_predictor best | 0.0906 | 0.0667 | 53.33% | 0.0495 | 否 |
+| 官方 Kronos-small | -0.0646 | -0.0374 | 47.83% | 0.0604 | 基线 |
+
+`fttok_predictor_best` 相对官方 RankIC 增量 `+0.1552`，但配对 Bootstrap `p=0.2687` 未过
+`p<0.10` 门槛；MAE 改善 CI `[-0.0215, -0.0005]` 稳定但不单独晋级。结论：tokenizer 两阶段
+未超过 predictor-only 路线，不切换生产；生产 junction 保持 `v3-cont epoch_2`。
+
 相关入口：[当前模型状态](MODEL_STATUS.md) · [数据规范](DATASET_SPEC.md) ·
 [评测历史](../history/EVALUATION_RESULTS.md)

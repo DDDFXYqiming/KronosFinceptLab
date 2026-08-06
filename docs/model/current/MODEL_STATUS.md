@@ -98,6 +98,22 @@ MAE 增量 CI `[-0.0232, -0.0055]`；分析页完整 600 样本 sc16 复核同�
   基线，排序优势不单独构成策略收益结论；
 - 停止 SFF 路线；第二批转向 tokenizer 两阶段微调与 Qlib 正式回测。
 
+## 2026-08-07 batch-2：tokenizer 两阶段结果
+
+tokenizer（LR 2e-4、2 epoch、val 0.0094）+ predictor（父=fullv3_ep3cont_best、LR 5e-7、3 epoch、
+best val 3.3037）在 clean_v8 上完成，600 样本 Confirm（sc8/T0.5）：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | v2 通过 |
+|---|---:|---:|---:|---:|---|
+| fullv3_ep3cont_best | **0.1193** | **0.1097** | 53.33% | **0.0463** | **是** |
+| fttok_predictor best | 0.0906 | 0.0667 | 53.33% | 0.0495 | 否（p=0.2687） |
+| 官方 Kronos-small | -0.0646 | -0.0374 | 47.83% | 0.0604 | 基线 |
+
+结论：tokenizer 两阶段未超过 predictor-only 路线，生产 junction 保持 `v3-cont epoch_2` 不变；
+`fullv3_ep3cont_best` 仍是下一轮严格 OOS 的首要研究候选。训练全程 DirectML GPU
+（`Device: privateuseone:0`），DML 不支持 `torch.unique` 的边界已修复并记录
+（`external/Kronos/model/module.py`，指标计算落 CPU、训练计算全 GPU）。
+
 ## clean_v7 PIT continuation 结果
 
 2026-08-05～06 从当前冠军 `v3-cont epoch_2` 出发，在 `clean_v7_largecap_pit` 上完成两个
