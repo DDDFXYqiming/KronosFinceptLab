@@ -2,7 +2,7 @@
 
 > 状态：Historical / Archived
 > 用途：已完成问题的历史执行记录，不代表当前待办。
-> 当前标准：以 [`../../FINETUNE_REPORT.md`](../../FINETUNE_REPORT.md) 为准。
+> 当前标准：以 [当前模型状态](../../current/MODEL_STATUS.md) 为准。
 
 ## 诊断结论
 

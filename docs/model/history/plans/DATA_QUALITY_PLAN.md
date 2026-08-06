@@ -2,7 +2,8 @@
 
 > 状态：Historical / Archived
 > 用途：保留旧的数据扩展预测与执行思路，不代表当前结论。
-> 当前标准：以 [`../../FINETUNE_DATA_PREP.md`](../../FINETUNE_DATA_PREP.md) 和 [`../../FINETUNE_REPORT.md`](../../FINETUNE_REPORT.md) 为准。
+> 当前标准：以 [当前数据规范](../../current/DATASET_SPEC.md) 和
+> [当前模型状态](../../current/MODEL_STATUS.md) 为准。
 
 > 基于现有数据源能力：AKShare（A 股）+ yfinance（港股），制定可落地的改进方案。
 

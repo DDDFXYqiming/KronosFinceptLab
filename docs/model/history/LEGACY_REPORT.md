@@ -2,16 +2,15 @@
 
 > 状态：Historical / Archived
 > 用途：保留旧训练过程与旧评测口径，仅供追溯。
-> 当前标准：以 [`../../FINETUNE_REPORT.md`](../../FINETUNE_REPORT.md) 为准。
+> 当前标准：以 [当前模型状态](../current/MODEL_STATUS.md) 为准。
 
 本文件中的 150/650/4131 样本评测、旧参数网格和全模型决策树均为历史记录。
-它们不再是当前执行入口，也不用于选择 `fold_2026` 的最终模型。当前流程为
-`examples/eval_pipeline.py` 的 `smoke -> screen -> confirm -> final`，详见
-[`../../EVALUATION_PROTOCOL.md`](../../EVALUATION_PROTOCOL.md)。
+它们不再是当前执行入口，也不用于当前模型选择；当前流程见
+[当前评测流程](../current/EVALUATION_PROTOCOL.md)。
 
 > 日期: 2026-07-26 ~ 2026-07-29
 > 目标: 使用 A 股沪深 300 + 港股恒指成分股的日线数据微调 Kronos 模型
-> 状态: ✅ 微调有效，最佳模型为 FT v1（385只股票，2022-2026数据）
+> 当时状态: 微调有效，最佳模型为 FT v1（385只股票，2022-2026数据）
 > 迭代: v1(385只) → v2(时间扩展2010-2026) → v3(497只优质股，2018-2026)
 
 ---
@@ -41,7 +40,8 @@
 - **代码格式**: Yahoo Finance HK 使用 4 位代码 (如 `0005.HK`)
 
 ### 2.3 CSV 规范
-详见 `docs/FINETUNE_DATA_PREP.md` — 7 列：timestamps, open, high, low, close, volume, amount
+当前规范见 [DATASET_SPEC](../current/DATASET_SPEC.md)；当时使用 7 列：timestamps, open, high,
+low, close, volume, amount。
 
 ---
 
@@ -255,7 +255,7 @@ VRAM 使用: ~11.2/16.0 GB
 
 **v3 (497 只优质股扩展)**: 从原始 385 只扩展至 497 只（沪深300全量+CSI500部分+港股通大市值）。从 FT v1 模型继续训练，累计 7 轮。与 v1 持平，未显著超越。**数据量 > 385 只优质股后收益递减。**
 
-**最佳模型: v1 (385只, 2022-2026数据, 5 epoch)**
+**当时最佳模型: v1 (385只, 2022-2026数据, 5 epoch)**
 
 ## 训练历程
 
@@ -369,9 +369,9 @@ models/kronos/
 
 | 文件 | 说明 |
 |------|------|
-| `docs/FINETUNE_DATA_PREP.md` | CSV 微调数据规范 |
-| `docs/FINETUNE_REPORT.md` | 本报告 |
-| `docs/plan_finetune_fix.md` | 修复计划 |
+| [当前数据规范](../current/DATASET_SPEC.md) | 当前 CSV 和数据边界 |
+| [2026-07 实验日志](EXPERIMENT_LOG_2026-07.md) | 后续实验记录 |
+| [历史修复计划](plans/FINETUNE_FIX_PLAN.md) | 当时的修复计划 |
 | `external/Kronos/finetune_csv/configs/config_full_small.yaml` | 全量训练配置 |
 | `external/Kronos/finetune_csv/configs/config_full_small_cont.yaml` | 续训练配置 |
 | `external/Kronos/finetune_csv/configs/config_quicktest.yaml` | 快速验证配置 |
@@ -397,7 +397,7 @@ models/kronos/
 
 ---
 
-## 八、最新评测结果 (2026-07-29)
+## 八、当时最新评测结果 (2026-07-29)
 
 ### 评测条件
 - 30 支股票（20A + 10HK），各 5 偏移窗口，共 ~150 samples
@@ -419,7 +419,7 @@ models/kronos/
 | 9 | full_small_v3 (FT v1) | 48.0 | -0.0810 | -0.1088 | 1.67 | 0.35 |
 
 ### 关键结论
-- **新冠军：`V3 cont epoch_2`，60.0% 方向准确率**（对比基线 51.3% 提升 +8.7pp）
+- **当时新冠军：`V3 cont epoch_2`，60.0% 方向准确率**（对比基线 51.3% 提升 +8.7pp）
 - V3 谱系（fromFTv1 → cont）显著优于 all others
 - V3 cont epoch_1 虽排名第三，但 IC (0.2341) 和 RankIC (0.2122) 为全场最优
 - Cont2（第二轮继续训练）的 AER/IR 最佳但 DirAcc 未超越 V3 cont
@@ -433,7 +433,7 @@ models/kronos/
 | 目录 | 大小 | 说明 |
 |------|:----:|------|
 | `finetuned_v3_fromFTv1/` | 377.6MB | V3 第一轮（epoch_1/2/3 + best） |
-| `finetuned_v3_fromFTv1_cont/` | **471.8MB** | V3 继续训练（epoch_1/2/3 + best）← **当前默认** |
+| `finetuned_v3_fromFTv1_cont/` | **471.8MB** | V3 继续训练（epoch_1/2/3 + best）← **当时默认** |
 | `finetuned_v3_small_cont2/` | 377.6MB | V3 第二轮继续训练（epoch_1/2/3 + best） |
 | `finetuned_v2_small_v2/` | 94.4MB | V2 最佳（历史冠军，当前被 V3 超越） |
 
@@ -441,7 +441,8 @@ models/kronos/
 
 ## 九、数据质量优化方向
 
-详见 `docs/plan_data_quality.md`。核心结论：将时间范围扩展到 2010 年（从当前 2022），每只股票数据量从 ~1100 行提升到 ~4000 行（3.6x），预估方向准确率从 87.7% 提升至 ~89.5%。数据源已验证可用。
+详见 [历史数据质量计划](plans/DATA_QUALITY_PLAN.md)。其中收益预测属于旧口径设想，不再作为
+当前模型提升预期。
 
 ---
 

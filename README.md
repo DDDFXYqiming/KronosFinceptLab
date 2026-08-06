@@ -145,15 +145,14 @@ KronosFinceptLab/
 ├── kronos_mcp/                  # MCP 服务实现
 ├── tests/                       # 70+ 测试模块
 ├── docs/                        # 文档
+│   ├── README.md               # 文档总入口
 │   ├── ARCHITECTURE.md          # 系统架构与数据流
 │   ├── API.md                   # REST 接口参考
 │   ├── CLI.md                   # CLI 命令参考
 │   ├── DEPLOYMENT.md            # 本地与 Docker 部署
 │   ├── START_GUIDE.md           # 快速启动指南
 │   ├── FINCEPT_INTEGRATION.md   # FinceptTerminal 集成
-│   ├── FINETUNE_DATA_PREP.md    # 当前微调数据规范
-│   ├── FINETUNE_REPORT.md       # 最新生产链路评测
-│   ├── EVALUATION_PROTOCOL.md   # 滚动评测、数据隔离和 Bootstrap 协议
+│   ├── model/                   # 模型、训练、评测与历史结果
 │   └── archive/                 # 历史计划、旧评测与一次性审计
 ├── examples/                    # 使用示例
 ├── integrations/                # 外部集成（FinceptTerminal）
@@ -172,11 +171,12 @@ KronosFinceptLab/
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)                   | 本地、Docker、Zeabur 部署                  |
 | [docs/START_GUIDE.md](docs/START_GUIDE.md)                 | 逐步首次运行指南                           |
 | [docs/FINCEPT_INTEGRATION.md](docs/FINCEPT_INTEGRATION.md) | FinceptTerminal C++/Python 桥接            |
-| [docs/FINETUNE_DATA_PREP.md](docs/FINETUNE_DATA_PREP.md)   | 当前日线微调数据规范                       |
-| [docs/FINETUNE_REPORT.md](docs/FINETUNE_REPORT.md)         | 最新完整生产链路评测                       |
-| [docs/EVALUATION_PROTOCOL.md](docs/EVALUATION_PROTOCOL.md) | 当前滚动评测、训练/验证/封存测试和统计规范 |
+| [docs/README.md](docs/README.md)                           | 完整文档导航                               |
+| [docs/model/README.md](docs/model/README.md)               | 模型、训练、评测与历史结果入口             |
+| [当前模型状态](docs/model/current/MODEL_STATUS.md)         | 当前冠军、运行权重与证据边界               |
+| [当前评测标准](docs/model/current/EVALUATION_STANDARD.md)  | 当前选模指标、统计检验和晋级规则           |
 | [kronos_mcp/README.md](kronos_mcp/README.md)               | MCP 服务工具与客户端配置                   |
-| [docs/archive/README.md](docs/archive/README.md)           | 历史计划、旧评测与一次性审计               |
+| [docs/archive/README.md](docs/archive/README.md)           | 非模型历史计划与一次性审计                 |
 
 ---
 

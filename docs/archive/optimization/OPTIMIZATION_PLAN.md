@@ -2,7 +2,8 @@
 
 > 状态：Historical / Archived
 > 用途：阶段性执行记录，不代表当前路线图。
-> 当前标准：以 [`../../FINETUNE_REPORT.md`](../../FINETUNE_REPORT.md) 和项目当前文档为准。
+> 当前标准：以 [模型状态](../../model/current/MODEL_STATUS.md) 和
+> [文档中心](../../README.md) 为准。
 
 > 日期: 2026-07-26
 > 范围: 微调训练、评测方法论、生产使用

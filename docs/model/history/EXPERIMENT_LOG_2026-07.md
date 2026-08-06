@@ -1,10 +1,12 @@
 # Kronos 紧凑微调与评测报告
 
-> 文档状态：Current
-> 最后核对：2026-08-01
-> 当前状态：L2 多轮 continuation 已完成，5 个 checkpoint 的固定 screen 已完成；没有 checkpoint 超过 L2，停止继续训练与 confirm
+> 文档状态：Historical experiment log
+> 当前结论请见：[当前模型状态](../current/MODEL_STATUS.md)
 
-## 当前实验问题
+> 历史快照日期：2026-08-01
+> 当时状态：L2 多轮 continuation 已完成，5 个 checkpoint 的固定 screen 已完成；没有 checkpoint 超过 L2，停止继续训练与 confirm
+
+## 当时的实验问题
 
 本轮只回答：
 
@@ -102,7 +104,8 @@ continuation 父模型；继续训练必须使用新增或明显改善的数据�
 
 ## 2026 Q1 验证集结果
 
-本轮结果写入 `output/evaluation_compact_v5`，与旧版 `output/evaluation` 隔离。
+本轮结果写入 `output/archive/evaluation_legacy/evaluation_compact_v5`，与旧版
+`output/archive/evaluation_legacy/evaluation` 隔离。
 Screen 使用固定 150 个不重叠样本、`sample_count=1`。
 
 | 模型 | Screen DirAcc | Screen MeanDailyRankIC | Score | Confirm |
@@ -151,7 +154,7 @@ Screen 使用固定 150 个不重叠样本、`sample_count=1`。
 上一节规划的 A/H 大盘股开发实验已经执行完成。两条训练线使用同一份
 `clean_v6_largecap`、同一 tokenizer、`lookback=90`、`predict_window=5`、1 epoch 和
 `learning_rate=1e-6`，只改变 predictor 的初始化权重。结果写入
-`output/evaluation_largecap_v1`。
+`output/archive/evaluation_legacy/evaluation_largecap_v1`。
 
 - `largecap_l1`：从官方 `Kronos-small` 起点训练 1 epoch；
 - `largecap_l2_v3cont`：从 `v3_from_ftv1_cont` 起点训练 1 epoch；
@@ -169,10 +172,9 @@ L1 在 600 样本确认中相对官方基线的综合分增量为 `+0.0335`，50
 相对官方基线的综合分增量为 `+0.0383`，置信区间为 `[-0.0560, 0.1416]`。两者的区间下界都不
 大于 0，因此均没有通过冻结晋级规则。
 
-当前决定：生产仍保留官方 `Kronos-small`，不运行本轮 2026-04～07 诊断测试，不追加学习率、
-temperature 或新的 continuation 模型。L2 continuation 已按最多 5 个 epoch 执行完毕，但固定
-screen 未超过 L2，因此不进入 600 样本 confirm。后续若继续推进，只允许改善股票池和数据质量后
-原样重跑训练线。
+上述为 **v1 综合分协议下的历史决定**：当时不晋级 L1/L2，也不据此追加局部参数搜索。该结论
+保留用于解释实验停止原因，不再代表 2026-08-05 的当前模型排名；最新统一同场结果见本文末尾
+“v2 统一 Confirm”。
 
 当前结果说明：将训练对象收敛到大盘股后，旧微调权重可以带来局部提升，但目前仍不能证明微调
 模型稳定优于官方模型。L2 continuation 的验证损失继续下降，但预测 screen 指标在第 2 轮后
@@ -203,7 +205,8 @@ L3 从 `largecap_l2_v3cont/basemodel/best_model` 继续训练，使用同一份
 
 L3 的 `epoch_3`～`epoch_5` 是本轮最高，但仍同时低于 L2 的综合分和 MeanDailyRankIC，
 因此没有 checkpoint 满足晋级条件，不执行 600 样本 Bootstrap confirm，也不再继续同数据训练。
-明细结果位于 `output/evaluation_largecap_v1/screen/l3_l2cont_epoch*.json`。
+明细结果位于
+`output/archive/evaluation_legacy/evaluation_largecap_v1/screen/l3_l2cont_epoch*.json`。
 
 当前已准备好下一轮开发训练输入：
 
@@ -221,4 +224,32 @@ L3 的 `epoch_3`～`epoch_5` 是本轮最高，但仍同时低于 L2 的综合�
 快照，港股是已有高流动性候选，尚未具备完整历史时点成分。因此它可以开始开发训练，不能
 用于严格 OOS 或生产收益宣称。
 
-完整晋级和停止规则见 [`EVALUATION_PROTOCOL.md`](EVALUATION_PROTOCOL.md)。
+完整晋级和停止规则见 [当前评测流程](../current/EVALUATION_PROTOCOL.md)。
+
+## v2 统一 Confirm（2026-08-05）
+
+为消除早期模型分散在 `compact_v5`、`largecap_v1` 和 legacy 样本集上的不可比问题，本轮把
+官方基线和五个最强可用微调 checkpoint 放到同一 `clean_v6_largecap / validation_2026_q1`
+评测池重新推理。全部使用固定 600 样本、`sample_count=1`、`temperature=0.3`、`top_p=0.9`、
+seed 42 和 DirectML 单进程。样本哈希为
+`9e93c4b8b708e0297ca19508bf695c5784cf640df88f981dd7bac548689be593`。
+
+| 排名 | 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | v2 结果 |
+|---:|---|---:|---:|---:|---:|---|
+| 1 | **v3_from_ftv1_cont / epoch_2** | **0.1076** | **0.1544** | **53.00%** | 0.0511 | **通过** |
+| 2 | largecap_l2_v3cont | 0.0855 | 0.0173 | 51.33% | 0.0504 | 未通过统计门槛 |
+| 3 | v3_from_ftv1_cont / best_model | 0.0796 | 0.0579 | 52.00% | 0.0524 | 未通过统计门槛 |
+| 4 | largecap_l3_l2cont / best_model（epoch 4） | 0.0629 | 0.1271 | 52.00% | 0.0505 | 未通过统计门槛 |
+| 5 | full_small_v3 | 0.0325 | 0.1269 | 51.50% | **0.0447** | 未通过统计门槛 |
+| 6 | 官方 Kronos-small | -0.0034 | -0.0696 | 50.33% | 0.0609 | 基线 |
+
+`v3_from_ftv1_cont/epoch_2` 相对官方基线的 Pooled RankIC 增量为 `+0.1110`；按
+`market × target_end` 配对重采样的 95% CI 为 `[-0.0493, 0.2794]`，而 40 个共同日期的
+MeanDaily RankIC 配对检验为 `p=0.0519`。其 A 股、港股 Pooled RankIC 分别为 `0.1005`、
+`0.1329`，并且终点收益 MAE 相对基线显著降低。
+
+按当前 v2 开发标准，它是唯一通过 Confirm 的 checkpoint。当前 `external/Kronos-small` junction
+已经指向该 `epoch_2`，所以无需切换权重。该结果仍是使用 2026 Q1 验证数据的开发选模证据，
+不是严格未来 OOS，也不是含成本交易回测。完整口径与统计限制见
+[当前评测标准](../current/EVALUATION_STANDARD.md)，原始结果位于
+`output/evaluation_v2_unified/`。
