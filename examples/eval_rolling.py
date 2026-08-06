@@ -1,10 +1,8 @@
 """Run a resumable, production-path Kronos evaluation.
 
-The evaluator deliberately separates cheap model screening from the expensive
-sealed fold.  Use ``--mode smoke`` for a health check, ``--mode screen`` for
-the fixed 20 A-share + 10 HK sample, ``--mode confirm`` for the same sample
-with production sampling, and ``--mode final`` only after the checkpoint and
-inference configuration are frozen.
+Smoke remains a cheap health check. Confirm is the only model-ranking stage:
+it uses fixed market/date cross-sections and the prediction page's sampling
+parameters. Final remains a post-freeze diagnostic rather than model selection.
 """
 
 from __future__ import annotations
@@ -25,8 +23,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from kronos_fincept.evaluation.rolling import (  # noqa: E402
+    deterministic_batch_seed,
+    select_cross_sectional_samples,
     select_evaluation_samples,
     summarize_prediction_rows,
+    validate_prediction_samples,
 )
 
 
@@ -50,13 +51,13 @@ MODE_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "confirm": {
         "fold": "validation_2026_q1",
-        "sample_count": 1,
-        "temperature": 0.3,
+        "sample_count": 8,
+        "temperature": 0.5,
         "top_p": 0.9,
-        "bootstrap_replicates": 500,
-        "a_symbols": 80,
-        "hk_symbols": 40,
-        "windows_per_symbol": 5,
+        "bootstrap_replicates": 5000,
+        "dates_per_market": 5,
+        "a_symbols_per_date": 80,
+        "hk_symbols_per_date": 40,
     },
     "final": {
         "fold": "diagnostic_2026_04_07",
@@ -181,6 +182,7 @@ def _evaluation_config(args: argparse.Namespace, samples: list[dict[str, Any]]) 
         "seed": args.seed,
         "sample_count_total": len(samples),
         "sample_hash": sample_hash,
+        "samples_file": str(args.samples_file.resolve()) if args.samples_file is not None else None,
     }
 
 
@@ -224,7 +226,7 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
             setattr(args, name, defaults[name])
     if args.mode == "smoke" and args.max_samples is None:
         args.max_samples = 16
-    if args.mode in {"screen", "confirm"}:
+    if args.mode == "screen":
         for argument, default_key in (
             ("screen_a_symbols", "a_symbols"),
             ("screen_hk_symbols", "hk_symbols"),
@@ -232,13 +234,32 @@ def _resolve_args(args: argparse.Namespace) -> argparse.Namespace:
         ):
             if getattr(args, argument) is None:
                 setattr(args, argument, defaults[default_key])
+    if args.mode == "confirm":
+        for argument, default_key in (
+            ("dates_per_market", "dates_per_market"),
+            ("a_symbols_per_date", "a_symbols_per_date"),
+            ("hk_symbols_per_date", "hk_symbols_per_date"),
+        ):
+            if getattr(args, argument) is None:
+                setattr(args, argument, defaults[default_key])
     return args
+
+
+def _load_samples_file(path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload["samples"] if isinstance(payload, dict) else payload
+    return [dict(item) for item in rows]
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     args = _resolve_args(args)
     _seed_everything(args.seed)
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    manifest_pred_len = int(manifest.get("protocol", {}).get("pred_len", args.pred_len))
+    if manifest_pred_len != args.pred_len:
+        raise ValueError(
+            f"manifest pred_len={manifest_pred_len} does not match inference pred_len={args.pred_len}"
+        )
     folds = {fold["id"]: fold for fold in manifest["rolling_folds"]}
     if args.fold not in folds:
         raise ValueError(f"unknown fold {args.fold}; choose from {sorted(folds)}")
@@ -252,17 +273,29 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     all_samples = manifest["samples"].get(args.fold, [])
-    samples = select_evaluation_samples(
-        all_samples,
-        mode=args.mode,
-        seed=args.seed,
-        a_symbols=args.screen_a_symbols,
-        hk_symbols=args.screen_hk_symbols,
-        windows_per_symbol=args.windows_per_symbol,
-        max_samples=args.max_samples,
-    )
+    if args.samples_file is not None:
+        samples = _load_samples_file(args.samples_file)
+    elif args.mode == "confirm":
+        samples = select_cross_sectional_samples(
+            all_samples,
+            dates_per_market=args.dates_per_market,
+            a_symbols_per_date=args.a_symbols_per_date,
+            hk_symbols_per_date=args.hk_symbols_per_date,
+            seed=args.seed,
+        )
+    else:
+        samples = select_evaluation_samples(
+            all_samples,
+            mode=args.mode,
+            seed=args.seed,
+            a_symbols=args.screen_a_symbols,
+            hk_symbols=args.screen_hk_symbols,
+            windows_per_symbol=args.windows_per_symbol,
+            max_samples=args.max_samples,
+        )
     if not samples:
         raise ValueError(f"fold {args.fold} has no selected samples")
+    validate_prediction_samples(samples, pred_len=args.pred_len)
 
     config = _evaluation_config(args, samples)
     progress_path = _progress_path(args)
@@ -293,6 +326,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 )
 
             try:
+                _seed_everything(deterministic_batch_seed(batch, seed=args.seed))
                 with torch.no_grad():
                     predictions = predictor.predict_batch(
                         x_frames,
@@ -351,6 +385,10 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 "hk_symbols": len({item["symbol"] for item in samples if item["market"] == "HK"}),
                 "seed": args.seed,
                 "sample_hash": config["sample_hash"],
+                "strategy": "fixed_fixture" if args.samples_file is not None else (
+                    "market_date_cross_section" if args.mode == "confirm" else "symbol_window"
+                ),
+                "samples_file": str(args.samples_file) if args.samples_file is not None else None,
             },
             "inference": {
                 "pred_len": args.pred_len,
@@ -359,6 +397,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 "top_p": args.top_p,
                 "batch_size": args.batch_size,
                 "device": args.device,
+                "rng_strategy": "ordered_batch_key_v1",
             },
             "summary": summarize_prediction_rows(
                 rows,
@@ -393,6 +432,10 @@ def main() -> None:
     parser.add_argument("--screen-a-symbols", type=int, default=None)
     parser.add_argument("--screen-hk-symbols", type=int, default=None)
     parser.add_argument("--windows-per-symbol", type=int, default=None)
+    parser.add_argument("--dates-per-market", type=int, default=None)
+    parser.add_argument("--a-symbols-per-date", type=int, default=None)
+    parser.add_argument("--hk-symbols-per-date", type=int, default=None)
+    parser.add_argument("--samples-file", type=Path, default=None)
     parser.add_argument("--checkpoint-every", type=int, default=64)
     parser.add_argument("--progress-path", type=Path, default=None)
     parser.add_argument("--no-resume", action="store_true")

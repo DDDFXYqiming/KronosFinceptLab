@@ -175,7 +175,14 @@ def build_clean_dataset(
     }
     parsed_cutoffs = {name: pd.Timestamp(value) for name, value in cutoffs.items()}
     ordered = [parsed_cutoffs[name] for name in cutoffs]
-    if ordered != sorted(ordered) or len(set(ordered)) != len(ordered):
+    empty_diagnostic_boundary = (
+        parsed_cutoffs["diagnostic_start"]
+        == parsed_cutoffs["diagnostic_end"]
+        == parsed_cutoffs["strict_oos_start"]
+    )
+    if ordered != sorted(ordered) or (
+        len(set(ordered)) != len(ordered) and not empty_diagnostic_boundary
+    ):
         raise ValueError("dataset cutoffs must be strictly increasing")
 
     for path in sorted(source.glob("*.csv")):

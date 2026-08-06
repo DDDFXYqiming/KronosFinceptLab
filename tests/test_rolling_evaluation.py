@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from kronos_fincept.evaluation.topk import periodic_topk_metrics
 from kronos_fincept.evaluation.rolling import (
     AssetMeta,
     bootstrap_ci,
@@ -9,9 +10,12 @@ from kronos_fincept.evaluation.rolling import (
     build_window_records,
     compare_candidate_to_baseline,
     composite_score,
+    deterministic_batch_seed,
     select_screen_candidate,
+    select_cross_sectional_samples,
     select_evaluation_samples,
     summarize_prediction_rows,
+    validate_prediction_samples,
 )
 
 
@@ -56,6 +60,26 @@ def test_sample_step_cannot_overlap_target_or_embargo():
         assert "minimum is 6" in str(exc)
     else:
         raise AssertionError("overlapping sample_step should be rejected")
+
+
+def test_window_records_apply_membership_at_forecast_origin():
+    timestamps = pd.date_range("2020-01-01", periods=40, freq="D")
+    records = build_window_records(
+        _asset(),
+        timestamps,
+        fold="fold_2020",
+        target_start="2020-01-01",
+        target_end="2020-02-25",
+        lookback=5,
+        pred_len=3,
+        embargo_bars=0,
+        membership_intervals={
+            ("A", "000001"): [(pd.Timestamp("2020-01-10"), pd.Timestamp("2020-01-20"))]
+        },
+    )
+
+    assert records
+    assert all("2020-01-10" <= record.input_end <= "2020-01-20" for record in records)
 
 
 def test_compact_manifest_uses_q1_validation_and_recent_diagnostic_period(tmp_path):
@@ -150,6 +174,116 @@ def test_staged_sample_selection_is_balanced_and_deterministic():
     assert len({item["symbol"] for item in first if item["market"] == "A"}) == 3
     assert len({item["symbol"] for item in first if item["market"] == "HK"}) == 2
     assert all(sum(item["symbol"] == symbol for item in first) == 5 for symbol in {item["symbol"] for item in first})
+
+
+def test_cross_sectional_selection_is_date_first_balanced_and_deterministic():
+    samples = []
+    for market, symbol_count in (("A", 6), ("HK", 4)):
+        for date_index in range(6):
+            target_end = f"2026-0{date_index + 1}-20"
+            for symbol_index in range(symbol_count):
+                samples.append(
+                    {
+                        "fold": "validation_2026_q1",
+                        "market": market,
+                        "symbol": f"{market}{symbol_index:02d}",
+                        "target_start": f"2026-0{date_index + 1}-14",
+                        "target_end": target_end,
+                        "input_start_row": date_index,
+                        "input_end_row": date_index + 90,
+                        "target_start_row": date_index + 90,
+                        "target_end_row": date_index + 95,
+                        "file": f"{market}_{symbol_index}.csv",
+                    }
+                )
+
+    first = select_cross_sectional_samples(
+        samples,
+        dates_per_market=3,
+        a_symbols_per_date=4,
+        hk_symbols_per_date=2,
+        seed=42,
+    )
+    second = select_cross_sectional_samples(
+        list(reversed(samples)),
+        dates_per_market=3,
+        a_symbols_per_date=4,
+        hk_symbols_per_date=2,
+        seed=42,
+    )
+
+    assert first == second
+    assert len(first) == 18
+    groups = pd.DataFrame(first).groupby(["market", "target_end"]).size().to_dict()
+    assert len(groups) == 6
+    assert {count for (market, _), count in groups.items() if market == "A"} == {4}
+    assert {count for (market, _), count in groups.items() if market == "HK"} == {2}
+
+
+def test_batch_seed_depends_on_sample_keys_not_model_or_run_position():
+    batch = [
+        {
+            "file": "cn_000001.csv",
+            "input_start_row": 10,
+            "target_start_row": 100,
+            "target_end": "2026-01-20",
+        },
+        {
+            "file": "hk_00005.csv",
+            "input_start_row": 20,
+            "target_start_row": 110,
+            "target_end": "2026-01-21",
+        },
+    ]
+
+    assert deterministic_batch_seed(batch, seed=42) == deterministic_batch_seed(batch, seed=42)
+    assert deterministic_batch_seed(batch, seed=42) != deterministic_batch_seed(batch, seed=43)
+    assert deterministic_batch_seed(batch, seed=42) != deterministic_batch_seed(list(reversed(batch)), seed=42)
+
+
+def test_prediction_sample_contract_requires_five_day_target():
+    valid = [
+        {
+            "file": "cn_000001.csv",
+            "input_start_row": 0,
+            "input_end_row": 90,
+            "target_start_row": 90,
+            "target_end_row": 95,
+            "target_start": "2026-01-05",
+            "target_end": "2026-01-09",
+        }
+    ]
+    validate_prediction_samples(valid, pred_len=5)
+
+    invalid = [{**valid[0], "target_end_row": 100}]
+    try:
+        validate_prediction_samples(invalid, pred_len=5)
+    except ValueError as exc:
+        assert "target length" in str(exc)
+    else:
+        raise AssertionError("five-day prediction must reject a ten-day target")
+
+
+def test_periodic_topk_applies_round_trip_cost_and_group_benchmark():
+    rows = []
+    for index, (predicted, actual) in enumerate(((0.04, 0.03), (0.03, 0.02), (0.02, 0.01), (0.01, 0.00))):
+        rows.append(
+            {
+                "market": "A",
+                "target_end": "2026-01-20",
+                "symbol": f"{index:06d}",
+                "last_close": 100.0,
+                "pred_close": 100.0 * (1.0 + predicted),
+                "true_close": 100.0 * (1.0 + actual),
+            }
+        )
+
+    result = periodic_topk_metrics(rows, top_fraction=0.25)
+
+    assert result["periods"][0]["topk"] == 1
+    assert abs(result["overall"]["mean_net_return"] - 0.0275) < 1e-12
+    assert abs(result["overall"]["mean_benchmark_return"] - 0.015) < 1e-12
+    assert abs(result["overall"]["mean_net_excess_return"] - 0.0125) < 1e-12
 
 
 def test_zero_bootstrap_replicates_disables_ci_work():

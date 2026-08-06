@@ -8,6 +8,7 @@ possible to test leakage and overlap rules without loading a large checkpoint.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,9 +17,42 @@ from typing import Any, Iterable, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from .pit_universe import is_member_on, load_membership_intervals
+
 
 TIMESTAMP_COLUMNS = ("timestamp", "timestamps")
 MARKET_PREFIXES = (("cn_", "A"), ("hk_", "HK"))
+
+
+def _sample_key(item: Mapping[str, Any]) -> str:
+    return ":".join(
+        str(item.get(field, ""))
+        for field in ("file", "input_start_row", "target_start_row", "target_end")
+    )
+
+
+def deterministic_batch_seed(samples: Sequence[Mapping[str, Any]], *, seed: int = 42) -> int:
+    """Derive a stable RNG seed from an ordered evaluation batch."""
+
+    material = f"{int(seed)}\n" + "\n".join(_sample_key(item) for item in samples)
+    return int.from_bytes(hashlib.sha256(material.encode("utf-8")).digest()[:8], "big") % (2**31)
+
+
+def validate_prediction_samples(
+    samples: Sequence[Mapping[str, Any]],
+    *,
+    pred_len: int,
+) -> None:
+    """Reject evaluation rows whose target horizon differs from inference."""
+
+    for item in samples:
+        target_length = int(item["target_end_row"]) - int(item["target_start_row"])
+        if target_length != pred_len:
+            raise ValueError(
+                f"sample {_sample_key(item)} has target length {target_length}; expected pred_len={pred_len}"
+            )
+        if int(item["input_end_row"]) != int(item["target_start_row"]):
+            raise ValueError(f"sample {_sample_key(item)} has a gap between input and target")
 
 
 @dataclass(frozen=True)
@@ -147,6 +181,9 @@ def build_window_records(
     pred_len: int = 5,
     sample_step: int | None = None,
     embargo_bars: int = 0,
+    membership_intervals: Mapping[
+        tuple[str, str], Sequence[tuple[pd.Timestamp, pd.Timestamp]]
+    ] | None = None,
 ) -> list[WindowRecord]:
     """Build non-overlapping, embargoed target windows for one asset."""
 
@@ -174,6 +211,13 @@ def build_window_records(
         target_first = _date(ts.iloc[target_start_row])
         target_last = _date(ts.iloc[target_end_row - 1])
         if target_first < start or target_last > end:
+            continue
+        if membership_intervals is not None and not is_member_on(
+            membership_intervals,
+            market=asset.market,
+            symbol=asset.symbol,
+            date=ts.iloc[input_end_row - 1],
+        ):
             continue
         records.append(
             WindowRecord(
@@ -227,6 +271,10 @@ def build_evaluation_manifest(
     if not assets:
         raise ValueError(f"no cn_*.csv or hk_*.csv files found under {root}")
 
+    membership_path = root / "metadata" / "universe_membership.csv"
+    membership_intervals = (
+        load_membership_intervals(membership_path) if membership_path.exists() else None
+    )
     history = _date(history_start)
     validation = _date(validation_start)
     test = _date(test_start)
@@ -291,6 +339,7 @@ def build_evaluation_manifest(
                 pred_len=pred_len,
                 sample_step=effective_step,
                 embargo_bars=embargo_bars,
+                membership_intervals=membership_intervals,
             )
             fold_samples.extend(asdict(record) for record in records)
         fold["sample_count"] = len(fold_samples)
@@ -308,7 +357,12 @@ def build_evaluation_manifest(
         "data_dir": str(root),
         "universe_policy": {
             "markets": ["A", "HK"],
-            "selection": "deterministic sorted filenames; point-in-time constituent metadata is required before trading claims",
+            "selection": (
+                "point-in-time index membership at forecast origin"
+                if membership_intervals is not None
+                else "deterministic sorted filenames; point-in-time constituent metadata is required before trading claims"
+            ),
+            "membership_file": str(membership_path) if membership_intervals is not None else None,
             "a_limit": a_limit,
             "hk_limit": hk_limit,
         },
@@ -344,6 +398,8 @@ def build_compact_evaluation_manifest(
     embargo_bars: int = 5,
     a_limit: int | None = 200,
     hk_limit: int | None = 100,
+    validation_fold_id: str = "validation_2026_q1",
+    diagnostic_fold_id: str = "diagnostic_2026_04_07",
 ) -> dict[str, Any]:
     """Build the fixed compact development and forward-OOS manifest."""
 
@@ -352,6 +408,10 @@ def build_compact_evaluation_manifest(
     if not assets:
         raise ValueError(f"no cn_*.csv or hk_*.csv files found under {root}")
 
+    membership_path = root / "metadata" / "universe_membership.csv"
+    membership_intervals = (
+        load_membership_intervals(membership_path) if membership_path.exists() else None
+    )
     boundaries = [
         _date(train_start),
         _date(train_end),
@@ -361,7 +421,12 @@ def build_compact_evaluation_manifest(
         _date(diagnostic_end),
         _date(strict_oos_start),
     ]
-    if boundaries != sorted(boundaries) or len(set(boundaries)) != len(boundaries):
+    empty_diagnostic_boundary = (
+        boundaries[4] == boundaries[5] == boundaries[6]
+    )
+    if boundaries != sorted(boundaries) or (
+        len(set(boundaries)) != len(boundaries) and not empty_diagnostic_boundary
+    ):
         raise ValueError("compact partition boundaries must be strictly increasing")
 
     data_end = _date(_last_day(assets))
@@ -369,13 +434,13 @@ def build_compact_evaluation_manifest(
     effective_step = sample_step if sample_step is not None else pred_len + embargo_bars
     fold_specs = (
         (
-            "validation_2026_q1",
+            validation_fold_id,
             "model_selection",
             _date(validation_start),
             _date(validation_end),
         ),
         (
-            "diagnostic_2026_04_07",
+            diagnostic_fold_id,
             "recent_diagnostic",
             _date(diagnostic_start),
             effective_diagnostic_end,
@@ -398,6 +463,7 @@ def build_compact_evaluation_manifest(
                     pred_len=pred_len,
                     sample_step=effective_step,
                     embargo_bars=embargo_bars,
+                    membership_intervals=membership_intervals,
                 )
                 fold_samples.extend(asdict(record) for record in records)
         folds.append(
@@ -424,7 +490,12 @@ def build_compact_evaluation_manifest(
         "observed_data_end": _date_text(data_end),
         "universe_policy": {
             "markets": ["A", "HK"],
-            "selection": "deterministic sorted filenames",
+            "selection": (
+                "point-in-time index membership at forecast origin"
+                if membership_intervals is not None
+                else "deterministic sorted filenames"
+            ),
+            "membership_file": str(membership_path) if membership_intervals is not None else None,
             "a_limit": a_limit,
             "hk_limit": hk_limit,
         },
@@ -470,6 +541,61 @@ def build_compact_evaluation_manifest(
         "universe": [asdict(asset) for asset in assets],
         "samples": samples_by_fold,
     }
+
+
+def select_cross_sectional_samples(
+    samples: Sequence[Mapping[str, Any]],
+    *,
+    dates_per_market: int = 5,
+    a_symbols_per_date: int = 80,
+    hk_symbols_per_date: int = 40,
+    seed: int = 42,
+) -> list[dict[str, Any]]:
+    """Build robust market/date cross-sections for production-model comparison."""
+
+    selected: list[dict[str, Any]] = []
+    for market, symbols_per_date in (("A", a_symbols_per_date), ("HK", hk_symbols_per_date)):
+        by_date: dict[str, dict[str, dict[str, Any]]] = {}
+        for raw in samples:
+            if str(raw.get("market")) != market:
+                continue
+            item = dict(raw)
+            target_end = str(item["target_end"])
+            by_date.setdefault(target_end, {}).setdefault(str(item["symbol"]), item)
+
+        eligible_dates = sorted(
+            target_end
+            for target_end, symbol_items in by_date.items()
+            if len(symbol_items) >= symbols_per_date
+        )
+        if len(eligible_dates) < dates_per_market:
+            raise ValueError(
+                f"{market} has {len(eligible_dates)} eligible target dates with at least "
+                f"{symbols_per_date} symbols; need {dates_per_market}"
+            )
+        if dates_per_market == 1:
+            chosen_dates = [eligible_dates[len(eligible_dates) // 2]]
+        else:
+            positions = [
+                round(index * (len(eligible_dates) - 1) / (dates_per_market - 1))
+                for index in range(dates_per_market)
+            ]
+            chosen_dates = [eligible_dates[position] for position in positions]
+
+        for target_end in chosen_dates:
+            symbol_items = by_date[target_end]
+            ranked_symbols = sorted(
+                symbol_items,
+                key=lambda symbol: hashlib.sha256(
+                    f"{seed}:{market}:{target_end}:{symbol}".encode("utf-8")
+                ).hexdigest(),
+            )
+            selected.extend(symbol_items[symbol] for symbol in ranked_symbols[:symbols_per_date])
+
+    return sorted(
+        selected,
+        key=lambda item: (str(item["target_end"]), str(item["market"]), str(item["symbol"])),
+    )
 
 
 def select_evaluation_samples(
