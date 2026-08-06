@@ -500,6 +500,32 @@ export interface MacroProviderResultView {
   metadata?: Record<string, any>;
 }
 
+export interface MethodologyRule {
+  id: string;
+  name: string;
+  status: "ok" | "missing" | "n/a";
+  detail: string;
+  evidence?: Record<string, any>;
+}
+
+export interface MethodologyPrValuation {
+  status: "ok" | "missing" | "n/a";
+  formula?: string | null;
+  inputs?: Record<string, number | string | null>;
+  pr?: number | null;
+  pr_f3?: number | null;
+  corrected_pr?: number | null;
+  band?: string | null;
+  tax_note?: string | null;
+  missing_reasons?: string[];
+  detail?: string;
+}
+
+export interface MethodologyRuleSet {
+  rules: MethodologyRule[];
+  pr: MethodologyPrValuation | null;
+}
+
 export interface AgentAssetResult {
   symbol: string;
   market: string;
@@ -521,6 +547,7 @@ export interface AgentAssetResult {
   } | null;
   kronos_prediction_error?: string | null;
   tool_status?: Record<string, string>;
+  methodology?: MethodologyRuleSet | null;
 }
 
 export interface AgentAnalyzeRequest {

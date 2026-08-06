@@ -24,6 +24,7 @@ from kronos_fincept.cninfo import CninfoDisclosureClient
 from kronos_fincept.logging_config import get_request_id, log_event, log_perf, redact
 
 from kronos_fincept.macro import MacroDataManager, MacroGatherResult, MacroQuery
+from kronos_fincept.methodology import compute_methodology, compact_methodology_for_llm
 from kronos_fincept.schemas import (
     DEFAULT_MODEL_ID,
     ForecastRequest,
@@ -274,6 +275,7 @@ MACRO_ROUTE_PROVIDER_IDS: dict[str, tuple[str, ...]] = {
     "geopolitical": ("polymarket", "kalshi", "yahoo_price", "cftc_cot", "bis"),
     "recession": ("source_project_macro_cache", "central_bank_gold", "fred", "kalshi_fed", "us_treasury", "cftc_cot", "bis", "cme_fedwatch"),
     "asset_pricing": ("source_project_macro_cache", "central_bank_gold", "yahoo_price", "us_treasury", "cftc_cot", "fear_greed", "anysearch", "rss_news"),
+    "valuation": ("source_project_macro_cache", "cn_index_valuation", "dividend_etf_rotation", "yahoo_price", "us_treasury", "rss_news", "anysearch"),
     "stock_options": ("source_project_macro_cache", "yfinance_options", "kalshi", "cftc_cot", "fear_greed", "yahoo_price"),
     "crypto": ("source_project_macro_cache", "coingecko", "deribit", "fear_greed", "anysearch", "altme_fng", "cftc_cot", "us_treasury"),
     "default": ("source_project_macro_cache", "central_bank_gold", "fred", "us_treasury", "cftc_cot", "rss_news", "anysearch"),
@@ -309,6 +311,8 @@ ALLOWED_MACRO_PROVIDER_IDS = frozenset(
         "china_bond_yield",
         "cboe_vix",
         "central_bank_gold",
+        "cn_index_valuation",
+        "dividend_etf_rotation",
     }
 )
 MACRO_REQUIRED_DIMENSION_COUNT = 3
@@ -337,6 +341,8 @@ MACRO_PROVIDER_DIMENSIONS: dict[str, str] = {
     "china_macro_chinalive": "official_macro",
     "china_nbs_live": "official_macro",
     "central_bank_gold": "official_macro",
+    "cn_index_valuation": "market_price",
+    "dividend_etf_rotation": "market_price",
     "edgar": "filings",
     "bis": "official_macro",
     "worldbank": "official_macro",
@@ -2652,12 +2658,37 @@ def _build_asset_context(
         def _build_risk_wrapper() -> Any:
             return _call_quietly(_build_risk_metrics, item.symbol, rows)
 
+        def _build_methodology_wrapper() -> Any:
+            try:
+                return _call_quietly(compute_methodology, asset)
+            except Exception as exc:
+                logger.debug("Methodology computation failed for %s: %s", item.symbol, _short_error(exc))
+                return None
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="kronos-compute") as pool:
             f_tech = pool.submit(_build_tech_wrapper)
             f_risk = pool.submit(_build_risk_wrapper)
+            f_method = pool.submit(_build_methodology_wrapper)
 
             asset["technical_indicators"] = f_tech.result()
             asset["risk_metrics"] = f_risk.result()
+            asset["methodology"] = f_method.result()
+
+    if not asset.get("methodology"):
+        try:
+            asset["methodology"] = _call_quietly(compute_methodology, asset)
+        except Exception as exc:
+            logger.debug("Methodology fallback computation failed for %s: %s", item.symbol, _short_error(exc))
+            asset["methodology"] = None
+
+    # Merge fetched valuation inputs back so the fundamentals summary can show
+    # PE/PB/ROE/股息率 for CN/HK assets too.
+    _methodology = asset.get("methodology") or {}
+    _pr_inputs = (_methodology.get("pr") or {}).get("inputs")
+    if isinstance(_pr_inputs, dict) and isinstance(asset.get("financial_data"), dict):
+        for key, value in _pr_inputs.items():
+            if key not in asset["financial_data"] or asset["financial_data"].get(key) is None:
+                asset["financial_data"][key] = value
 
         # DirectML-backed Kronos inference must stay outside this compute pool.
         # The upstream runtime is stateful and its device context is not safe to
@@ -2685,6 +2716,16 @@ def _build_asset_context(
                 name="risk_metrics",
                 status="completed" if asset["risk_metrics"] else "failed",
                 summary="已计算风险指标。" if asset["risk_metrics"] else "风险指标计算失败或数据不足。",
+                elapsed_ms=0,
+                metadata=_tool_metadata(symbol=item.symbol, market=item.market),
+            )
+        )
+
+        calls.append(
+            AgentToolCall(
+                name="methodology_rules",
+                status="completed" if asset.get("methodology") else "skipped",
+                summary="已计算财道技术规则与市赚率估值。" if asset.get("methodology") else "方法论规则计算跳过。",
                 elapsed_ms=0,
                 metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
@@ -3160,6 +3201,12 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
     elif re.search(r"比特币|btc|eth|加密|crypto|deribit|coingecko", text, re.IGNORECASE):
         route = "crypto"
     elif re.search(
+        r"估值|贵不贵|便宜|贵了|红利|股息|分红|市盈率|市净率|\bpe\b|\bpb\b|高股息|ETF轮动",
+        text,
+        re.IGNORECASE,
+    ):
+        route = "valuation"
+    elif re.search(
         r"A股|港股|美股|大盘|指数|上证|深证|沪深|创业板|科创|恒生|纳指|标普|道指|市场位置|现在位置|风险偏好|资金面|流动性",
         text,
         re.IGNORECASE,
@@ -3197,6 +3244,13 @@ def select_macro_provider_ids(question: str, *, symbols: list[str] | None = None
                 selected.append(provider_id)
             if len(selected) >= 3:
                 break
+    if route == "valuation":
+        # Keep the valuation/rotation providers ahead of generic local sources
+        # so they survive the [:5] cap for valuation-focused questions.
+        for provider_id in ("cn_index_valuation", "dividend_etf_rotation"):
+            if provider_id in selected:
+                selected.remove(provider_id)
+                selected.insert(0, provider_id)
     return selected[:5]
 
 
@@ -3751,6 +3805,16 @@ def _fetch_financial_summary(symbol: str, market: str) -> dict[str, Any] | None:
                 "pe": info.get("trailingPE"),
                 "pb": info.get("priceToBook"),
                 "roe": info.get("returnOnEquity"),
+                "payout_ratio": info.get("payoutRatio"),
+                "dv_ratio": (
+                    float(info["trailingAnnualDividendYield"]) * 100.0
+                    if info.get("trailingAnnualDividendYield") is not None
+                    else (
+                        float(info["dividendYield"]) * 100.0
+                        if info.get("dividendYield") is not None
+                        else None
+                    )
+                ),
                 "revenue": info.get("totalRevenue"),
                 "net_income": info.get("netIncomeToCommon"),
                 "market_cap": info.get("marketCap"),
@@ -4170,6 +4234,12 @@ def _deterministic_fundamentals_summary(asset: dict[str, Any]) -> str:
     roe = _last_indicator_value(data.get("roe"))
     if roe is not None:
         parts.append(f"ROE{roe * 100:.2f}%")
+    dv = _last_indicator_value(data.get("dv_ratio"))
+    if dv is not None:
+        parts.append(f"股息率{dv:.2f}%")
+    payout = _last_indicator_value(data.get("payout_ratio"))
+    if payout is not None:
+        parts.append(f"派息率{payout * 100:.2f}%")
     return "；".join(parts) + "。" if parts else "结构化财务摘要可用，但未返回可展示的核心字段。"
 
 
@@ -4483,8 +4553,20 @@ def _enforce_report_data_quality(
             raw = llm_reports.get(key)
             payload = raw.get("report") if isinstance(raw, dict) and isinstance(raw.get("report"), dict) else raw
             asset_report = _normalize_report(payload) if isinstance(payload, dict) else _default_asset_report(asset)
-            asset_report["technical"] = _deterministic_technical_summary(asset)
-            asset_report["fundamentals"] = _deterministic_fundamentals_summary(asset)
+            deterministic_technical = _deterministic_technical_summary(asset)
+            llm_technical = str(asset_report.get("technical") or "").strip()
+            asset_report["technical"] = (
+                f"{deterministic_technical}\n\n{llm_technical}"
+                if llm_technical and llm_technical != deterministic_technical
+                else deterministic_technical
+            )
+            deterministic_fundamentals = _deterministic_fundamentals_summary(asset)
+            llm_fundamentals = str(asset_report.get("fundamentals") or "").strip()
+            asset_report["fundamentals"] = (
+                f"{deterministic_fundamentals}\n\n{llm_fundamentals}"
+                if llm_fundamentals and llm_fundamentals != deterministic_fundamentals
+                else deterministic_fundamentals
+            )
             short_term, _ = _prediction_summary(
                 asset.get("market_data") or {},
                 asset.get("kronos_prediction") or {},
@@ -4668,6 +4750,7 @@ def _build_asset_result(asset: dict[str, Any], llm_asset_report: dict[str, Any] 
         "kronos_prediction": prediction,
         "kronos_prediction_error": asset.get("kronos_prediction_error"),
         "tool_status": _asset_tool_status(asset),
+        "methodology": asset.get("methodology"),
     }
 
 
@@ -4678,6 +4761,7 @@ def _asset_tool_status(asset: dict[str, Any]) -> dict[str, str]:
         "financial_data": "completed" if asset.get("financial_data") else "skipped",
         "technical_indicators": "completed" if asset.get("technical_indicators") else "skipped",
         "risk_metrics": "completed" if asset.get("risk_metrics") else "failed",
+        "methodology_rules": "completed" if asset.get("methodology") else "skipped",
         "kronos_prediction": "completed" if asset.get("kronos_prediction") else "failed",
         "online_research": (
             "completed"
@@ -4869,6 +4953,8 @@ def _compact_llm_asset_context(asset: dict[str, Any], *, multi_asset: bool = Fal
         compact["market_data"] = _compact_market_data_for_llm(asset.get("market_data"))
     if "technical_indicators" in asset:
         compact["technical_indicators"] = _compact_technical_indicators_for_llm(asset.get("technical_indicators"))
+    if "methodology" in asset:
+        compact["methodology_context"] = compact_methodology_for_llm(asset.get("methodology"))
     if "online_research" in asset:
         compact["online_research"] = _compact_online_research_for_llm(
             asset.get("online_research"),
@@ -5214,6 +5300,11 @@ macro_analysis, macro_signals, cross_validation, contradictions, probability_sce
 宏观问题的 conclusion 必须第一字符起直接回答用户问题，格式为“结论：……”，只写核心判断和行动方向；macro_analysis 必须只写支撑判断的事实、信号和不确定性，禁止重复 conclusion，也不要以“结论：”开头。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
 conclusion 必须直接回应问题中的具体对象（问题提到 A股/黄金/美联储/比特币等，结论必须出现对应对象），并给出明确倾向（如“偏多/偏空/震荡/磨底/尚未确认/仍偏强”等）；禁止用“证据满足/需观察/等待确认”等与问题无关的套话充当结论主体；即使证据不足，也要先给出基于现有信号的当前倾向，再说明不确定性与监控条件。
 recommendation 必须是六档动作之一：买入（空仓/低仓且信号偏多，适合建仓）、加仓（已有仓位且信号进一步偏多）、持有（已有仓位且方向中性偏多，维持）、观察（方向不明或证据不足，暂不操作）、减仓（已有仓位且信号转弱/风险上升）、卖出（趋势破坏或风险显著恶化）。必须结合 Kronos 5 日预期、均线/周线、量化风险、基本面和宏观信号给出其中一档，并在 conclusion 中包含一句动作理由；禁止“谨慎/观望”“谨慎”“观望”“建议关注”等合并词充当 recommendation。视角规则：问题属建仓视角（如“现在能买吗”“能不能买”）时只能输出 买入/持有/观察；问题明确提及已有持仓、减仓或卖出时输出 加仓/持有/减仓/卖出；未说明视角时默认按建仓视角处理。
+方法论（methodology_context 与宏观估值/轮动 provider 是事实输入，必须引用但不得改变输出结构；规则状态为 missing/n/a 时明确写“未验证”或原因，禁止编造数值）：
+- 个股技术面按“风险否决 → 结构/支撑压力 → 趋势确认 → 量额验证”层次撰写：先说明 risk_veto 是否命中（跌破 EMA 隧道/疑似抛物线/贴近52周高点），再写斐波那契与支撑压力、EMA 隧道状态，然后是 KDJ/MACD 确认，最后给量额共振结论。
+- 个股基本面先回答“贵不贵”：pr 可用时写出所用公式（F1 或 F3）、修正 PR 与所处估值带（如“PR=0.52，6折分批区”），并保留“估值便宜≠可买，技术面负责择时”；pr 为 missing/n/a 时说明原因，不编造 PE/PB/ROE。
+- 宏观问题涉及股票指数/市场贵贱/红利配置时，优先引用 cn_index_valuation 的指数 PE/PB 百分位与股息率；红利类问题引用 dividend_etf_rotation 的轮动排序（股息率+60日动量），全部 ETF 动量为负时先提示现金/等回调。
+- 黄金/比特币/商品问题先做风险否决检查：历史高位（贴近52周高点或长周期分位极端）+ 情绪极端（恐惧贪婪≥90/VIX 极低）时先给出降级/回避提示，再给方向；GOLD-02（美元指数、实际利率、央行购金）交叉验证继续保留。
 宏观问题每个文字字段最多 2 句，避免长篇解释导致 JSON 被截断。
 macro_signals 可省略或最多返回 5 条最关键摘要；后端会用真实 provider 结构化信号补齐。每项包含 source, signal_type, value, interpretation, time_horizon, confidence, source_url。
 time_stratified_sub_conclusions 为数组，每项包含 dimension（短/中/长期或系统风险）、judgment、confidence（高/中/低）。每个关键判断必须标注对应时间跨度。时间分层规则：S-短期（天到周）关注预测市场近月、价格动量、VIX、期权 skew、FOMC实时概率；M-中期（周到月）关注收益率曲线变化、CFTC持仓变动、信用利差、宏观数据发布；L-长期（月到季度）关注信用周期拐点、GDP预测修正、BIS信用缺口、行业库存周期。每层必须给出独立的 judgment 和该层的 confidence，不同层的 confidence 可以不同。
@@ -5841,6 +5932,8 @@ _MACRO_MONITOR_SOURCE_LABELS: dict[str, str] = {
     "cboe_vix": "CBOE VIX波动率",
     "cboe_options": "CBOE期权市场",
     "central_bank_gold": "全球央行购金",
+    "cn_index_valuation": "A股指数估值(乐咕/中证)",
+    "dividend_etf_rotation": "红利ETF轮动",
     "polymarket": "Polymarket预测市场",
     "kalshi": "Kalshi预测市场",
     "kalshi_fed": "Kalshi美联储决议预测",
@@ -5880,6 +5973,10 @@ _MACRO_MONITOR_SIGNAL_TYPE_LABELS: dict[str, str] = {
     "central_bank_gold_trend": "全球央行购金趋势",
     "central_bank_gold_top_buyer": "全球央行购金最大买家",
     "central_bank_gold_survey": "全球央行黄金配置调查",
+    "cn_index_valuation": "指数PE/PB分位估值",
+    "cn_index_dividend_yield": "指数股息率",
+    "dividend_etf_rotation": "红利ETF轮动排序",
+    "dividend_etf_metrics": "红利ETF股息率/动量",
     "crypto_global_risk_appetite": "加密市场风险偏好",
     "real_gdp_growth": "实际GDP增速",
     "policy_rate": "政策利率",
@@ -5925,6 +6022,10 @@ _MACRO_MONITOR_SIGNAL_TYPE_ALIASES: dict[str, str] = {
     "central_bank_gold_net": "央行购金 净购金 央行买金",
     "central_bank_gold_trend": "央行购金 购金趋势",
     "central_bank_gold_pboc": "中国央行 人民银行 黄金储备",
+    "cn_index_valuation": "指数估值 PE分位 PB分位 估值",
+    "cn_index_dividend_yield": "股息率 指数股息",
+    "dividend_etf_rotation": "红利ETF 轮动 首选",
+    "dividend_etf_metrics": "红利ETF 股息率 动量",
     "fomc_rate_probability": "美联储 加息概率 降息概率 FOMC",
     "fed_decision_probability": "美联储 加息概率 降息概率",
     "prediction_market_probability": "预测市场 概率 隐含概率",

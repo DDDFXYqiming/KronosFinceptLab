@@ -23,6 +23,7 @@ import type {
   AgentAssetResult,
   AgentReport,
   ForecastRow,
+  MethodologyRuleSet,
   MacroMonitoringSignal,
   MacroProbabilityScenario,
   MacroSignal,
@@ -659,7 +660,107 @@ function KronosForecastPanel({ asset }: { asset: AgentAssetResult }) {
   );
 }
 
-function AssetAnalysisCard({ asset, hideTextSections }: { asset: AgentAssetResult; hideTextSections?: boolean }) {
+function methodologyStatusLabel(language: Language, status: string): string {
+  if (status === "ok") return tx(language, "通过", "OK");
+  if (status === "missing") return tx(language, "数据不足", "Missing data");
+  return tx(language, "不适用", "N/A");
+}
+
+function methodologyStatusClass(status: string): string {
+  if (status === "ok") return "bg-green-100 text-green-800";
+  if (status === "missing") return "bg-amber-100 text-amber-800";
+  return "bg-muted text-muted-foreground";
+}
+
+function MethodologyEvidenceCard({ methodology, language }: { methodology?: MethodologyRuleSet | null; language: Language }) {
+  if (!methodology) return null;
+  const rules = Array.isArray(methodology.rules) ? methodology.rules : [];
+  const okCount = rules.filter((rule) => rule.status === "ok").length;
+  const missingCount = rules.filter((rule) => rule.status === "missing").length;
+  const naCount = rules.filter((rule) => rule.status === "n/a").length;
+  const pr = methodology.pr;
+  const prBadge = !pr ? null : pr.status === "ok" ? (
+    <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">
+      {tx(language, "PR", "PR")} {pr.band || pr.pr}
+    </span>
+  ) : pr.status === "n/a" ? (
+    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      {tx(language, "PR 不适用", "PR N/A")}
+    </span>
+  ) : (
+    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+      {tx(language, "PR 数据不足", "PR unavailable")}
+    </span>
+  );
+  return (
+    <details className="mb-5 rounded-lg border border-border bg-muted/40">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-sm font-semibold text-foreground">
+        <span>{tx(language, "方法论规则依据", "Methodology Rules")}</span>
+        <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">
+          {tx(language, "技术", "Technical")} {okCount}/{rules.length}
+        </span>
+        {missingCount > 0 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            {tx(language, "数据不足", "Missing")} {missingCount}
+          </span>
+        )}
+        {naCount > 0 && (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+            {tx(language, "不适用", "N/A")} {naCount}
+          </span>
+        )}
+        {prBadge}
+      </summary>
+      <div className="border-t border-border px-3 py-3">
+        {rules.length > 0 && (
+          <div className="table-scroll overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="py-1.5 pr-3 text-left font-medium">{tx(language, "规则", "Rule")}</th>
+                  <th className="py-1.5 pr-3 text-left font-medium">{tx(language, "状态", "Status")}</th>
+                  <th className="py-1.5 text-left font-medium">{tx(language, "判定", "Detail")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rules.map((rule) => (
+                  <tr key={rule.id} className="border-b border-border last:border-b-0">
+                    <td className="py-1.5 pr-3 align-top font-medium text-foreground">{rule.name}</td>
+                    <td className="py-1.5 pr-3 align-top">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${methodologyStatusClass(rule.status)}`}>
+                        {methodologyStatusLabel(language, rule.status)}
+                      </span>
+                    </td>
+                    <td className="py-1.5 align-top text-muted-foreground">{rule.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {pr && (
+          <div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs text-muted-foreground">
+            <p className="mb-1 font-semibold text-foreground">{tx(language, "市赚率估值 (PR)", "PR Valuation")}</p>
+            {pr.status === "ok" ? (
+              <>
+                <p>
+                  {tx(language, "公式", "Formula")}: {pr.formula}；PR = {pr.pr}（F3 = {pr.pr_f3 ?? "-"}）
+                  {pr.corrected_pr != null ? `；修正 PR' = ${pr.corrected_pr}` : ""}
+                </p>
+                {pr.band && <p>{tx(language, "估值带", "Band")}: {pr.band}</p>}
+                {pr.tax_note && <p className="mt-1 text-amber-700">{pr.tax_note}</p>}
+              </>
+            ) : (
+              <p>{pr.detail || tx(language, "估值数据不足，无法计算市赚率。", "Insufficient valuation data to compute PR.")}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function AssetAnalysisCard({ asset, hideTextSections, language }: { asset: AgentAssetResult; hideTextSections?: boolean; language: Language }) {
   const report = asset.report;
   return (
     <Card>
@@ -725,6 +826,7 @@ function AssetAnalysisCard({ asset, hideTextSections }: { asset: AgentAssetResul
         </div>
       )}
       {!hideTextSections && <MacroBackgroundDetails report={report} />}
+      <MethodologyEvidenceCard methodology={asset.methodology} language={language} />
 
       {asset.risk_metrics && (
         <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -1161,7 +1263,12 @@ function AnalysisContent() {
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-foreground">{tx(language, "各标的分析", "Asset-Level Analysis")}</h2>
               {assetResults.map((asset) => (
-                <AssetAnalysisCard key={`${asset.market}-${asset.symbol}`} asset={asset} hideTextSections={assetResults.length <= 1} />
+                <AssetAnalysisCard
+                  key={`${asset.market}-${asset.symbol}`}
+                  asset={asset}
+                  hideTextSections={assetResults.length <= 1}
+                  language={language}
+                />
               ))}
             </div>
           )}

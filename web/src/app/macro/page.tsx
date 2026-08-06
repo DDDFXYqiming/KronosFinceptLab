@@ -37,6 +37,8 @@ const DEFAULT_QUESTION = "现在适合买黄金吗";
 
 const KNOWN_PROVIDERS = [
   { id: "central_bank_gold", label: "央行购金", group: "经济数据" },
+  { id: "cn_index_valuation", label: "指数估值", group: "市场价格" },
+  { id: "dividend_etf_rotation", label: "红利ETF轮动", group: "市场价格" },
   { id: "fred", label: "FRED", group: "经济数据" },
   { id: "cme_fedwatch", label: "CME FedWatch", group: "利率/期货" },
   { id: "kalshi", label: "Kalshi", group: "预测市场" },

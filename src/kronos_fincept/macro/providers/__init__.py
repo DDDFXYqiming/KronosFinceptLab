@@ -5,6 +5,8 @@ from kronos_fincept.macro.providers.cboe_vix import CboeVixProvider, CboeOptions
 from kronos_fincept.macro.providers.central_bank_gold import CentralBankGoldProvider
 from kronos_fincept.macro.providers.china_bond_yield import ChinaBondYieldProvider
 from kronos_fincept.macro.providers.china_macro import ChinaMacroAkshareProvider
+from kronos_fincept.macro.providers.cn_index_valuation import CnIndexValuationProvider
+from kronos_fincept.macro.providers.dividend_etf_rotation import DividendEtfRotationProvider
 from kronos_fincept.macro.providers.economic_calendar import EconomicCalendarProvider
 from kronos_fincept.macro.providers.chinalive import ChinaDataLiveProvider
 from kronos_fincept.macro.providers.dbnomics import DBnomicsProvider
@@ -45,6 +47,8 @@ __all__ = [
     "CboeOptionsProvider",
     "CentralBankGoldProvider",
     "ChinaBondYieldProvider",
+    "CnIndexValuationProvider",
+    "DividendEtfRotationProvider",
     "EconomicCalendarProvider",
     "BisProvider",
     "CMEFedWatchProvider",
@@ -140,4 +144,8 @@ def create_all_providers() -> list:
         WrappedDeribitOptionGreeksProvider(),
         WrappedYfOptionGreeksProvider(),
     ]
-    return create_default_providers() + [p for p in wrapped if isinstance(p, MacroProvider)]
+    return (
+        create_default_providers()
+        + [CnIndexValuationProvider(), DividendEtfRotationProvider()]
+        + [p for p in wrapped if isinstance(p, MacroProvider)]
+    )
