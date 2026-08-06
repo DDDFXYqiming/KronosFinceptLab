@@ -166,3 +166,22 @@ tokenizer 在 clean_v8 上微调（LR 2e-4、2 epoch、val loss 0.0094），pred
 `[-0.0966, 0.4263]`、`p=0.2687`；MAE 增量 CI `[-0.0215, -0.0005]` 稳定改善但不足以单独晋级。
 分市场同样以 A 股为主。结论：tokenizer 两阶段在 clean_v8 上未超过 predictor-only 的
 `fullv3_ep3cont_best`，按决策门不切换生产。原始结果：`output/evaluation_batch2/`。
+
+## 2026-08-07 batch-3 Confirm：fast_recipe（更多数据配方）
+
+新配方 `batch 32 + accum 4（有效 128）+ 窗口预计算 + AdamW foreach=False + 每轮 4096 步`
+（13.1 万样本/轮，2 倍数据），父模型 `fullv3_ep3cont_best`，LR 5e-7、3 epoch（epoch 3 早停）。
+固定 600 样本、`sample_count=8, T=0.5`，样本哈希 `b54adb…`：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | v2 通过 |
+|---|---:|---:|---:|---:|---|
+| **fast_recipe_best** | **0.1283** | **0.1319** | 52.67% | **0.0461** | **是** |
+| fast_recipe_epoch3 | 0.1285 | 0.1310 | 52.67% | 0.0461 | 是 |
+| fullv3_ep3cont_best（父） | 0.1193 | 0.1097 | 53.33% | 0.0463 | 是 |
+| 官方 Kronos-small | -0.0646 | -0.0374 | 47.83% | 0.0604 | 基线 |
+
+`fast_recipe_best` 相对官方：RankIC 增量 `+0.1929`，配对 Bootstrap `p=0.0744`；MAE 增量 CI
+`[-0.0234, -0.0057]`。4/5 指标超过父线（Pooled RankIC +0.009、MeanDaily +0.022、MAE 更低、
+Top5 更高；DirAcc 52.67% vs 53.33% 略低但在门槛内）。结论：fast_recipe 配方产出当前
+clean_v8 开发 Confirm 点估计最佳 checkpoint，定为新默认训练配方；生产 junction 仍为
+`v3-cont epoch_2`。原始结果：`output/evaluation_batch3/`。

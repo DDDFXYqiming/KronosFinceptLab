@@ -89,3 +89,68 @@ CPU 计算，训练/验证计算全部留在 DML GPU。回归：原崩溃探针�
 均落后父线 `fullv3_ep3cont_best`，配对 Bootstrap p=0.2687 未过门槛。按决策门：tokenizer 候选
 不切换生产，生产 junction 保持 `v3-cont epoch_2`，`fullv3_ep3cont_best` 仍为下一轮严格 OOS
 首要研究候选。MAE 改善（CI [-0.0215, -0.0005]）稳定但不足以单独晋级。
+
+## 2026-08-07 batch-3：GPU 吞吐配方设计（fast_recipe）
+
+### 背景与目标
+
+对照 L4（全量 ~10828 步/轮、80-90 分钟）与 v8 系列（max_train_batches 2048、14-16 分钟/轮），
+时间差异来自每轮步数上限，不是显存或模型。目标是“尽可能利用 GPU、更快更有效地微调”，
+并把候选配方作为独立实验线与 `fullv3_ep3cont_best` 同场对比（Confirm 评测固定 batch 32 不变）。
+
+### 实测与迭代（DirectML，AMD Radeon 7800 XT）
+
+1. **batch 128 无预计算**：每步 ~2s（CPU 逐窗 DataFrame 切片 + numpy 归一化成为瓶颈），
+   2985 步/轮（全量 38.2 万窗口）→ 单轮约 2 小时，否决。
+2. **窗口预计算**（`finetune_base_model.py`）：启动时一次性归一化全部 382200 个训练窗口并缓存
+   （耗时 249.5s，约 1.6GB 内存），采样逻辑（py_rng）不变；正确性测试：同一 seed 下 300 个
+   采样张量与原始路径逐位一致。这一步消除了 CPU 数据准备。
+3. **batch 128 + 预计算**：实测仍 2.5s/步（51 samples/s）。原因：每步固定开销
+   （loss.item 同步、clip_grad_norm、DML 调度）主导，batch 加大不能摊薄；DML 不随 batch 扩展。
+4. **AdamW foreach=False**：DML 把 `aten::lerp.Scalar_out`（foreach 的 `_foreach_lerp_`）回退
+   CPU；关闭 foreach 后 batch 32 从 0.83s/步降到 0.51s/步（38→63 samples/s）。
+
+基准表（本机当前负载下，含 tokenizer encode + forward + backward + optimizer）：
+
+| batch | optimizer foreach | 每步耗时 | 吞吐 |
+|---|---:|---:|---:|
+| 32 | True | 0.833s | 38 samples/s |
+| 32 | False | 0.508s | 63 samples/s |
+| 128 | True | 2.391s | 54 samples/s |
+| 128 | False | 1.613s | 79 samples/s |
+
+真实训练循环（含 loss.item / clip_grad_norm / DataLoader 传输）batch 128 为 2.5s/步
+（51 samples/s），仍低于 batch 32。
+
+### 最终配方（fast_recipe v3）
+
+`batch 32 + accumulation 4（有效 batch 128）+ precompute_windows + optimizer_foreach=false +
+max_train_batches 4096`：每轮 13.1 万样本（当前 v8 线 6.5 万的 2 倍），预期单轮 ~28-34 分钟，
+3 轮。父模型 `fullv3_ep3cont_best`，LR 5e-7、seed 42、早停 patience=1/min_delta=0.001。
+
+### 训练与 Confirm 结果
+
+实测步速 0.33s/步（比原 v8 线 0.4s 更快），每轮 24.1 分钟；Epoch 验证损失 3.0454 / 3.0439 /
+（epoch 3 未改善，早停），best = epoch 2（3.0439，父模型 3.0506）。
+
+固定 600 样本 Confirm（sc8/T0.5，样本哈希 b54adb…）：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | Top5 超额 | v2 通过 |
+|---|---:|---:|---:|---:|---:|---|
+| **fast_recipe_best** | **0.1283** | **0.1319** | 52.67% | **0.0461** | **0.0369** | **是** |
+| fast_recipe_epoch3 | 0.1285 | 0.1310 | 52.67% | 0.0461 | 0.0369 | 是 |
+| fullv3_ep3cont_best（父） | 0.1193 | 0.1097 | 53.33% | 0.0463 | 0.0332 | 是 |
+| 官方 Kronos-small | -0.0646 | -0.0374 | 47.83% | 0.0604 | -0.0064 | 基线 |
+
+`fast_recipe_best` 相对官方：Pooled RankIC 增量 `+0.1929`、配对 Bootstrap `p=0.0744`；MAE 增量
+CI `[-0.0234, -0.0057]`；逐期配对 t `p=0.1024`（10 期）。分市场 A 股 Pooled RankIC `0.1558`
+（Top5 胜率 80%）、港股 `0.0594`。
+
+### 结论：配方调整生效
+
+"更多数据（2 倍/轮）+ AdamW foreach=False + 窗口预计算"的配方在 4/5 指标上超过父线
+`fullv3_ep3cont_best`（Pooled RankIC +0.009、MeanDaily +0.022、MAE 更低、Top5 更高），成为
+clean_v8 当前开发 Confirm 点估计最佳 checkpoint，且是首个在"更多数据"配方下超过原冠军的新线。
+该配方定为项目新默认训练配方（记录于本日志与 MODEL_STATUS）；生产 junction 仍保持
+`v3-cont epoch_2`，待严格 OOS 与 Qlib 回测。batch 32 是 DML 最优（batch 128 每步同步开销
+主导，实测 2.5s/步 51 samples/s，低于 batch 32 的 64 samples/s），不再尝试大 batch。

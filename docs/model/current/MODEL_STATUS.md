@@ -114,6 +114,24 @@ best val 3.3037）在 clean_v8 上完成，600 样本 Confirm（sc8/T0.5）：
 （`Device: privateuseone:0`），DML 不支持 `torch.unique` 的边界已修复并记录
 （`external/Kronos/model/module.py`，指标计算落 CPU、训练计算全 GPU）。
 
+## 2026-08-07 batch-3：fast_recipe（更多数据配方）结果
+
+新默认配方：`batch 32 + accum 4（有效 128）+ 窗口预计算 + AdamW foreach=False + 每轮 4096 步`
+（13.1 万样本/轮，2 倍数据；实测 0.33s/步、每轮 24 分钟）。固定 600 样本 Confirm（sc8/T0.5）：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | v2 通过 |
+|---|---:|---:|---:|---:|---|
+| **fast_recipe_best** | **0.1283** | **0.1319** | 52.67% | **0.0461** | **是** |
+| fullv3_ep3cont_best（父） | 0.1193 | 0.1097 | 53.33% | 0.0463 | 是 |
+| 官方 Kronos-small | -0.0646 | -0.0374 | 47.83% | 0.0604 | 基线 |
+
+`fast_recipe_best` 是 clean_v8 当前开发 Confirm 点估计最佳 checkpoint（相对官方 Bootstrap
+`p=0.0744`、MAE CI 不含 0），4/5 指标超过父线。决策：
+- fast_recipe 配方定为项目新默认训练配方（batch 32 是 DML 实测最优；batch 128 因每步同步
+  开销主导而更慢，已否决）；
+- `fast_recipe_best` 取代 `fullv3_ep3cont_best` 成为下一轮严格 OOS 的首要研究候选；
+- 生产 junction 仍保持 `v3-cont epoch_2`，等待严格 OOS 与 Qlib 回测。
+
 ## clean_v7 PIT continuation 结果
 
 2026-08-05～06 从当前冠军 `v3-cont epoch_2` 出发，在 `clean_v7_largecap_pit` 上完成两个

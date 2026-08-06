@@ -259,5 +259,13 @@ tokenizer（LR 2e-4、2 epoch）与 predictor（父=fullv3_ep3cont_best + 微调
 `p<0.10` 门槛；MAE 改善 CI `[-0.0215, -0.0005]` 稳定但不单独晋级。结论：tokenizer 两阶段
 未超过 predictor-only 路线，不切换生产；生产 junction 保持 `v3-cont epoch_2`。
 
+## 12. 2026-08-07 batch-3 fast_recipe 判定
+
+新配方（batch 32 + accum 4 + 窗口预计算 + AdamW foreach=False + 4096 步/轮 = 2 倍数据）训练的
+`fast_recipe_best` 通过五项 v2 门槛（相对官方 Bootstrap `p=0.0744`、MAE CI 不含 0），
+Pooled RankIC 0.1283 超过父线 fullv3_ep3cont_best（0.1193）。该配方定为新默认训练配方；
+`fast_recipe_best` 列为下一轮严格 OOS 首要候选；生产 junction 保持 `v3-cont epoch_2`。
+注意：DML 实测 batch 128 因每步同步开销主导而更慢（2.5s/步，51 samples/s），不采用大 batch。
+
 相关入口：[当前模型状态](MODEL_STATUS.md) · [数据规范](DATASET_SPEC.md) ·
 [评测历史](../history/EVALUATION_RESULTS.md)
