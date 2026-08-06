@@ -4400,7 +4400,14 @@ def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
     return f"{label}：{fact_text}，{judgment}。", recommendation
 
 
-def _verified_asset_text(asset_contexts: list[dict[str, Any]]) -> str:
+_NUMBER_TOKEN_RE = re.compile(r"(?<![A-Za-z])[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
+
+
+def _verified_asset_text(
+    asset_contexts: list[dict[str, Any]],
+    report: dict[str, Any] | None = None,
+) -> str:
+    """Build the verified-number source text for one analysis run."""
     verified_parts: list[str] = []
     for asset in asset_contexts:
         verified_parts.extend(
@@ -4419,19 +4426,81 @@ def _verified_asset_text(asset_contexts: list[dict[str, Any]]) -> str:
         prediction = asset.get("kronos_prediction")
         if isinstance(prediction, dict):
             verified_parts.append(json.dumps(prediction, ensure_ascii=False, default=str))
+        for key in ("methodology", "financial_data", "technical_indicators"):
+            value = asset.get(key)
+            if value is not None:
+                verified_parts.append(json.dumps(value, ensure_ascii=False, default=str))
+        market_data = asset.get("market_data")
+        if isinstance(market_data, dict):
+            compact_market = {key: value for key, value in market_data.items() if key != "rows"}
+            verified_parts.append(json.dumps(compact_market, ensure_ascii=False, default=str))
+    if isinstance(report, dict):
+        for key in (
+            "macro_signals",
+            "probability_scenarios",
+            "monitoring_signals",
+            "cross_validation",
+            "contradictions",
+            "macro_analysis",
+        ):
+            value = report.get(key)
+            if value is not None:
+                verified_parts.append(json.dumps(value, ensure_ascii=False, default=str))
     return " ".join(verified_parts)
 
 
-def _sanitize_unverified_numbers(text: Any, asset_contexts: list[dict[str, Any]]) -> str:
+def _normalized_number_variants(token: str) -> list[float]:
+    """Raw / ×100 / ÷100 / rounded-2dp variants for tolerance matching."""
+    try:
+        value = float(token.replace(",", ""))
+    except (TypeError, ValueError):
+        return []
+    variants = {
+        value,
+        value * 100.0,
+        value / 100.0,
+        round(value, 2),
+        round(value * 100.0, 2),
+        round(value / 100.0, 2),
+    }
+    return [item for item in variants if math.isfinite(item)]
+
+
+def _verified_number_pool(verified_text: str) -> list[float]:
+    """Deduplicated float pool extracted from verified tool output."""
+    seen: set[float] = set()
+    pool: list[float] = []
+    for match in _NUMBER_TOKEN_RE.finditer(verified_text):
+        for variant in _normalized_number_variants(match.group(0)):
+            if variant not in seen:
+                seen.add(variant)
+                pool.append(variant)
+                if len(pool) >= 40000:
+                    return pool
+    return pool
+
+
+def _number_matches_verified(token: str, pool: list[float]) -> bool:
+    for variant in _normalized_number_variants(token):
+        tolerance = max(0.01, abs(variant) * 0.005)
+        for verified in pool:
+            if abs(variant - verified) <= tolerance:
+                return True
+    return False
+
+
+def _sanitize_unverified_numbers(
+    text: Any,
+    asset_contexts: list[dict[str, Any]],
+    report: dict[str, Any] | None = None,
+) -> str:
     """Keep model wording but flag numbers absent from verified tool output."""
     raw = str(text or "").strip()
     if not raw:
         return raw
-    verified_text = _verified_asset_text(asset_contexts)
-    changed = False
+    verified_pool = _verified_number_pool(_verified_asset_text(asset_contexts, report))
 
     def _replace(match: re.Match[str]) -> str:
-        nonlocal changed
         token = match.group(0)
         prev_char = raw[match.start() - 1] if match.start() > 0 else ""
         next_char = raw[match.end()] if match.end() < len(raw) else ""
@@ -4441,15 +4510,11 @@ def _sanitize_unverified_numbers(text: Any, asset_contexts: list[dict[str, Any]]
             return token
         if prev_char in "-/—" or next_char in "-/—年月日周":
             return token
-        if token in verified_text:
+        if _number_matches_verified(token, verified_pool):
             return token
-        changed = True
         return "待验证"
 
-    result = re.sub(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?", _replace, raw)
-    if changed:
-        result = result.rstrip() + "（提示：部分具体数字未能从本轮工具数据中核对，请以数据卡片为准。）"
-    return result
+    return re.sub(_NUMBER_TOKEN_RE, _replace, raw)
 
 
 def _normalize_action(value: Any) -> str | None:
@@ -4579,7 +4644,7 @@ def _enforce_report_data_quality(
             deterministic_conclusion, deterministic_recommendation = _deterministic_asset_outlook(asset)
             llm_conclusion = str(asset_report.get("conclusion") or "").strip()
             if llm_conclusion and llm_conclusion != deterministic_conclusion:
-                asset_report["conclusion"] = _sanitize_unverified_numbers(llm_conclusion, [asset])
+                asset_report["conclusion"] = _sanitize_unverified_numbers(llm_conclusion, [asset], report=guarded)
             else:
                 asset_report["conclusion"] = deterministic_conclusion
             llm_action = _normalize_action(asset_report.get("recommendation"))
@@ -4656,7 +4721,7 @@ def _enforce_report_data_quality(
         guarded["recommendation"] = "数据不完整，暂不进行跨标的排序"
         guarded["confidence"] = min(float(guarded.get("confidence") or 0.5), 0.4)
     elif confidence_caps:
-        guarded["conclusion"] = _sanitize_unverified_numbers(guarded.get("conclusion"), asset_contexts)
+        guarded["conclusion"] = _sanitize_unverified_numbers(guarded.get("conclusion"), asset_contexts, report=guarded)
         if long_horizon:
             guarded["conclusion"] = (
                 f"{guarded['conclusion']} "

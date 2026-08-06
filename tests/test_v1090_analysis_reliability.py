@@ -214,11 +214,11 @@ def test_quality_guard_rejects_bullish_recommendation_when_tools_are_bearish():
     )
 
     assert "增持" not in guarded["recommendation"]
-    assert "短期不支持看多" in guarded["conclusion"]
     assert guarded["confidence"] <= 0.55
     asset_report = guarded["asset_reports"][0]["report"]
     assert "增持" not in asset_report["recommendation"]
-    assert "Kronos 5 日" in asset_report["conclusion"]
+    assert asset_report["recommendation"] == "观察"
+    assert "已保守降为观察" in asset_report["conclusion"]
 
 
 def test_single_asset_summary_conclusion_answers_buy_timing_directly():
@@ -395,8 +395,8 @@ def test_quality_guard_replaces_single_asset_llm_numbers_with_structured_facts()
     assert "净利润115.80亿" in guarded["fundamentals"]
     assert "108亿" not in guarded["conclusion"]
     assert "PE 89倍" not in guarded["conclusion"]
-    assert guarded["recommendation"] == "中际旭创：谨慎/观望"
-    assert "短期不支持看多" in guarded["conclusion"]
+    assert guarded["recommendation"] == "中际旭创：观察"
+    assert "待验证" in guarded["conclusion"]
 
 
 def test_llm_research_context_excludes_results_without_public_url():
