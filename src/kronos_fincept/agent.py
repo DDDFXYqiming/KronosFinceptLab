@@ -4688,9 +4688,6 @@ def _asset_tool_status(asset: dict[str, Any]) -> dict[str, str]:
 
 
 def _default_asset_report(asset: dict[str, Any]) -> dict[str, Any]:
-    symbol = str(asset.get("symbol") or "未识别标的")
-    name = asset.get("name")
-    label = f"{name}({symbol})" if name else symbol
     market_data = asset.get("market_data") or {}
     prediction = asset.get("kronos_prediction") or {}
     prediction_error = asset.get("kronos_prediction_error")
@@ -4705,22 +4702,17 @@ def _default_asset_report(asset: dict[str, Any]) -> dict[str, Any]:
     else:
         fundamentals_text = "已尝试获取财务摘要；未返回时不编造基本面数据。"
     confidence = 0.58 if market_data and prediction else 0.42 if market_data else 0.25
-    recommendation = "持有"
-    if expected_return is not None:
-        if expected_return >= 2 and risk_level != "高":
-            recommendation = "买入"
-        elif expected_return <= -2:
-            recommendation = "观察"
+    deterministic_text, deterministic_recommendation = _deterministic_asset_outlook(asset)
 
     return _normalize_report(
         {
-            "conclusion": f"{label} 的工具链分析已完成；结论基于真实行情、Kronos 预测、风险指标和可用公开信息。",
+            "conclusion": deterministic_text,
             "short_term_prediction": short_term,
             "technical": "已基于可用 K 线计算技术指标；若指标缺失，通常是历史样本不足或数据源失败。",
             "fundamentals": fundamentals_text,
             "risk": f"风险等级暂定为{risk_level}，请结合波动率、最大回撤、VaR 与网页检索结果判断。",
             "uncertainties": "行情源延迟、模型误差、突发事件、财务数据缺失和网页信息时效都会影响结论。",
-            "recommendation": recommendation,
+            "recommendation": deterministic_recommendation,
             "confidence": confidence,
             "risk_level": risk_level,
             "disclaimer": RESEARCH_DISCLAIMER,
@@ -5310,7 +5302,6 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
     prediction = primary.get("kronos_prediction") or {}
     prediction_error = primary.get("kronos_prediction_error")
     risk_metrics = primary.get("risk_metrics") or {}
-    symbol = primary.get("symbol") or "未识别标的"
     asset_reports = [
         {
             "symbol": asset.get("symbol"),
@@ -5322,7 +5313,6 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
     ]
 
     if len(assets) > 1:
-        labels = [str(asset.get("symbol") or "") for asset in assets if asset.get("symbol")]
         prediction_lines = [
             f"{asset.get('symbol')}: {_prediction_summary(asset.get('market_data') or {}, asset.get('kronos_prediction') or {}, asset.get('kronos_prediction_error'))[0]}"
             for asset in assets
@@ -5332,9 +5322,10 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
             for asset in assets
             if asset.get("symbol")
         ]
+        outlook_lines = [_deterministic_asset_outlook(asset)[0] for asset in assets]
         return _normalize_report(
             {
-                "conclusion": f"已完成 {len(assets)} 个标的的并列分析：" + "、".join(labels) + "。请优先查看下方各标的独立卡片。",
+                "conclusion": "；".join(outlook_lines) + " 当前为本地结构化兜底结论（模型汇总暂不可用）。",
                 "short_term_prediction": "；".join(prediction_lines),
                 "technical": "各标的技术面已分别基于可用 K 线计算；缺失项不会被编造。",
                 "fundamentals": "已分别尝试获取财务摘要；非 A 股或数据源缺失时保持空缺说明。",
@@ -5367,15 +5358,16 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
         elif volatility <= 0.18:
             risk_level = "低"
 
+    deterministic_text, deterministic_recommendation = _deterministic_asset_outlook(primary)
     return _normalize_report(
         {
-            "conclusion": f"{symbol} 的分析已完成；请结合工具调用记录核对数据来源和假设。",
+            "conclusion": f"{deterministic_text} 短期{short_term} 当前为本地结构化兜底结论（模型汇总暂不可用）。",
             "short_term_prediction": short_term,
             "technical": "已基于可用 K 线计算技术指标；若指标缺失，通常是历史样本不足或数据源失败。",
             "fundamentals": "已尝试获取财务摘要；未返回时不编造基本面数据。",
             "risk": f"风险等级暂定为{risk_level}，请重点关注波动率、最大回撤和 VaR。",
             "uncertainties": "行情源延迟、模型误差、突发事件和缺失财务数据都会影响结论。",
-            "recommendation": "持有",
+            "recommendation": deterministic_recommendation,
             "confidence": 0.55,
             "risk_level": risk_level,
             "disclaimer": RESEARCH_DISCLAIMER,
