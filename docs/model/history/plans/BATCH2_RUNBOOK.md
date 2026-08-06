@@ -4,6 +4,11 @@
 > 前置：qlib 未安装，需先安装；tokenizer 配置已写入
 > `external/Kronos/finetune_csv/configs/config_largecap_v8_tokenizer.yaml`（git 忽略）。
 
+> GPU-only 约束：所有训练（tokenizer 与 predictor）必须在 DirectML GPU 上执行
+> （`Device: privateuseone:0`），禁止 CPU fallback。已知 DML 边界：`torch.unique` 无 DML
+> 算子，已在 `external/Kronos/model/module.py` 将 eval 阶段的 `used_codes` 报告指标改到
+> CPU 计算（不参与任何 loss / 早停，训练计算全部留在 GPU）。
+
 ## 1. tokenizer 两阶段微调
 
 阶段 A（tokenizer，重建 MSE + BSQ，LR 2e-4，2 epoch）：
@@ -13,6 +18,8 @@ cd external\Kronos\finetune_csv
 ..\..\..\..\.venv311\Scripts\python.exe train_sequential.py `
   --config configs\config_largecap_v8_tokenizer.yaml
 ```
+
+启动前确认没有设置 `KRONOS_FINETUNE_DEVICE=cpu`；日志必须显示 `Device: privateuseone:0`。
 
 阶段 B（predictor，父模型 = `finetuned_largecap_v8_fullv3_ep3cont/basemodel/best_model`，
 `finetuned_tokenizer` 指向 `finetuned_largecap_v8_tokenizer/tokenizer/best_model`，LR 5e-7、
