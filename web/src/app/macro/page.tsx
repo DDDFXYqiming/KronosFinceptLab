@@ -488,7 +488,7 @@ function ProviderCoverageMatrix({ rows }: { rows: MacroProviderResultView[] }) {
       <CardTitle>Provider 覆盖矩阵</CardTitle>
       <div className="space-y-2 md:hidden">
         {rows.map((row) => (
-          <details key={row.provider_id} className="rounded-lg border border-border bg-background p-3">
+          <details key={row.provider_id} className="rounded-lg border border-border bg-background p-3" open>
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
               <span className="font-mono text-sm font-semibold text-foreground">{row.provider_id}</span>
               <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{statusLabel(row.status)}</span>
@@ -547,7 +547,7 @@ function ToolCalls({ calls }: { calls: AgentToolCall[] }) {
   return (
     <div className="space-y-2">
       {calls.map((call) => (
-        <details key={`${call.name}-${call.status}-${call.elapsed_ms}`} className="rounded-lg border border-border bg-muted px-3 py-2">
+        <details key={`${call.name}-${call.status}-${call.elapsed_ms}`} className="rounded-lg border border-border bg-muted px-3 py-2" open>
           <summary className="cursor-pointer list-none">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -601,7 +601,7 @@ function MacroSignalsTable({ signals }: { signals: MacroSignal[] }) {
           <p className="mb-2 text-sm font-semibold text-foreground">{t(language, group)}</p>
           <div className="space-y-2 sm:hidden">
             {groupSignals.map((signal, index) => (
-              <details key={`${group}-mobile-${signal.source}-${index}`} className="rounded-lg border border-border bg-surface p-3">
+              <details key={`${group}-mobile-${signal.source}-${index}`} className="rounded-lg border border-border bg-surface p-3" open>
                 <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-foreground">{signal.source}</span>
@@ -1029,7 +1029,7 @@ function MacroContent() {
             placeholder={tx(language, "例如：现在适合买黄金吗？", "Example: is now a good time to buy gold?")}
           />
           {/* --- Data Source Toggle Chips --- */}
-          <details className="rounded-lg border border-border bg-muted/30 p-3">
+          <details className="rounded-lg border border-border bg-muted/30 p-3" open>
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none">
               {tx(language, "数据源", "Data sources")} – {selectedProviders.length > 0
                 ? `${selectedProviders.length} ${tx(language, "已选", "selected")}`

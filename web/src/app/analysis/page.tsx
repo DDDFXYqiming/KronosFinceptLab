@@ -302,6 +302,7 @@ function ToolCallList({ result }: { result: AgentAnalyzeResponse }) {
           <details
             key={`${index}-${call.status}-${call.elapsed_ms}-${summary.slice(0, 24)}`}
             className="rounded-lg border border-border bg-muted px-3 py-2"
+            open
           >
             <summary className="cursor-pointer list-none">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -693,7 +694,7 @@ function MethodologyEvidenceCard({ methodology, language }: { methodology?: Meth
     </span>
   );
   return (
-    <details className="mb-5 rounded-lg border border-border bg-muted/40">
+    <details className="mb-5 rounded-lg border border-border bg-muted/40" open>
       <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-sm font-semibold text-foreground">
         <span>{tx(language, "方法论规则依据", "Methodology Rules")}</span>
         <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">
