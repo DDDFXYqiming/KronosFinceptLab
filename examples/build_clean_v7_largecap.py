@@ -44,6 +44,7 @@ MEMBERSHIP_PATH = RAW_DIR / "metadata" / "universe_membership.csv"
 EVENT_DIR = RAW_DIR / "metadata" / "events"
 ACQUISITION_REPORT = RAW_DIR / "acquisition_report.json"
 EVALUATION_MANIFEST = PROJECT_ROOT / "output" / "evaluation_manifest_largecap_v7_pit.json"
+EVALUATION_PRED_LEN = 5
 TUSHARE_VALIDATION_DIR = PROJECT_ROOT / "output" / "tushare_validation"
 DATASET_VERSION = "clean_v7_largecap_pit"
 SPLITS = {
@@ -611,6 +612,7 @@ def build_evaluation_manifest() -> dict[str, Any]:
     dataset = json.loads((CLEAN_DIR / "manifest.json").read_text(encoding="utf-8"))
     manifest = build_compact_evaluation_manifest(
         CLEAN_DIR,
+        pred_len=EVALUATION_PRED_LEN,
         a_limit=None,
         hk_limit=None,
         train_end=SPLITS["train_end"],
@@ -945,6 +947,7 @@ def main() -> None:
     parser.add_argument("--validation-output-dir", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--evaluation-manifest", type=Path, default=None)
+    parser.add_argument("--pred-len", type=int, default=None)
     parser.add_argument("--dataset-version", default=None)
     parser.add_argument("--train-end", default=None)
     parser.add_argument("--validation-start", default=None)
@@ -955,13 +958,15 @@ def main() -> None:
     args = parser.parse_args()
     _load_environment()
 
-    global CLEAN_DIR, EVALUATION_MANIFEST, DATASET_VERSION, SPLITS
+    global CLEAN_DIR, EVALUATION_MANIFEST, DATASET_VERSION, SPLITS, EVALUATION_PRED_LEN
     if args.output_dir is not None:
         CLEAN_DIR = args.output_dir
     if args.evaluation_manifest is not None:
         EVALUATION_MANIFEST = args.evaluation_manifest
     if args.dataset_version is not None:
         DATASET_VERSION = args.dataset_version
+    if args.pred_len is not None:
+        EVALUATION_PRED_LEN = args.pred_len
     for key, value in {
         "train_end": args.train_end,
         "validation_start": args.validation_start,
