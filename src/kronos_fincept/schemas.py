@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from kronos_fincept.security_utils import validate_kronos_model_id
 
 DEFAULT_MODEL_ID = "NeoQuasar/Kronos-base"
 DEFAULT_TOKENIZER_ID = "NeoQuasar/Kronos-Tokenizer-base"
+
+
+def _runtime_temperature() -> float:
+    """Read the shared runtime temperature without a module-level config import."""
+    from kronos_fincept.config import settings  # lazy: config imports schemas during init
+
+    return settings.runtime.temperature
 
 # ── Kronos model family ──
 # Model Zoo (from upstream Kronos README):
@@ -160,7 +167,7 @@ class ForecastRequest:
     tokenizer_id: str = DEFAULT_TOKENIZER_ID
     dry_run: bool = False
     max_context: int = 512
-    temperature: float = 0.5
+    temperature: float = field(default_factory=_runtime_temperature)
     top_k: int = 0
     top_p: float = 0.9
     sample_count: int = 8
@@ -184,7 +191,7 @@ class ForecastRequest:
             tokenizer_id=str(payload.get("tokenizer_id") or resolve_tokenizer_id(str(payload.get("model_id", DEFAULT_MODEL_ID)))),
             dry_run=bool(payload.get("dry_run", False)),
             max_context=int(payload.get("max_context") or resolve_max_context(str(payload.get("model_id", DEFAULT_MODEL_ID)))),
-            temperature=float(payload.get("temperature", 1.0)),
+            temperature=float(payload.get("temperature", _runtime_temperature())),
             top_k=int(payload.get("top_k", 0)),
             top_p=float(payload.get("top_p", 0.9)),
             sample_count=int(payload.get("sample_count", 1)),
@@ -246,7 +253,7 @@ class ForecastRequest:
             tokenizer_id=tokenizer_id or resolve_tokenizer_id(model_id or DEFAULT_MODEL_ID),
             dry_run=dry_run,
             max_context=max_context if max_context is not None else resolve_max_context(model_id or DEFAULT_MODEL_ID),
-            temperature=temperature if temperature is not None else 1.0,
+            temperature=temperature if temperature is not None else _runtime_temperature(),
             top_k=top_k if top_k is not None else 0,
             top_p=top_p if top_p is not None else 0.9,
             sample_count=sample_count if sample_count is not None else 1,

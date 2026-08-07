@@ -113,6 +113,27 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
     Upside Probability, Volatility Amplification, Forecast Range, and Mean Forecast.
     """
     df, timestamps = rows_to_dataframe(request.rows_as_dicts())
+    eff_id = _effective_model_id(request.model_id)
+    log_event(
+        logger,
+        logging.INFO,
+        "svc.forecast.audit",
+        "Kronos forecast request audit",
+        symbol=request.symbol,
+        model_id=eff_id,
+        bar_count=int(len(df)),
+        time_range=[
+            str(timestamps.iloc[0]),
+            str(timestamps.iloc[-1]),
+        ],
+        pred_len=request.pred_len,
+        max_context=request.max_context,
+        temperature=request.temperature,
+        top_k=request.top_k,
+        top_p=request.top_p,
+        sample_count=request.sample_count,
+        dry_run=request.dry_run,
+    )
 
     if request.dry_run:
         if not settings.kronos.allow_dry_run:
@@ -139,7 +160,6 @@ def forecast_from_request(request: ForecastRequest) -> dict[str, Any]:
             request.symbol,
         )
 
-    eff_id = _effective_model_id(request.model_id)
     predictor = KronosPredictorWrapper(
         model_id=eff_id,
         tokenizer_id=resolve_tokenizer_id(eff_id),

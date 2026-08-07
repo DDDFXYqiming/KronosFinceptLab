@@ -195,6 +195,13 @@ def _get_bool(key: str, default: bool = False) -> bool:
     return os.environ.get(key, str(default)).lower() in ("1", "true", "yes")
 
 
+def _get_float(key: str, default: float = 0.0) -> float:
+    try:
+        return float(os.environ.get(key, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # Config dataclasses
 # ---------------------------------------------------------------------------
@@ -228,6 +235,26 @@ class KronosConfig:
     enable_real_model: bool = field(default_factory=lambda: _get_bool("KRONOS_ENABLE_REAL_MODEL", True))
     allow_dry_run: bool = field(default_factory=lambda: _get_bool("KRONOS_ALLOW_DRY_RUN", True))
     prewarm_on_startup: bool = field(default_factory=lambda: _get_bool("KRONOS_PREWARM_ON_STARTUP", False))
+
+
+@dataclass(frozen=True)
+class KronosRuntimeConfig:
+    """Kronos runtime prediction parameters shared by pages, API, CLI and agent.
+
+    Single source of truth for lookback / pred_len / sampling parameters so the
+    forecast page, analysis agent, API defaults and CLI cannot drift apart.
+    """
+    lookback: int = field(default_factory=lambda: _get_int("KRONOS_RUNTIME_LOOKBACK", 90))
+    pred_len: int = field(default_factory=lambda: _get_int("KRONOS_PRED_LEN", 10))
+    temperature: float = field(default_factory=lambda: _get_float("KRONOS_TEMPERATURE", 0.5))
+    top_p: float = field(default_factory=lambda: _get_float("KRONOS_TOP_P", 0.9))
+    sample_count: int = field(default_factory=lambda: _get_int("KRONOS_SAMPLE_COUNT", 8))
+    agent_sample_count_single: int = field(
+        default_factory=lambda: _get_int("KRONOS_AGENT_SAMPLE_COUNT_SINGLE", 16)
+    )
+    agent_sample_count_multi: int = field(
+        default_factory=lambda: _get_int("KRONOS_AGENT_SAMPLE_COUNT_MULTI", 8)
+    )
 
 
 @dataclass(frozen=True)
@@ -469,6 +496,7 @@ class LLMConfig:
 class Settings:
     """Top-level application settings."""
     kronos: KronosConfig = field(default_factory=KronosConfig)
+    runtime: KronosRuntimeConfig = field(default_factory=KronosRuntimeConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     web_search: WebSearchConfig = field(default_factory=WebSearchConfig)
     anysearch: AnySearchConfig = field(default_factory=AnySearchConfig)

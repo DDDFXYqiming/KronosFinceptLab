@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from kronos_fincept.config import settings
 from kronos_fincept.schemas import DEFAULT_MODEL_ID, DEFAULT_TOKENIZER_ID
 from kronos_fincept.security_utils import validate_kronos_model_id
 
@@ -33,16 +34,16 @@ class ForecastRequestIn(BaseModel):
     """POST /api/forecast request body."""
     symbol: str = Field(..., min_length=1, max_length=32, pattern=SYMBOL_PATTERN, description="Stock symbol, e.g. '600036'")
     timeframe: str = Field(default="1d", min_length=1, max_length=16, description="Timeframe: 1d, 1h, etc.")
-    pred_len: int = Field(default=5, ge=1, le=60, description="Number of future bars to predict")
+    pred_len: int = Field(default_factory=lambda: settings.runtime.pred_len, ge=1, le=60, description="Number of future bars to predict")
     rows: list[ForecastRowIn] = Field(..., min_length=1, max_length=1024, description="Historical OHLCV data")
     model_id: str | None = Field(default=DEFAULT_MODEL_ID, max_length=64)
     tokenizer_id: str | None = Field(default=DEFAULT_TOKENIZER_ID, max_length=64)
     dry_run: bool = Field(default=False, description="Use deterministic mock predictor")
     max_context: int = Field(default=512, ge=1, le=2048)
-    temperature: float = Field(default=0.5, gt=0, le=2)
+    temperature: float = Field(default_factory=lambda: settings.runtime.temperature, gt=0, le=2)
     top_k: int = Field(default=0, ge=0, le=100)
-    top_p: float = Field(default=0.9, gt=0, le=1)
-    sample_count: int = Field(default=8, ge=1, le=64)
+    top_p: float = Field(default_factory=lambda: settings.runtime.top_p, gt=0, le=1)
+    sample_count: int = Field(default_factory=lambda: settings.runtime.sample_count, ge=1, le=64)
 
     @field_validator("model_id")
     @classmethod
@@ -50,6 +51,18 @@ class ForecastRequestIn(BaseModel):
         if value is None:
             return None
         return validate_kronos_model_id(value)
+
+
+class ForecastRuntimeConfigOut(BaseModel):
+    """GET /api/forecast/config response — runtime parameters shared with the UI."""
+    lookback: int
+    pred_len: int
+    temperature: float
+    top_p: float
+    sample_count: int
+    agent_sample_count_single: int
+    agent_sample_count_multi: int
+    model_id: str
 
 
 class ForecastMetadataOut(BaseModel):

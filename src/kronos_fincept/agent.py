@@ -78,7 +78,7 @@ LLM_CONTEXT_RECENT_MARKET_ROWS = 5
 LLM_MULTI_ASSET_MAX_RESEARCH_RESULTS = 4
 LLM_MULTI_ASSET_MAX_TEXT_CHARS = 300
 LLM_MULTI_ASSET_MAX_MACRO_SIGNALS = 8
-AGENT_MULTI_ASSET_SAMPLE_COUNT = max(1, env_int("KRONOS_AGENT_MULTI_ASSET_SAMPLE_COUNT", 8))
+AGENT_MULTI_ASSET_SAMPLE_COUNT = settings.runtime.agent_sample_count_multi
 ASSET_DATA_WAVE_TIMEOUT_SECONDS = max(5, env_int("KRONOS_AGENT_DATA_TIMEOUT_SECONDS", 20))
 DEFAULT_OUTPUT_LANGUAGE = "zh-CN"
 
@@ -396,7 +396,7 @@ MACRO_SIGNAL_DIMENSION_HINTS: tuple[tuple[str, str], ...] = (
 )
 
 
-KRONOS_RUNTIME_LOOKBACK = 90
+KRONOS_RUNTIME_LOOKBACK = settings.runtime.lookback
 
 
 def _active_kronos_model_id() -> str:
@@ -3904,11 +3904,14 @@ def _forecast_request_for_rows(
     rows: list[dict[str, Any]],
     *,
     dry_run: bool,
-    sample_count: int = 16,
+    sample_count: int | None = None,
 ) -> ForecastRequest:
     if len(rows) < 3:
         raise ValueError("Kronos prediction requires at least 3 OHLCV rows.")
 
+    effective_sample_count = (
+        sample_count if sample_count is not None else settings.runtime.agent_sample_count_single
+    )
     forecast_rows = [
         ForecastRow(
             timestamp=str(row["timestamp"]),
@@ -3926,12 +3929,12 @@ def _forecast_request_for_rows(
         symbol=symbol,
         timeframe="1d",
         rows=forecast_rows,
-        pred_len=5,
+        pred_len=settings.runtime.pred_len,
         model_id=effective_id,
         tokenizer_id=resolve_tokenizer_id(effective_id),
         max_context=resolve_max_context(effective_id),
         dry_run=dry_run,
-        sample_count=sample_count,
+        sample_count=effective_sample_count,
     )
 
 
@@ -3982,7 +3985,11 @@ def _build_batch_predictions(
                 item.symbol,
                 rows,
                 dry_run=dry_run,
-                sample_count=AGENT_MULTI_ASSET_SAMPLE_COUNT if len(asset_contexts) > 1 else 16,
+                sample_count=(
+                    settings.runtime.agent_sample_count_multi
+                    if len(asset_contexts) > 1
+                    else settings.runtime.agent_sample_count_single
+                ),
             )
         except Exception as exc:
             error_summary = _short_error(exc)
