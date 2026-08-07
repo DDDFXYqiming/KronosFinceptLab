@@ -20,18 +20,22 @@ def _rows(count: int) -> list[dict[str, float | str]]:
 
 
 def test_agent_kronos_request_uses_last_90_rows():
+    from kronos_fincept.config import settings
     from kronos_fincept.agent import _forecast_request_for_rows
 
     request = _forecast_request_for_rows("300308", _rows(240), dry_run=True)
 
     assert len(request.rows) == 90
+    assert request.pred_len == settings.runtime.pred_len
+    assert request.temperature == settings.runtime.temperature
     assert request.rows[0].timestamp == "2026-01-151"
     assert request.rows[-1].timestamp == "2026-01-240"
 
 
-def test_forecast_page_keeps_full_history_for_display_but_sends_last_90_rows():
+def test_forecast_page_reads_lookback_from_runtime_config():
     source = (ROOT / "web/src/app/forecast/page.tsx").read_text(encoding="utf-8")
 
-    assert "const KRONOS_RUNTIME_LOOKBACK = 90;" in source
-    assert "const forecastRows = data.slice(-KRONOS_RUNTIME_LOOKBACK);" in source
+    assert "const KRONOS_RUNTIME_LOOKBACK = 90;" not in source
+    assert "api.forecastConfig" in source
+    assert "const forecastRows = data.slice(-runtimeLookback);" in source
     assert "rows: forecastRows" in source

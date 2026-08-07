@@ -57,6 +57,8 @@ def test_forecast_request_parses_sampling_fields():
 
 
 def test_forecast_request_defaults_sampling_fields():
+    from kronos_fincept.config import settings
+
     request = ForecastRequest.from_dict(
         {
             "symbol": "BTC/USDT",
@@ -75,7 +77,7 @@ def test_forecast_request_defaults_sampling_fields():
     )
 
     assert request.max_context == 512
-    assert request.temperature == 1.0
+    assert request.temperature == settings.runtime.temperature
     assert request.top_k == 0
     assert request.top_p == 0.9
     assert request.sample_count == 1
