@@ -149,8 +149,8 @@ class BaoStockSource(DataSource):
                 end_date = kwargs.get("end_date", datetime.now().strftime('%Y-%m-%d'))
                 frequency = kwargs.get("frequency", "d")  # d=daily, w=weekly, m=monthly
                 adjust = kwargs.get("adjust", "none")
-                # BaoStock adjustflag: 1=不复权(raw) 2=前复权(qfq) 3=后复权(hfq)
-                _adjust_map = {"qfq": "2", "hfq": "3", "none": "1"}
+                # BaoStock adjustflag: 1=后复权(hfq) 2=前复权(qfq) 3=不复权(raw)
+                _adjust_map = {"qfq": "2", "hfq": "1", "none": "3"}
                 adjustflag = kwargs.get("adjustflag", _adjust_map.get(adjust, "1"))
 
                 # Convert date format (from YYYYMMDD to YYYY-MM-DD)
