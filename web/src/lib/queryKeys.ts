@@ -9,6 +9,7 @@ function normalizeQuery(q: string): string {
 export const queryKeys = {
   all: ["kronos"] as const,
   health: () => [...queryKeys.all, "health"] as const,
+  forecastConfig: () => [...queryKeys.all, "forecast", "config"] as const,
   search: (query: string) => [...queryKeys.all, "search", normalizeQuery(query)] as const,
   data: (params: { symbol: string; market: Market | string; startDate: string; endDate: string; adjust?: string }) =>
     [

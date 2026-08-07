@@ -50,6 +50,17 @@ export interface ForecastResponse {
   signal?: string;
 }
 
+export interface ForecastRuntimeConfig {
+  lookback: number;
+  pred_len: number;
+  temperature: number;
+  top_p: number;
+  sample_count: number;
+  agent_sample_count_single: number;
+  agent_sample_count_multi: number;
+  model_id: string;
+}
+
 export interface RankedSignal {
   rank: number;
   symbol: string;

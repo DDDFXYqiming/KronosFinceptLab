@@ -24,16 +24,13 @@ import { queryKeys } from "@/lib/queryKeys";
 import { toCandlestickSeriesData, toForecastLineData } from "@/lib/chartData";
 import { useSessionState } from "@/lib/useSessionState";
 import { useAppStore } from "@/stores/app";
-import type { DataResponse, ForecastResponse, ForecastRow } from "@/types/api";
+import type { DataResponse, ForecastResponse, ForecastRow, ForecastRuntimeConfig } from "@/types/api";
 import {
   createChart,
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
 import type { IChartApi, ISeriesApi } from "lightweight-charts";
-
-const KRONOS_RUNTIME_LOOKBACK = 90;
-const KRONOS_TEMPERATURE = 0.5;
 
 type ForecastDatasetSnapshot = {
   symbol: string;
@@ -139,6 +136,11 @@ function ForecastContent() {
   const [error, setError] = useSessionState("kronos-forecast-error", "");
   const [predResult, setPredResult] = useState<ForecastResponse | null>(null);
   const [sampleCount, setSampleCount] = useSessionState("kronos-forecast-sample-count", 8);
+  const [temperature, setTemperature] = useSessionState("kronos-forecast-temperature", 0.5);
+  const [runtimeConfig, setRuntimeConfig] = useState<ForecastRuntimeConfig | null>(null);
+  const runtimeLookback = runtimeConfig?.lookback ?? 90;
+  const runtimeTemperature = runtimeConfig?.temperature ?? 0.5;
+  const runtimePredLen = runtimeConfig?.pred_len ?? 10;
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -180,6 +182,18 @@ function ForecastContent() {
       }
     }).catch(() => undefined);
   }, [modelId, queryClient, setModelId, setPreferences]);
+
+  useEffect(() => {
+    void queryClient.fetchQuery({
+      queryKey: queryKeys.forecastConfig(),
+      queryFn: ({ signal }) => api.forecastConfig({ signal }),
+      staleTime: 60000,
+    }).then((config) => {
+      setRuntimeConfig(config);
+      setSampleCount((current) => (current === 8 && config.sample_count !== 8 ? config.sample_count : current));
+      setTemperature((current) => (current === 0.5 && config.temperature !== 0.5 ? config.temperature : current));
+    }).catch(() => undefined);
+  }, [queryClient, setSampleCount, setTemperature]);
 
   const clearForecastState = useCallback(() => {
     setData([]);
@@ -409,17 +423,17 @@ function ForecastContent() {
     }
     const requestSymbol = datasetSnapshot.symbol;
     const requestMarket = datasetSnapshot.market;
-    const forecastRows = data.slice(-KRONOS_RUNTIME_LOOKBACK);
+    const forecastRows = data.slice(-runtimeLookback);
     const key = queryKeys.forecast({
       symbol: requestSymbol,
       market: requestMarket,
-      predLen: 5,
+      predLen: runtimePredLen,
       modelId,
       rowCount: forecastRows.length,
       lastTimestamp: data[data.length - 1]?.timestamp,
       dataHash: datasetSnapshot.contentHash,
       sampleCount,
-      temperature: KRONOS_TEMPERATURE,
+      temperature,
       dryRun: false,
     });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<ForecastResponse>(key);
@@ -439,12 +453,12 @@ function ForecastContent() {
         queryFn: ({ signal }) =>
           api.forecast({
             symbol: requestSymbol,
-            pred_len: 5,
+            pred_len: runtimePredLen,
             model_id: modelId,
             rows: forecastRows,
             dry_run: false,
             sample_count: sampleCount,
-            temperature: KRONOS_TEMPERATURE,
+            temperature,
           }, { signal }),
       });
       applyForecastResponse(res);
@@ -526,6 +540,52 @@ function ForecastContent() {
             </Button>
           </div>
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
+          <span>
+            {tx(language, "模型", "Model")}: {modelId.replace("NeoQuasar/", "")}
+          </span>
+          <span>
+            {tx(language, "最近", "Lookback")}: {runtimeLookback} {tx(language, "根K线", "bars")}
+          </span>
+          <span>T = {temperature}</span>
+          <span>
+            {tx(language, "预测", "Forecast")}: {runtimePredLen} {tx(language, "日", "days")}
+          </span>
+          <span>
+            {tx(language, "采样", "Samples")}: {sampleCount}
+          </span>
+        </div>
+        <details className="mt-3 rounded-lg border border-border bg-muted/30 p-3">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none">
+            {tx(language, "高级选项", "Advanced options")}
+          </summary>
+          <div className="mt-3 flex flex-wrap items-end gap-4">
+            <div>
+              <label className="field-label">
+                {tx(language, "温度 T（仅本次会话实验）", "Temperature T (session experiment only)")}
+              </label>
+              <AntSelect
+                value={`t${temperature}`}
+                onChange={(v) => setTemperature(parseFloat(v.replace("t", "")))}
+                options={[
+                  { value: "t0.5", label: "0.5（确定性优先）" },
+                  { value: "t0.6", label: "0.6" },
+                  { value: "t0.8", label: "0.8" },
+                  { value: "t1.0", label: "1.0（官方默认）" },
+                ]}
+                ariaLabel="温度"
+                className="mt-1"
+              />
+            </div>
+            <p className="pb-1 text-xs text-muted-foreground">
+              {tx(
+                language,
+                "修改仅影响当前会话的请求，不改变服务端配置。",
+                "Changes only affect this session's requests; the server configuration is unchanged."
+              )}
+            </p>
+          </div>
+        </details>
         {data.length > 0 && (
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:flex md:flex-wrap">
             <Button variant="secondary" onClick={() => handleFetchData(true)} loading={loading}>
@@ -567,7 +627,7 @@ function ForecastContent() {
           </CardTitle>
           <div ref={chartContainerRef} className="chart-frame h-[360px] md:h-[500px]" />
           <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
-            {tx(language, `模型实际使用最近 ${Math.min(KRONOS_RUNTIME_LOOKBACK, data.length)} 根K线；页面展示 ${data.length} 根。`, `The model uses the latest ${Math.min(KRONOS_RUNTIME_LOOKBACK, data.length)} rows; the page displays ${data.length}.`)}
+            {tx(language, `模型实际使用最近 ${Math.min(runtimeLookback, data.length)} 根K线；页面展示 ${data.length} 根。`, `The model uses the latest ${Math.min(runtimeLookback, data.length)} rows; the page displays ${data.length}.`)}
           </div>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-2">

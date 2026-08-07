@@ -17,6 +17,7 @@ import type {
   DataResponse,
   ForecastRequest,
   ForecastResponse,
+  ForecastRuntimeConfig,
   HealthResponse,
   IndicatorResponse,
   JobHistoryResponse,
@@ -372,6 +373,8 @@ export const api = {
 
   forecast: (req: ForecastRequest, options?: ApiClientOptions) =>
     post<ForecastResponse>("/forecast", req, { timeoutMs: FORECAST_TIMEOUT_MS, ...options }),
+
+  forecastConfig: (options?: ApiClientOptions) => get<ForecastRuntimeConfig>("/forecast/config", options),
 
   batch: (assets: ForecastRequest[], pred_len: number, dry_run = false, options?: ApiClientOptions) =>
     post<BatchResponse>("/batch", { assets, pred_len, dry_run }, options),
