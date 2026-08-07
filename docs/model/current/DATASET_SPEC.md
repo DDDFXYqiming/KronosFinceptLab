@@ -2,7 +2,8 @@
 
 > 文档状态：Current
 > 数据版本：`clean_v8_largecap_recent`
-> 最后核对：2026-08-06
+> 最后核对：2026-08-07
+> 协议窗口：`lookback=90`、`pred_len=10`（2026-08-07 起由 5 切换为 10）
 
 ## 当前数据版本
 
@@ -13,7 +14,7 @@
 | 数据文件 | 581（687,557 行） |
 | A 股 | 439（历史 CSI 300 并集） |
 | 港股 | 142（历史 HSI/HSCEI/HSTECH 并集） |
-| 评测 manifest | `output/evaluation_manifest_largecap_v8_recent.json` |
+| 评测 manifest | `output/evaluation_manifest_largecap_v8_recent_pred10.json` |
 | 数据状态 | `development_only=true, point_in_time_constituents=true` |
 
 A 股股票池由 BaoStock 历史 CSI 300 快照构建，共识别 13 个实际变更快照；港股股票池来自恒生
@@ -55,20 +56,33 @@ timestamp, open, high, low, close, volume, amount
 | 诊断 | 2026-08-01 起（当前为空） | 模型冻结后的近期诊断 |
 | 严格未来 OOS | 2026-08-01 起且未参与调参的新数据 | 冻结后前向检验 |
 
-窗口固定为 `lookback=90`、`predict_window=5`。验证和诊断窗口可使用前一分区的 90 日历史作为
+窗口固定为 `lookback=90`、`predict_window=10`。验证和诊断窗口可使用前一分区的 90 日历史作为
 输入，但目标区间必须完整位于自身分区。评测窗口按 manifest 采用固定间隔，避免同一股票目标区间
 高度重叠。
 
 ## 评测池
 
-`evaluation_manifest_largecap_v8_recent.json` 包含：
+`evaluation_manifest_largecap_v8_recent_pred10.json` 包含：
 
-- `validation_2026_05_07`：2,447 个 PIT 候选窗口、432 只股票；用于本轮 screen/confirm；
+- `validation_2026_05_07`：1,603 个 PIT 候选窗口、431 只股票；用于本轮 screen/confirm；
 - `diagnostic_2026_08_forward`：当前为空，等模型冻结后补充新行情；
-- `sample_step=10`、`pred_len=5`、`embargo_bars=5`，同一股票目标窗口不重叠。
+- `sample_step=15`、`pred_len=10`、`embargo_bars=5`，同一股票目标窗口不重叠。
 
-固定 Confirm 样本文件为 `configs/evaluation/evaluation_samples_v4.json`，共600个样本，哈希为
-`b54adb619ddcce54b5b0f7b8bac60f50640b5dda1f0d06499add7137cd42e423`。
+固定 Confirm 样本文件为 `configs/evaluation/evaluation_samples_pred10.json`，共 600 个样本
+（4 个目标日期 × A 100 只 + HK 50 只），哈希为
+`a419b8b97ec3c604f5b0140d82edd0f34394230b8474d630219118abcd57d024`。
+pred_len=5 时期的 `evaluation_samples_v4.json`（哈希 b54adb…）为存档，不参与 pred_len=10 排名。
+
+## 模型输入边界规则
+
+- amount 兜底：模型入口 `data_adapter.rows_to_dataframe` 在 amount 全 0 时按上游示例规则回填
+  `close × volume` 并告警；美股/港股 yfinance 路径由 `GlobalMarketSource` 构造时已保证
+  `amount = close × volume`。
+- 未来时间戳：`make_future_timestamps` 使用 AkShare 交易日历（缓存 `output/calendars/
+  trade_dates.csv`）生成未来 10 个交易日，日历不可用时回退步长外推；周五最后 K 线 → 下一
+  交易日为周一。
+- 已知边界：港股 AKShare 日线存在约 0.1% 停牌交易日量额同时为 0（价格平盘），训练清洗会剔除
+  0 量额行、服务端保留停牌日，二者口径差约 0.1%，作为已知边界记录。
 
 数据重建入口按阶段执行并支持行情断点续传：
 

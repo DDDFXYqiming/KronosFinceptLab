@@ -1,13 +1,14 @@
 # Kronos 紧凑评测协议
 
 > 文档状态：Current
-> 最后核对：2026-08-05
+> 最后核对：2026-08-07
 > 当前选模指标与晋级门槛：[`EVALUATION_STANDARD.md`](EVALUATION_STANDARD.md)
+> 协议版本：pred_len=10（2026-08-07 起；pred_len=5 历史结果仅存档）
 
 ## 时间和数据边界
 
 当前 continuation 的统一数据为 `clean_v8_largecap_recent`，评测清单为
-`output/evaluation_manifest_largecap_v8_recent.json`。`clean_v7_largecap` 的结果继续作为
+`output/evaluation_manifest_largecap_v8_recent_pred10.json`。`clean_v7_largecap` 的结果继续作为
 父模型历史基准，但不同 manifest 的分数不直接拼接排名。
 
 | 分区 | 日期 | 角色 |
@@ -17,8 +18,8 @@
 | diagnostic | 2026-08-01 起 | 冻结后近期诊断 |
 | strict future OOS | 2026-08-01 起 | 真正前向检验 |
 
-项目已经查看过 2026 结果，因此 2026 只能标记为开发验证/诊断。评测窗口使用 90 日输入、5 日
-预测、5 bar embargo，`sample_step=10`，单只股票目标区间不重叠。训练与评测窗口都要求股票在
+项目已经查看过 2026 结果，因此 2026 只能标记为开发验证/诊断。评测窗口使用 90 日输入、10 日
+预测、5 bar embargo，`sample_step=15`，单只股票目标区间不重叠。训练与评测窗口都要求股票在
 预测起点属于当时的 CSI300、HSI、HSCEI 或 HSTECH，成员进出日期来自 PIT sidecar。
 
 生产页面的模型输入也遵循同一窗口契约：页面可以展示更长的历史数据，但 Kronos 请求统一截取最近 90 根。
@@ -37,14 +38,18 @@ v1 的 `0.60 × DirectionAccuracy + 0.40 × normalized MeanDailyRankIC` 综合�
 | 模式 | 数据 | 样本 | 推理参数 | Bootstrap |
 |---|---|---:|---|---:|
 | smoke | validation | 16 | `sample_count=1, T=0.3` | 0 |
-| confirm | validation | 固定 600 个市场/日期横截面 | `sample_count=8, T=0.5` | 5,000 次配对分组重采样 |
+| confirm | validation | 固定 600 个市场/日期横截面 | `pred_len=10, sample_count=8, T=0.5` | 5,000 次配对分组重采样 |
 | final diagnostic | diagnostic | 全部不重叠窗口 | 冻结后的生产参数 | 1,000 |
-| analysis audit | validation 固定样本 | 128（并对冠军补跑完整600） | `sample_count=16, T=0.5` | 200 |
+| analysis audit | validation 固定样本 | 128（并对冠军补跑完整600） | `pred_len=10, sample_count=16, T=0.5` | 200 |
 
-Confirm 固定样本为 `configs/evaluation/evaluation_samples_v4.json`，样本哈希
-`b54adb619ddcce54b5b0f7b8bac60f50640b5dda1f0d06499add7137cd42e423`。A 股选择 5 个目标日期、
-每个日期 80 只，港股选择 5 个目标日期、每个日期 40 只，总计 600。样本按目标日期优先组织，
+Confirm 固定样本为 `configs/evaluation/evaluation_samples_pred10.json`，样本哈希
+`a419b8b97ec3c604f5b0140d82edd0f34394230b8474d630219118abcd57d024`。pred_len=10 下两个市场
+各只有 4 个大横截面目标日期，因此 A 股选择 4 个日期、每个日期 100 只，港股 4 个日期、每个日期
+50 只，总计 600。样本按目标日期优先组织，
 保证每个 `(market, target_end)` 都是可用的横截面，而不是把每只股票独立抽取的零散日期混在一起。
+
+protocol 版本纪律：pred_len=5 时期的 `evaluation_samples_v4.json`（哈希 b54adb…）及全部
+历史分数仅作存档，不得与 pred_len=10 结果拼接排名。
 
 每轮必须包含官方 `Kronos-small`。150 样本 screen 只保留作历史记录，不再承担模型晋级；候选
 数量在运行前人工限制为少量完整 checkpoint。历史模型作为独立候选，不同 manifest 的旧结果
@@ -72,8 +77,9 @@ Top20% 周期经济诊断，沿用其开仓 `0.1%`、平仓 `0.15%` 成本；由
 ```powershell
 .\.venv311\Scripts\python.exe examples\eval_rolling.py `
   --mode confirm `
-  --manifest output\evaluation_manifest_largecap_v8_recent.json `
-  --samples-file configs\evaluation\evaluation_samples_v4.json `
+  --manifest output\evaluation_manifest_largecap_v8_recent_pred10.json `
+  --samples-file configs\evaluation\evaluation_samples_pred10.json `
+  --pred-len 10 `
   --model-path <checkpoint 路径> `
   --tokenizer-path <Kronos-Tokenizer-base 路径> `
   --output output\evaluation_v7_pit\confirm\<model>.json `

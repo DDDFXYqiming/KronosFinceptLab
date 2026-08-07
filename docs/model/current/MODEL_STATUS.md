@@ -1,8 +1,9 @@
 # Kronos 当前模型状态
 
 > 文档状态：Current
-> 最后核对：2026-08-06
+> 最后核对：2026-08-07
 > 当前生产权重：`v3_from_ftv1_cont / epoch_2`（最新评测没有产生可晋级替代者）
+> 协议版本：pred_len=10（2026-08-07 起；pred_len=5 结果存档）
 
 ## 生产权重
 
@@ -14,8 +15,35 @@ external/Kronos-small
 `.env` 仍使用 `KRONOS_MODEL_ID=NeoQuasar/Kronos-small`，本地 junction 让预测服务加载上述微调
 权重。官方未微调模型在评测时必须使用 HuggingFace 缓存 snapshot，不能把该 junction 误当基线。
 
-预测页和分析页统一使用最近 90 根日线、预测未来 5 日、`temperature=0.5`、`top_p=0.9`；预测页
+预测页和分析页统一使用最近 90 根日线、预测未来 10 日、`temperature=0.5`、`top_p=0.9`；预测页
 通常 `sample_count=8`，分析页单资产通常为 16、多资产为 8。
+
+## 2026-08-07 pred_len=10 对齐与 Confirm 结果
+
+按用户决定将 pred_len 统一为 10（对齐上游微调 `predict_window=10`），运行/评测/训练三链路
+同步切换；完整证据见 [`ALIGNMENT_REPORT_2026-08.md`](../history/plans/ALIGNMENT_REPORT_2026-08.md)。
+新固定 600 样本哈希 `a419b8b9…`（`evaluation_samples_pred10.json`），pred_len=5 的 b54adb…
+结果存档不参与排名。
+
+正式 Confirm（pred_len=10、sc8、T=0.5、Bootstrap 5,000）：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | v2 门槛 |
+|---|---:|---:|---:|---:|---|
+| 生产 v3-cont epoch_2 | **0.1286** | 0.1056 | 53.33% | 0.0715 | 未通过 |
+| fullv3_ep3cont_best | 0.0675 | 0.1378 | **56.00%** | 0.0735 | 未通过 |
+| fast_recipe_best | 0.0630 | 0.1335 | 56.00% | 0.0736 | 未通过 |
+| 官方 Kronos-small | 0.0790 | 0.0550 | 50.50% | 0.1077 | 基线 |
+
+T 决策（G-A）：T=1.0 的样本多样性（区间宽度中位数 1.68×）与 150 样本诊断（RankIC 0.2035 vs
+官方 0.0800）通过，但 600 样本配对统计 p=0.67~0.82 未过 v2 门槛 → 协议温度维持 0.5，T=1.0
+记录为候选参数待严格 OOS 复评。
+
+复权决策（G-B）：A 股 qfq vs 不复权中位收盘差异 2.4%~3.4% 且方向一致 → 保持 qfq；修复
+BaoStock `adjustflag` 映射 bug（1=后复权、2=前复权、3=不复权）。港股 yfinance vs AKShare qfq
+对比因 Yahoo 限流待重试。
+
+**结论：无候选通过 v2 门槛，生产 junction 保持 `v3-cont epoch_2`；4x 训练暂停，恢复列为独立
+事项；训练模板固化 `predict_window=10`，v8 系（predict 5）候选仅作诊断参考。**
 
 ## 最新生产参数同场结果
 

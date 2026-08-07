@@ -1,14 +1,15 @@
 # Kronos 微调模型评估标准 v3
 
 > 文档状态：Current（生产参数开发选模标准；沿用 v2 指标门槛）
-> 最后核对：2026-08-06
+> 最后核对：2026-08-07
+> 协议版本：pred_len=10（2026-08-07 起；pred_len=5 结果存档，见第 9 节）
 > 数据边界与 OOS 纪律继续沿用 [`EVALUATION_PROTOCOL.md`](EVALUATION_PROTOCOL.md)
 
 ## 1. 适用目标
 
 本标准用于比较 Kronos-small 与 A/H 股微调 checkpoint，服务项目当前两类调用：
 
-- 预测页：90 日回看、未来 5 日 OHLC 预测，关注终点收益、方向和展示质量；
+- 预测页：90 日回看、未来 10 日 OHLC 预测，关注终点收益、方向和展示质量；
 - 分析页：批量预测多只股票，关注跨资产排序能力。
 
 开发评测不能替代真实交易回测，也不能把已经参与选模的 2026 数据称为严格 OOS。
@@ -18,16 +19,20 @@
 | 层级 | 样本 | 推理参数 | 用途 |
 |---|---:|---|---|
 | Smoke | 固定 16 | `sample_count=1, T=0.3, top_p=0.9` | 只检查模型链路 |
-| Confirm | 固定 600 | `sample_count=8, T=0.5, top_p=0.9` | 唯一同场选模与配对统计 |
-| Analysis check | 冠军固定 128，并与官方补跑完整600 | `sample_count=16, T=0.5, top_p=0.9` | 核对分析页实际参数 |
+| Confirm | 固定 600 | `pred_len=10, sample_count=8, T=0.5, top_p=0.9` | 唯一同场选模与配对统计 |
+| Analysis check | 冠军固定 128，并与官方补跑完整600 | `pred_len=10, sample_count=16, T=0.5, top_p=0.9` | 核对分析页实际参数 |
 | Strict OOS | 模型冻结后的新数据 | 参数冻结 | 最终泛化证据 |
 
 同一轮比较必须满足：相同 manifest、fold、样本哈希、tokenizer、随机种子和推理参数。不同评测集的
 历史结果不能拼接成统一排名。
 
-当前 Confirm 使用 `configs/evaluation/evaluation_samples_v4.json`：A 股 5 个目标日期 × 80 只，港股 5 个
-目标日期 × 40 只。每个市场/日期形成完整横截面，总计 600 样本。150 样本 Screen 已退出晋级
+当前 Confirm 使用 `configs/evaluation/evaluation_samples_pred10.json`（哈希
+`a419b8b9…`）：pred_len=10 下两个市场各只有 4 个大横截面目标日期，因此 A 股 4 个日期 × 100 只，
+港股 4 个日期 × 50 只。每个市场/日期形成完整横截面，总计 600 样本。150 样本 Screen 已退出晋级
 流程，避免小样本点估计主导模型选择。
+
+protocol 版本纪律：pred_len=5 的 `evaluation_samples_v4.json`（哈希 b54adb…）与第 9 节结果
+仅存档，不参与 pred_len=10 排名。
 
 随机性按固定有序 batch 派生，结果必须记录 `ordered_batch_key_v1`。同一 fixture、seed、batch
 size 重跑和断点恢复时逐样本预测必须一致。
@@ -54,7 +59,7 @@ true_ret = true_close / last_close - 1
 | 排序 | `MeanDailyRankIC`：按市场×目标日期计算截面 RankIC 后平均 | 稳健性与配对检验 |
 | 线性相关 | `IC_pooled` | 报告 |
 | 方向 | `DirectionAccuracy` | 展示质量护栏 |
-| 误差 | `EndpointReturnMAE` | 第 5 日终点收益误差；不是完整 OHLC 路径 MAE |
+| 误差 | `EndpointReturnMAE` | 第 10 日终点收益误差；不是完整 OHLC 路径 MAE |
 | 简化经济诊断 | 分组 Top5 等权实际收益减组内平均收益 | 参考，不作为正式回测 |
 
 `RankIC_pooled` 会受到跨日期收益尺度和市场状态影响，因此必须同时报告 A 股、港股和逐期
@@ -269,3 +274,38 @@ Pooled RankIC 0.1283 超过父线 fullv3_ep3cont_best（0.1193）。该配方定
 
 相关入口：[当前模型状态](MODEL_STATUS.md) · [数据规范](DATASET_SPEC.md) ·
 [评测历史](../history/EVALUATION_RESULTS.md)
+
+## 13. 2026-08-07 pred_len=10 对齐判定
+
+按用户决定，运行/评测/训练三链路统一为 `pred_len=10`（对齐上游微调 `predict_window=10`）。
+新 manifest `evaluation_manifest_largecap_v8_recent_pred10.json`、新固定 600 样本
+`evaluation_samples_pred10.json`（哈希 `a419b8b9…`）；pred_len=5 结果（第 9~12 节）存档。
+完整证据见 [`ALIGNMENT_REPORT_2026-08.md`](../history/plans/ALIGNMENT_REPORT_2026-08.md)。
+
+### 13.1 正式 Confirm（pred_len=10、sc8、T=0.5、Bootstrap 5,000）
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | Top5 超额 | v2 门槛 |
+|---|---:|---:|---:|---:|---:|---|
+| 生产 v3-cont epoch_2 | **0.1286** | 0.1056 | 53.33% | 0.0715 | −0.0030 | 未通过（p=0.736，Top5<0） |
+| fullv3_ep3cont_best | 0.0675 | 0.1378 | **56.00%** | 0.0735 | +0.0303 | 未通过（RankIC 增量<+0.02） |
+| fast_recipe_best | 0.0630 | 0.1335 | 56.00% | 0.0736 | +0.0011 | 未通过（RankIC 增量<+0.02） |
+| 官方 Kronos-small | 0.0790 | 0.0550 | 50.50% | 0.1077 | −0.0016 | 基线 |
+
+### 13.2 T 决策（G-A）
+
+T=1.0 在 5 标的同日对比中区间宽度中位数 1.68×（≥1.5）、上行概率更分散，150 样本诊断
+（pred_len=10）生产模型 RankIC 0.2035 vs 官方 0.0800、DirAcc 53.3% vs 50.0%，满足 (a)(b)；
+但 600 样本 T=1.0 Confirm 三个候选配对 Bootstrap p=0.67~0.82 未达 p<0.10，v2 门槛未通过 →
+**协议温度维持 0.5**。T=1.0 记录为概率语义更优的候选参数，待严格 OOS 周期积累后复评。
+
+### 13.3 复权决策（G-B）
+
+A 股 qfq vs 不复权中位收盘差异 2.4%~3.4%（除息量级）、预测方向一致 → 保持 qfq；同时修复
+BaoStock `adjustflag` 映射 bug（1=后复权、2=前复权、3=不复权）。港股 yfinance vs AKShare qfq
+对比因 Yahoo 限流待重试。
+
+### 13.4 结论
+
+pred_len=10 协议下无候选通过 v2 门槛；生产 junction 保持 `v3-cont epoch_2`；训练模板固化
+`predict_window=10`，v8 系（predict 5）候选仅作诊断参考；4x 训练暂停，恢复列为独立事项。
+评测明细：`output/eval_pred10_600/`、`output/eval_pred10_600_t05/`。

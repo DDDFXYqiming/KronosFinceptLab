@@ -154,3 +154,62 @@ clean_v8 当前开发 Confirm 点估计最佳 checkpoint，且是首个在"更�
 该配方定为项目新默认训练配方（记录于本日志与 MODEL_STATUS）；生产 junction 仍保持
 `v3-cont epoch_2`，待严格 OOS 与 Qlib 回测。batch 32 是 DML 最优（batch 128 每步同步开销
 主导，实测 2.5s/步 51 samples/s，低于 batch 32 的 64 samples/s），不再尝试大 batch。
+
+## 2026-08-07 对齐批次：pred_len=10 全链路对齐 + T/复权对比
+
+背景：按用户决定将 pred_len 统一为 10（与上游微调 `predict_window=10` 对齐），并基于官方
+用法核查结果做运行/评测/训练三链路对齐。4x 训练暂停，恢复列为独立事项。完整证据见
+[`ALIGNMENT_REPORT_2026-08.md`](plans/ALIGNMENT_REPORT_2026-08.md)。
+
+### 1. 运行时参数集中化
+
+- 新增 `config.py::KronosRuntimeConfig`（lookback=90、pred_len=10、T=0.5、top_p=0.9、
+  sample_count=8、agent 16/8，env 可覆盖）；`schemas.py` 温度默认统一（消除 0.5/1.0 不一致）；
+  `api/models.py` 请求默认读配置；新增 `GET /api/forecast/config`；预测页改从端点取值。
+- 验证：CLI/API 不带参数取 pred_len=10、T=0.5；config 端点与 health 的 model_id 一致
+  （NeoQuasar/Kronos-small junction）；web `tsc --noEmit` 通过。
+
+### 2. 数据链路
+
+- `data_adapter.rows_to_dataframe`：amount 全 0 时按官方规则回填 close×volume 并告警。
+- `make_future_timestamps`：AkShare 交易日历（缓存 `output/calendars/`），周五→周一验证通过，
+  失败回退步长外推。
+- `service.forecast_from_request`：新增结构化审计日志（symbol/model_id/bar 数/时间范围/参数）。
+- amount 审计（`examples/audit_amount_inputs.py`）：美股/yfinance 路径代码保证 amount=close×
+  volume，本次 Yahoo 限流未能联网复核；港股 AKShare 存在约 0.1% 停牌日 0 量额行，记录为已知
+  边界。
+
+### 3. 评测协议切换 pred_len=10
+
+- 新 manifest `evaluation_manifest_largecap_v8_recent_pred10.json`（pred_len=10、sample_step=15，
+  validation 折叠 1603 样本）；新固定 600 样本 `evaluation_samples_pred10.json`（4 日期 ×
+  A100/HK50 = 600，哈希 `a419b8b9…`）；150 样本诊断 `evaluation_samples_pred10_150.json`
+  （哈希 `807f4411…`）。pred_len=5 的 b54adb… 样本存档不参与排名。
+
+### 4. T 对比与决策门 G-A
+
+- 5 标的同日对比：T=1.0 区间宽度中位数 1.68×（≥1.5）、平均上行概率 0.037→0.138（更分散）；
+  150 样本诊断 T=1.0 下生产模型 RankIC 0.2035 vs 官方 0.0800、DirAcc 53.3% vs 50.0% → G-A
+  (a)(b) 通过。
+- 600 样本 T=1.0 Confirm：三个候选点估计全部超过官方（RankIC +0.021~0.034、DirAcc +3.7~
+  4.5pp、MAE 约为官方一半），但配对 Bootstrap p=0.67~0.82 未达 p<0.10 → v2 门槛未通过 →
+  **协议温度维持 0.5**；T=1.0 证据记录在案，待严格 OOS 周期积累后再评估。
+
+### 5. 复权对比与决策门 G-B（含 Bug 修复）
+
+- A 股 qfq vs 不复权中位收盘差异 2.4%~3.4%（除息量级），方向一致 → 保持 qfq。
+- **修复 BaoStock adjustflag 映射 bug**（`baostock_source.py`）：官方语义 1=后复权、2=前复权、
+  3=不复权；原映射 `none→1` 实际返回后复权价格，已改为 `{"qfq":"2","hfq":"1","none":"3"}`。
+- 港股 yfinance vs AKShare qfq 对比因 Yahoo 限流未完成，待重试。
+
+### 6. pred_len=10 正式 Confirm（T=0.5、sc8、Bootstrap 5,000）
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | MAE | Top5 超额 | v2 门槛 |
+|---|---:|---:|---:|---:|---:|---|
+| 生产 v3-cont epoch_2 | **0.1286** | 0.1056 | 53.33% | 0.0715 | −0.0030 | 未通过 |
+| fullv3_ep3cont_best | 0.0675 | 0.1378 | **56.00%** | 0.0735 | +0.0303 | 未通过 |
+| fast_recipe_best | 0.0630 | 0.1335 | 56.00% | 0.0736 | +0.0011 | 未通过 |
+| 官方 Kronos-small | 0.0790 | 0.0550 | 50.50% | 0.1077 | −0.0016 | 基线 |
+
+结论：无候选通过 v2 门槛；生产 junction 保持 `v3-cont epoch_2`；训练模板固化
+predict_window=10，v8 系（predict 5）候选在 pred_len=10 协议下仅作诊断参考。
