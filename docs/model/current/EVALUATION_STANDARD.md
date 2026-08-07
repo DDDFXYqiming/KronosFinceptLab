@@ -309,3 +309,24 @@ BaoStock `adjustflag` 映射 bug（1=后复权、2=前复权、3=不复权）。
 pred_len=10 协议下无候选通过 v2 门槛；生产 junction 保持 `v3-cont epoch_2`；训练模板固化
 `predict_window=10`，v8 系（predict 5）候选仅作诊断参考；4x 训练暂停，恢复列为独立事项。
 评测明细：`output/eval_pred10_600/`、`output/eval_pred10_600_t05/`。
+
+## 14. 2026-08-07 pred_len=10 双臂 2x 训练判定（G-P10）
+
+两条 predict_window=10 训练臂（父=生产 v3-cont epoch_2 与 fast_recipe_best，fast_recipe v3
+配方、4096 步/轮、LR 5e-7、seed 42）完成后，600 样本 Confirm（pred_len=10、sc8、T=0.5、
+Bootstrap 5,000，哈希 `a419b8b9…`）：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | Endpoint MAE | Top5 超额 | v2 门槛 |
+|---|---:|---:|---:|---:|---:|---|
+| **pred10_prod_best** | **0.1514** | 0.1268 | 54.83% | 0.0709 | −0.0080 | 未通过（p=0.591，Top5<0） |
+| pred10_prod_epoch3 | 0.1495 | 0.1248 | 54.83% | 0.0710 | −0.0080 | 未通过 |
+| 生产 v3-cont epoch_2（父） | 0.1286 | 0.1056 | 53.33% | 0.0715 | −0.0030 | 未通过 |
+| 官方 Kronos-small | 0.0790 | 0.0550 | 50.50% | 0.1077 | −0.0016 | 基线 |
+| fast_recipe_best（父） | 0.0630 | 0.1335 | 56.00% | 0.0736 | +0.0011 | 未通过 |
+| pred10_fr_best | 0.0601 | 0.1317 | 56.00% | 0.0739 | +0.0086 | 未通过 |
+
+判定：双臂均未通过 v2 门槛（配对 Bootstrap p=0.59/0.92；pred10_prod 的 Top5 超额为负）→
+停止 clean_v8 predictor-only 训练、不进入 4x 阶段；生产 junction 不变。
+`pred10_prod_best` 相对官方 Pooled RankIC `+0.0725`、MAE 增量 CI `[-0.052, -0.0176]`、
+DirAcc `+4.33pp`，但排序优势由港股（0.3090）驱动、A 股（0.0567）低于官方（0.0850），
+列为冻结后前向 OOS 候选而非晋级冠军。评测明细：`output/eval_pred10_training/`。

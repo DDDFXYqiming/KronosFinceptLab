@@ -45,6 +45,26 @@ BaoStock `adjustflag` 映射 bug（1=后复权、2=前复权、3=不复权）。
 **结论：无候选通过 v2 门槛，生产 junction 保持 `v3-cont epoch_2`；4x 训练暂停，恢复列为独立
 事项；训练模板固化 `predict_window=10`，v8 系（predict 5）候选仅作诊断参考。**
 
+## 2026-08-07 pred_len=10 双臂 2x 训练判定
+
+两条 predict_window=10 训练臂（父=生产 v3-cont epoch_2 / fast_recipe_best，fast_recipe v3
+配方、4096 步/轮）完成后，600 样本 Confirm（pred_len=10、T=0.5、sc8、Bootstrap 5,000）：
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | MAE | v2 门槛 |
+|---|---:|---:|---:|---:|---|
+| **pred10_prod_best** | **0.1514** | 0.1268 | 54.83% | **0.0709** | 未通过（p=0.591，Top5<0） |
+| pred10_prod_epoch3 | 0.1495 | 0.1248 | 54.83% | 0.0710 | 未通过 |
+| 生产 v3-cont epoch_2（父） | 0.1286 | 0.1056 | 53.33% | 0.0715 | 未通过 |
+| 官方 Kronos-small | 0.0790 | 0.0550 | 50.50% | 0.1077 | 基线 |
+| fast_recipe_best（父） | 0.0630 | 0.1335 | 56.00% | 0.0736 | 未通过 |
+| pred10_fr_best | 0.0601 | 0.1317 | 56.00% | 0.0739 | 未通过 |
+
+G-P10 判定：双臂均未通过 v2 门槛 → 停止 clean_v8 predictor-only 训练、不进入 4x 阶段；
+`pred10_prod_best` 为 pred_len=10 协议下最强点估计开发候选（相对官方 RankIC +0.0725、MAE
+稳定改善、DirAcc +4.33pp，但配对 p=0.591 且 Top5 超额为负；排序优势由港股 0.3090 驱动，
+A 股 0.0567 低于官方 0.0850），加入冻结后前向 OOS 候选清单。生产 junction 保持
+`v3-cont epoch_2` 不变；pivot 方向为数据 v9 与严格 OOS 积累。
+
 ## 最新生产参数同场结果
 
 2026-08-06 使用固定市场/日期横截面重新评测。条件为 `clean_v7_largecap / validation_2026_q1`、

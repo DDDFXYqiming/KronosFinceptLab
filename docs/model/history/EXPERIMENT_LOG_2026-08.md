@@ -213,3 +213,45 @@ clean_v8 当前开发 Confirm 点估计最佳 checkpoint，且是首个在"更�
 
 结论：无候选通过 v2 门槛；生产 junction 保持 `v3-cont epoch_2`；训练模板固化
 predict_window=10，v8 系（predict 5）候选在 pred_len=10 协议下仅作诊断参考。
+
+## 2026-08-07 pred_len=10 双臂 2x 训练（G-P10）
+
+背景：pred_len=10 协议下用 predict_window=10 重新训练（v8 系均为 predict 5，仅作诊断参考）。
+用户选择双臂（父=生产 v3-cont epoch_2 与 fast_recipe_best）+ 先 2x 后 4x。配方沿用
+fast_recipe v3（batch 32 + accum 4 + precompute + foreach=False + 4096 步/轮，LR 5e-7、
+seed 42、早停 patience=1/min_delta=0.001、tokenizer 官方、predictor-only）。
+
+### 训练
+
+| 臂 | 父模型 | 轮数 | Best val | 早停 | 时长 |
+|---|---|---:|---:|---|---:|
+| Arm P（`pred10_prod`） | 生产 v3-cont epoch_2 | 3 | 3.1534（epoch 2） | epoch 3 后 | ~81 min |
+| Arm F（`pred10_fr`） | fast_recipe_best | 2 | 3.0395（epoch 1） | epoch 2 后 | ~57 min |
+
+日志：`finetuned_largecap_v8_pred10_* /logs/basemodel_training_rank_0.log`；stdout/stderr 归档
+`output/training_pred10_armP.log(.err)`、`output/training_pred10_armF.log(.err)`。
+全程 `Device: privateuseone:0`，无 OOM/DML fatal。Arm F 的 predict10 验证损失低于 Arm P，
+说明从 predict5 冠军迁移到 10 日窗口的训练损失更低，但同场预测并未领先（见下）。
+
+### 600 样本 Confirm（pred_len=10 / T=0.5 / sc8 / Bootstrap 5,000，哈希 a419b8b9…）
+
+| 模型 | Pooled RankIC | MeanDaily RankIC | DirAcc | MAE | Top5 超额 | v2 门槛 |
+|---|---:|---:|---:|---:|---:|---|
+| **pred10_prod_best** | **0.1514** | 0.1268 | 54.83% | 0.0709 | −0.0080 | 未通过（p=0.591，Top5<0） |
+| pred10_prod_epoch3 | 0.1495 | 0.1248 | 54.83% | 0.0710 | −0.0080 | 未通过（p=0.603，Top5<0） |
+| 生产 v3-cont epoch_2（父） | 0.1286 | 0.1056 | 53.33% | 0.0715 | −0.0030 | 未通过 |
+| 官方 Kronos-small | 0.0790 | 0.0550 | 50.50% | 0.1077 | −0.0016 | 基线 |
+| fast_recipe_best（父） | 0.0630 | 0.1335 | 56.00% | 0.0736 | +0.0011 | 未通过 |
+| pred10_fr_best | 0.0601 | 0.1317 | 56.00% | 0.0739 | +0.0086 | 未通过（RankIC 增量<+0.02） |
+
+pred10_prod_best 相对官方：Pooled RankIC 增量 `+0.0725`、MAE 增量 CI `[-0.052, -0.0176]`
+（稳定改善）、DirAcc +4.33pp，但配对 Bootstrap `p=0.5915`（8 个共同日期、分组方差大），
+且 Top5 超额为负。分市场：A 股 Pooled RankIC `0.0567`（低于官方 0.0850），港股 `0.3090`
+（远高于官方 0.0632）——总体排序优势由港股驱动，A 股排序未超过官方。
+
+### 决策门 G-P10
+
+双臂均未通过 v2 门槛（配对统计未达 p<0.10；pred10_prod 的 Top5 超额为负）→ **停止
+clean_v8 predictor-only 训练，不进入 4x 阶段**；生产 junction 保持 `v3-cont epoch_2`。
+`pred10_prod_best` 记录为 pred_len=10 协议下最强点估计开发候选，加入冻结后的前向 OOS
+候选清单；pivot 方向为数据 v9 与严格 OOS 积累。
