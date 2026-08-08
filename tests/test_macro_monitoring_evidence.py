@@ -46,6 +46,82 @@ def test_structured_monitoring_signal_is_the_source_of_truth():
     assert rows[0]["source_url"] == "https://example.com/treasury"
 
 
+def _sample_asset_with_results() -> dict:
+    return {
+        "symbol": "600036",
+        "market": "cn",
+        "name": "招商银行",
+        "kronos_prediction": {"probabilistic": {"upside_probability": 0.55}},
+        "methodology": {
+            "rules": [
+                {
+                    "id": "ema_tunnel_2",
+                    "name": "2号EMA隧道 (288/338)",
+                    "status": "ok",
+                    "detail": "价格位于2号隧道下方（EMA288=38.82，EMA338=39.20）。",
+                },
+                {"id": "kdj_regime", "name": "KDJ 阈值", "status": "missing", "detail": "样本不足。"},
+            ]
+        },
+    }
+
+
+def test_asset_monitoring_signals_build_kronos_and_methodology_entries():
+    signals = agent._asset_monitoring_signals([_sample_asset_with_results()])
+    types = [signal["signal_type"] for signal in signals]
+
+    assert "kronos_upside_probability" in types
+    assert "methodology_ema_tunnel_2" in types
+    assert "methodology_kdj_regime" not in types
+    kronos = next(signal for signal in signals if signal["signal_type"] == "kronos_upside_probability")
+    assert kronos["metadata"]["label"] == "Kronos 10日预测上涨概率"
+    assert kronos["value"] == 0.55
+
+
+def test_enrichment_fills_asset_level_monitoring_rows_from_asset_signals():
+    rows = [
+        {
+            "signal": "Kronos 5日预测上涨概率",
+            "current_value": "未获取",
+            "threshold": "上升至50%以上",
+            "meaning": "短期方向转多",
+        },
+        {
+            "signal": "招商银行收盘价与2号EMA隧道关系",
+            "current_value": "未获取",
+            "threshold": "重新站上EMA288/338",
+            "meaning": "趋势转强信号",
+        },
+    ]
+    annotated = agent._annotate_macro_monitoring_signals(
+        {"monitoring_signals": rows},
+        {"signals": [], "question": "招商银行现在能买吗"},
+        asset_contexts=[_sample_asset_with_results()],
+    )
+    enriched = annotated["monitoring_signals"]
+
+    assert enriched[0]["signal"] == "Kronos 10日预测上涨概率"
+    assert enriched[0]["current_value"] == 0.55
+    assert enriched[0]["status"] == "verified"
+    assert enriched[0]["provider"] == "kronos"
+    assert enriched[1]["current_value"] == "价格位于2号隧道下方（EMA288=38.82，EMA338=39.20）。"
+    assert enriched[1]["status"] == "verified"
+    assert enriched[1]["provider"] == "methodology"
+
+
+def test_prediction_summary_uses_runtime_horizon():
+    from kronos_fincept.config import settings
+
+    summary, expected = agent._prediction_summary(
+        {"current_price": 100.0},
+        {"forecast": [{"close": 101.0} for _ in range(settings.runtime.pred_len)]},
+        None,
+    )
+
+    assert f"Kronos {settings.runtime.pred_len} 日末收盘预测" in summary
+    assert expected is not None
+
+
 def test_numeric_monitoring_signal_never_uses_anysearch(monkeypatch):
     calls: list[str] = []
 

@@ -1488,7 +1488,7 @@ def analyze_investment_question(
         llm_context["macro"] = macro_context
     report, llm_call = _generate_report(clean_question, llm_context)
     if macro_context is not None:
-        report = _ensure_macro_report(report, macro_context)
+        report = _ensure_macro_report(report, macro_context, asset_contexts=asset_contexts)
     report = _enforce_report_data_quality(report, asset_contexts, question=clean_question)
     log_event(
         logger,
@@ -4386,7 +4386,7 @@ def _deterministic_asset_outlook(asset: dict[str, Any]) -> tuple[str, str]:
     if weekly is not None:
         facts.append(f"近一周{weekly:+.2f}%")
     if expected is not None:
-        facts.append(f"Kronos 5 日末预期{expected:+.2f}%")
+        facts.append(f"Kronos {settings.runtime.pred_len} 日末预期{expected:+.2f}%")
     if below_averages:
         facts.append("价格低于20/50日均线")
     elif above_averages:
@@ -4732,7 +4732,7 @@ def _enforce_report_data_quality(
         if long_horizon:
             guarded["conclusion"] = (
                 f"{guarded['conclusion']} "
-                "当前工具主要验证最新行情与5日预测，不能把短期信号直接外推为确定的年内走势。"
+                f"当前工具主要验证最新行情与{settings.runtime.pred_len}日预测，不能把短期信号直接外推为确定的年内走势。"
             ).strip()
         guarded["recommendation"] = "；".join(
             f"{str(asset.get('name') or asset.get('symbol') or '标的')}：{action}"
@@ -4887,7 +4887,10 @@ def _prediction_summary(
         predicted_close = _safe_float(forecast[-1].get("close"))
         current = _safe_float(current_price)
         expected_return = _pct_change(predicted_close, current)
-        return f"Kronos 5 日末收盘预测相对当前价格约 {expected_return:.2f}%。", expected_return
+        return (
+            f"Kronos {settings.runtime.pred_len} 日末收盘预测相对当前价格约 {expected_return:.2f}%。",
+            expected_return,
+        )
     if prediction_error:
         return f"真实 Kronos 未返回预测：{prediction_error}", None
     return "真实 Kronos 短期预测不可用，需先确认模型或行情数据是否可用。", None
@@ -5371,7 +5374,7 @@ conclusion, short_term_prediction, technical, fundamentals, risk, uncertainties,
 macro_analysis, macro_signals, cross_validation, contradictions, probability_scenarios, monitoring_signals, time_stratified_sub_conclusions, time_layered_conclusions。
 宏观问题的 conclusion 必须第一字符起直接回答用户问题，格式为“结论：……”，只写核心判断和行动方向；macro_analysis 必须只写支撑判断的事实、信号和不确定性，禁止重复 conclusion，也不要以“结论：”开头。先给可执行判断，再写依据；不要只复述 provider 数量、信号数量或覆盖率。
 conclusion 必须直接回应问题中的具体对象（问题提到 A股/黄金/美联储/比特币等，结论必须出现对应对象），并给出明确倾向（如“偏多/偏空/震荡/磨底/尚未确认/仍偏强”等）；禁止用“证据满足/需观察/等待确认”等与问题无关的套话充当结论主体；即使证据不足，也要先给出基于现有信号的当前倾向，再说明不确定性与监控条件。
-recommendation 必须是六档动作之一：买入（空仓/低仓且信号偏多，适合建仓）、加仓（已有仓位且信号进一步偏多）、持有（已有仓位且方向中性偏多，维持）、观察（方向不明或证据不足，暂不操作）、减仓（已有仓位且信号转弱/风险上升）、卖出（趋势破坏或风险显著恶化）。必须结合 Kronos 5 日预期、均线/周线、量化风险、基本面和宏观信号给出其中一档，并在 conclusion 中包含一句动作理由；禁止“谨慎/观望”“谨慎”“观望”“建议关注”等合并词充当 recommendation。视角规则：问题属建仓视角（如“现在能买吗”“能不能买”）时只能输出 买入/持有/观察；问题明确提及已有持仓、减仓或卖出时输出 加仓/持有/减仓/卖出；未说明视角时默认按建仓视角处理。
+recommendation 必须是六档动作之一：买入（空仓/低仓且信号偏多，适合建仓）、加仓（已有仓位且信号进一步偏多）、持有（已有仓位且方向中性偏多，维持）、观察（方向不明或证据不足，暂不操作）、减仓（已有仓位且信号转弱/风险上升）、卖出（趋势破坏或风险显著恶化）。必须结合 Kronos {settings.runtime.pred_len} 日预期、均线/周线、量化风险、基本面和宏观信号给出其中一档，并在 conclusion 中包含一句动作理由；禁止“谨慎/观望”“谨慎”“观望”“建议关注”等合并词充当 recommendation。视角规则：问题属建仓视角（如“现在能买吗”“能不能买”）时只能输出 买入/持有/观察；问题明确提及已有持仓、减仓或卖出时输出 加仓/持有/减仓/卖出；未说明视角时默认按建仓视角处理。
 方法论（methodology_context 与宏观估值/轮动 provider 是事实输入，必须引用但不得改变输出结构；规则状态为 missing/n/a 时明确写“未验证”或原因，禁止编造数值）：
 - 个股技术面按“风险否决 → 结构/支撑压力 → 趋势确认 → 量额验证”层次撰写：先说明 risk_veto 是否命中（跌破 EMA 隧道/疑似抛物线/贴近52周高点），再写斐波那契与支撑压力、EMA 隧道状态，然后是 KDJ/MACD 确认，最后给量额共振结论。
 - 个股基本面先回答“贵不贵”：pr 可用时写出所用公式（F1 或 F3）、修正 PR 与所处估值带（如“PR=0.52，6折分批区”），并保留“估值便宜≠可买，技术面负责择时”；pr 为 missing/n/a 时说明原因，不编造 PE/PB/ROE。
@@ -5507,7 +5510,7 @@ def _fallback_report(context: dict[str, Any]) -> dict[str, Any]:
         predicted_close = _safe_float(forecast[-1].get("close"))
         current_price = _safe_float(market_data.get("current_price"))
         expected_return = _pct_change(predicted_close, current_price)
-        short_term = f"Kronos 5 日末收盘预测相对当前价格约 {expected_return:.2f}%。"
+        short_term = f"Kronos {settings.runtime.pred_len} 日末收盘预测相对当前价格约 {expected_return:.2f}%。"
     elif prediction_error:
         short_term = f"真实 Kronos 未返回预测：{prediction_error}"
     else:
@@ -5692,7 +5695,11 @@ def _fallback_macro_report(macro_context: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
+def _ensure_macro_report(
+    report: dict[str, Any],
+    macro_context: dict[str, Any],
+    asset_contexts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     fallback = _fallback_macro_report(macro_context)
     merged = dict(report)
     had_model_probability = bool(_normalize_probability_scenarios(report.get("probability_scenarios")))
@@ -5720,7 +5727,7 @@ def _ensure_macro_report(report: dict[str, Any], macro_context: dict[str, Any]) 
         normalized["macro_analysis"] = _macro_analysis_from_signals(
             _normalize_macro_signals(macro_context.get("signals"))
         )
-    normalized = _annotate_macro_monitoring_signals(normalized, macro_context)
+    normalized = _annotate_macro_monitoring_signals(normalized, macro_context, asset_contexts=asset_contexts)
     normalized = _guard_unverified_commodity_prices(normalized, macro_context, fallback)
     normalized = _apply_macro_evidence_guard(normalized, macro_context)
     scenarios = _normalize_probability_scenarios(normalized.get("probability_scenarios"))
@@ -6299,6 +6306,13 @@ def _annotate_macro_monitoring_rows(
     for row in rows:
         item = dict(row)
         signal_name = str(item.get("signal") or "")
+        signal_name = re.sub(
+            r"(Kronos\s*)5(\s*日)",
+            rf"\g<1>{settings.runtime.pred_len}\g<2>",
+            signal_name,
+            flags=re.IGNORECASE,
+        )
+        item["signal"] = signal_name
         if "10Y" in signal_name and "实际收益率" in signal_name and "TIPS" not in signal_name:
             item["signal"] = "美国10Y TIPS实际收益率"
         if real_yield and item.get("signal") == "美国10Y TIPS实际收益率":
@@ -6466,6 +6480,78 @@ def _monitoring_evidence_fields(
     return annotated
 
 
+def _asset_monitoring_signals(asset_contexts: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Build asset-derived monitoring candidates (Kronos stats + methodology rules).
+
+    These let LLM monitoring rows such as "Kronos 10日预测上涨概率" or
+    "收盘价与2号EMA隧道关系" be filled from the same data the asset cards
+    already display, instead of remaining "未获取".
+    """
+    if not asset_contexts:
+        return []
+    pred_len = settings.runtime.pred_len
+    today = datetime.now(timezone.utc).date().isoformat()
+    out: list[dict[str, Any]] = []
+    for asset in asset_contexts:
+        symbol = str(asset.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        kronos = asset.get("kronos_prediction")
+        probabilistic = kronos.get("probabilistic") if isinstance(kronos, dict) else None
+        if isinstance(probabilistic, dict):
+            upside = probabilistic.get("upside_probability")
+            if isinstance(upside, (int, float)) and math.isfinite(float(upside)):
+                value = round(float(upside), 4)
+                out.append(
+                    {
+                        "source": "kronos",
+                        "signal_type": "kronos_upside_probability",
+                        "value": value,
+                        "interpretation": (
+                            f"Kronos {pred_len} 日预测中上涨路径占比 {value * 100:.0f}%（{symbol}）。"
+                        ),
+                        "time_horizon": "short",
+                        "confidence": 0.7,
+                        "observed_at": today,
+                        "metadata": {
+                            "label": f"Kronos {pred_len}日预测上涨概率",
+                            "series_id": "kronos_upside_probability",
+                            "evidence_role": "structured_current",
+                            "symbol": symbol,
+                        },
+                    }
+                )
+        methodology = asset.get("methodology")
+        rules = methodology.get("rules") if isinstance(methodology, dict) else None
+        if isinstance(rules, list):
+            for rule in rules:
+                if not isinstance(rule, dict) or rule.get("status") != "ok":
+                    continue
+                rule_id = str(rule.get("id") or "").strip()
+                name = str(rule.get("name") or "").strip()
+                detail = str(rule.get("detail") or "").strip()
+                if not rule_id or not name or not detail:
+                    continue
+                out.append(
+                    {
+                        "source": "methodology",
+                        "signal_type": f"methodology_{rule_id}",
+                        "value": detail,
+                        "interpretation": detail,
+                        "time_horizon": "short",
+                        "confidence": 0.7,
+                        "observed_at": today,
+                        "metadata": {
+                            "label": f"{symbol} {name}",
+                            "series_id": f"methodology_{rule_id}",
+                            "evidence_role": "structured_current",
+                            "symbol": symbol,
+                        },
+                    }
+                )
+    return out
+
+
 def _unavailable_monitoring_row(row: dict[str, Any], *, reason: str = "") -> dict[str, Any]:
     annotated = dict(row)
     current_value = row.get("current_value")
@@ -6578,12 +6664,14 @@ def _enrich_macro_monitoring_signals(
     signals: list[dict[str, Any]],
     *,
     question: str,
+    asset_signals: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     fallback_rows: list[tuple[int, dict[str, Any]]] = []
     referenced: set[tuple[str, str]] = set()
+    match_pool = [*signals, *(asset_signals or [])]
     for index, row in enumerate(rows):
-        matched = _best_monitoring_signal(row, signals)
+        matched = _best_monitoring_signal(row, match_pool)
         if matched:
             source = str(matched.get("source") or "").lower()
             metadata = matched.get("metadata") if isinstance(matched.get("metadata"), dict) else {}
@@ -6629,7 +6717,11 @@ def _enrich_macro_monitoring_signals(
     return enriched
 
 
-def _annotate_macro_monitoring_signals(report: dict[str, Any], macro_context: dict[str, Any]) -> dict[str, Any]:
+def _annotate_macro_monitoring_signals(
+    report: dict[str, Any],
+    macro_context: dict[str, Any],
+    asset_contexts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     rows = _normalize_monitoring_signals(report.get("monitoring_signals"))
     signals = _normalize_macro_signals(macro_context.get("signals")) or _normalize_macro_signals(report.get("macro_signals"))
     report = dict(report)
@@ -6638,6 +6730,7 @@ def _annotate_macro_monitoring_signals(report: dict[str, Any], macro_context: di
         annotated,
         signals,
         question=str(macro_context.get("question") or ""),
+        asset_signals=_asset_monitoring_signals(asset_contexts),
     )
     return report
 
