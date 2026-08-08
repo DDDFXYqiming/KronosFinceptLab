@@ -16,6 +16,8 @@ from datetime import datetime
 from datetime import date as _date
 from typing import Any
 
+from kronos_fincept.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,7 +65,110 @@ def _rule(rule_id: str, name: str, status: str, detail: str, evidence: dict[str,
 
 
 def _kline_rows(asset: dict[str, Any]) -> list[dict[str, Any]]:
+    full_rows = asset.get("full_rows")
+    if isinstance(full_rows, list) and len(full_rows) >= 30:
+        return full_rows
     return (asset.get("market_data") or {}).get("rows") or []
+
+
+def _fractal_swings(
+    highs: list[float | None],
+    lows: list[float | None],
+    amounts: list[float | None],
+    left: int = 5,
+    right: int = 5,
+) -> list[dict[str, Any]]:
+    """Fractal swing highs/lows (left/right window, wick included)."""
+    swings: list[dict[str, Any]] = []
+    n = len(highs)
+    for i in range(left, n - right):
+        h, low, amount = highs[i], lows[i], amounts[i] or 0.0
+        if h is None or low is None:
+            continue
+        window_h = [value for value in highs[i - left : i + right + 1] if value is not None]
+        window_l = [value for value in lows[i - left : i + right + 1] if value is not None]
+        if len(window_h) < left + right + 1 or len(window_l) < left + right + 1:
+            continue
+        if h >= max(window_h) and sum(1 for value in window_h if value >= h) == 1:
+            swings.append({"idx": i, "price": h, "kind": "high", "amount": amount})
+        if low <= min(window_l) and sum(1 for value in window_l if value <= low) == 1:
+            swings.append({"idx": i, "price": low, "kind": "low", "amount": amount})
+    return swings
+
+
+def _cluster_swing_levels(swings: list[dict[str, Any]], tolerance_pct: float = 0.0075) -> list[dict[str, Any]]:
+    """Merge swing points within tolerance into price levels with touch counts."""
+    clusters: list[dict[str, Any]] = []
+    for swing in sorted(swings, key=lambda item: item["price"]):
+        if clusters and swing["price"] <= clusters[-1]["price"] * (1 + tolerance_pct):
+            cluster = clusters[-1]
+            cluster["price"] = (cluster["price"] * cluster["touches"] + swing["price"]) / (cluster["touches"] + 1)
+            cluster["touches"] += 1
+            cluster["total_amount"] += swing["amount"]
+            cluster["last_idx"] = max(cluster["last_idx"], swing["idx"])
+            if swing["kind"] == "high":
+                cluster["high_touches"] += 1
+            else:
+                cluster["low_touches"] += 1
+        else:
+            clusters.append(
+                {
+                    "price": swing["price"],
+                    "touches": 1,
+                    "total_amount": swing["amount"],
+                    "last_idx": swing["idx"],
+                    "high_touches": 1 if swing["kind"] == "high" else 0,
+                    "low_touches": 1 if swing["kind"] == "low" else 0,
+                }
+            )
+    return clusters
+
+
+def _volume_profile_nodes(
+    closes: list[float],
+    highs: list[float | None],
+    lows: list[float | None],
+    amounts: list[float | None],
+    window: int = 250,
+    bins: int = 80,
+) -> list[dict[str, Any]]:
+    """Amount-weighted price histogram: POC plus high-volume nodes (筹码近似)."""
+    import numpy as np
+
+    w = min(window, len(closes))
+    if w < 20:
+        return []
+    prices = closes[-w:]
+    weights = [amounts[i] or 0.0 for i in range(len(closes) - w, len(closes))]
+    recent_lows = [value for value in lows[-w:] if value is not None]
+    recent_highs = [value for value in highs[-w:] if value is not None]
+    lo = min(min(recent_lows), min(prices)) if recent_lows else min(prices)
+    hi = max(max(recent_highs), max(prices)) if recent_highs else max(prices)
+    if hi <= lo:
+        return []
+    hist, edges = np.histogram(prices, bins=bins, range=(lo, hi), weights=weights)
+    total = float(hist.sum())
+    if total <= 0:
+        return []
+    centers = [(edges[i] + edges[i + 1]) / 2.0 for i in range(len(hist))]
+    poc_index = int(np.argmax(hist))
+    nodes = [{"price": float(centers[poc_index]), "share": float(hist[poc_index]) / total, "poc": True}]
+    for i in range(len(hist)):
+        if i == poc_index or hist[i] < 0.3 * hist[poc_index]:
+            continue
+        nodes.append({"price": float(centers[i]), "share": float(hist[i]) / total, "poc": False})
+    return nodes
+
+
+def _classic_pivots(high: float, low: float, close: float) -> dict[str, float]:
+    pivot = (high + low + close) / 3.0
+    return {
+        "p": pivot,
+        "r1": 2 * pivot - low,
+        "s1": 2 * pivot - high,
+        "r2": pivot + (high - low),
+        "s2": pivot - (high - low),
+    }
 
 
 def compute_fox_rules(asset: dict[str, Any]) -> list[dict[str, Any]]:
@@ -251,13 +356,27 @@ def compute_fox_rules(asset: dict[str, Any]) -> list[dict[str, Any]]:
                         synced += 1
                     elif vol_up and not amt_up:
                         fake_up += 1
+            vol_series = [value for value in volumes if value is not None and value > 0]
+            ma5 = sum(vol_series[-5:]) / 5 if len(vol_series) >= 5 else None
+            ma20 = sum(vol_series[-20:]) / 20 if len(vol_series) >= 20 else None
+            vol_ratio = (ma5 / ma20) if (ma5 is not None and ma20 and ma20 > 0) else None
+            volume_text = (
+                f"；量能MA5/MA20={vol_ratio:.2f}"
+                if vol_ratio is not None
+                else "；量能均线样本不足"
+            )
             rules.append(
                 _rule(
                     "volume_amount_resonance",
                     "量额共振",
                     "ok",
-                    f"近5日上涨{up_days}天；量额同步放量{synced}天，放量但成交额未跟进的疑似假性K线{fake_up}天。",
-                    {"up_days": up_days, "synced_days": synced, "fake_up_days": fake_up},
+                    f"近5日上涨{up_days}天；量额同步放量{synced}天，放量但成交额未跟进的疑似假性K线{fake_up}天{volume_text}。",
+                    {
+                        "up_days": up_days,
+                        "synced_days": synced,
+                        "fake_up_days": fake_up,
+                        "volume_ratio_ma5_ma20": round(vol_ratio, 4) if vol_ratio is not None else None,
+                    },
                 )
             )
         else:
@@ -274,7 +393,10 @@ def compute_fox_rules(asset: dict[str, Any]) -> list[dict[str, Any]]:
         )
         frame["ts"] = pd.to_datetime(frame["ts"], errors="coerce")
         frame = frame.dropna(subset=["ts", "close"]).set_index("ts").sort_index()
-        weekly = frame["close"].astype(float).resample("W-FRI").last().dropna()
+        # Natural trading weeks: bucket by the Monday of each calendar week so
+        # long holiday gaps behave like mainstream charting apps.
+        week_start = frame.index.to_series().map(lambda ts: ts - pd.Timedelta(days=ts.weekday()))
+        weekly = frame["close"].astype(float).groupby(week_start).last().sort_index().dropna()
         if len(weekly) >= 3:
             diffs = weekly.diff().dropna()
             last2 = [diffs.iloc[-1], diffs.iloc[-2]]
@@ -325,19 +447,78 @@ def compute_fox_rules(asset: dict[str, Any]) -> list[dict[str, Any]]:
         )
     )
 
-    # ── Support/resistance levels ──
-    if high_52w and low_250:
+    # ── Support/resistance levels: swing-touch clusters + volume profile + pivots ──
+    try:
+        last_row = rows[-1]
+        last_high = _num(last_row.get("high"))
+        last_low = _num(last_row.get("low"))
+        last_close = _num(last_row.get("close"))
+        pivots = _classic_pivots(last_high, last_low, last_close) if (last_high and last_low and last_close) else {}
+        swings = _fractal_swings(highs, lows, amounts)
+        clusters = _cluster_swing_levels(swings)
+        nodes = _volume_profile_nodes(closes, highs, lows, amounts)
+
+        support_candidates: list[dict[str, Any]] = [
+            {"price": cluster["price"], "label": f"分形触点{cluster['touches']}次"}
+            for cluster in clusters
+            if cluster["price"] < price * 0.998
+        ]
+        resistance_candidates: list[dict[str, Any]] = [
+            {"price": cluster["price"], "label": f"分形触点{cluster['touches']}次"}
+            for cluster in clusters
+            if cluster["price"] > price * 1.002
+        ]
+        support_candidates.extend(
+            {"price": node["price"], "label": f"量峰{node['share'] * 100:.0f}%"}
+            for node in nodes
+            if node["price"] < price * 0.998
+        )
+        resistance_candidates.extend(
+            {"price": node["price"], "label": f"量峰{node['share'] * 100:.0f}%"}
+            for node in nodes
+            if node["price"] > price * 1.002
+        )
+        for name, value in (("s1", pivots.get("s1")), ("s2", pivots.get("s2"))):
+            if value is not None and value < price * 0.998:
+                support_candidates.append({"price": value, "label": f"pivot {name.upper()}"})
+        for name, value in (("r1", pivots.get("r1")), ("r2", pivots.get("r2"))):
+            if value is not None and value > price * 1.002:
+                resistance_candidates.append({"price": value, "label": f"pivot {name.upper()}"})
+
+        nearest_support = max(support_candidates, key=lambda item: item["price"]) if support_candidates else None
+        nearest_resistance = min(resistance_candidates, key=lambda item: item["price"]) if resistance_candidates else None
+        support_text = (
+            f"支撑{nearest_support['price']:.2f}（{nearest_support['label']}）"
+            if nearest_support
+            else "近期下方无聚合支撑位"
+        )
+        resistance_text = (
+            f"压力{nearest_resistance['price']:.2f}（{nearest_resistance['label']}）"
+            if nearest_resistance
+            else "近期上方无聚合压力位"
+        )
+        pivot_text = (
+            f"；pivot S1={pivots['s1']:.2f} S2={pivots['s2']:.2f} R1={pivots['r1']:.2f} R2={pivots['r2']:.2f}"
+            if pivots
+            else ""
+        )
         rules.append(
             _rule(
                 "support_resistance",
                 "支撑/压力位",
                 "ok",
-                f"近52周高点{high_52w:.2f}、低点{low_250:.2f}；斐波那契0.5回撤位约{high_52w - (high_52w - low_250) * 0.5:.2f}。",
-                {"high_52w": round(high_52w, 4), "low_250": round(low_250, 4)},
+                f"{support_text}；{resistance_text}{pivot_text}；52周高{high_52w:.2f}、低{low_250:.2f}。",
+                {
+                    "support": nearest_support,
+                    "resistance": nearest_resistance,
+                    "pivots": {key: round(float(value), 4) for key, value in pivots.items()} if pivots else {},
+                    "high_52w": round(high_52w, 4) if high_52w else None,
+                    "low_250": round(low_250, 4) if low_250 else None,
+                },
             )
         )
-    else:
-        rules.append(_rule("support_resistance", "支撑/压力位", "missing", "高低点数据缺失，无法给出支撑/压力位。"))
+    except Exception as exc:  # pragma: no cover - defensive path
+        rules.append(_rule("support_resistance", "支撑/压力位", "missing", f"支撑/压力计算失败：{exc}"))
 
     return rules
 
@@ -608,9 +789,16 @@ def compute_pr_valuation(asset: dict[str, Any], financial_data: dict[str, Any] |
 
 def compute_methodology(asset: dict[str, Any]) -> dict[str, Any]:
     """Compute the full methodology block for one asset."""
+    full_rows = asset.get("full_rows") or []
+    display_rows = (asset.get("market_data") or {}).get("rows") or []
     return {
         "rules": compute_fox_rules(asset),
         "pr": compute_pr_valuation(asset, asset.get("financial_data")),
+        "data_scope": {
+            "adjust": settings.runtime.adjust,
+            "full_bars": len(full_rows) if len(full_rows) >= 30 else len(display_rows),
+            "display_bars": len(display_rows),
+        },
     }
 
 

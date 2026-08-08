@@ -532,9 +532,16 @@ export interface MethodologyPrValuation {
   detail?: string;
 }
 
+export interface MethodologyDataScope {
+  adjust?: string;
+  full_bars?: number;
+  display_bars?: number;
+}
+
 export interface MethodologyRuleSet {
   rules: MethodologyRule[];
   pr: MethodologyPrValuation | null;
+  data_scope?: MethodologyDataScope | null;
 }
 
 export interface AgentAssetResult {

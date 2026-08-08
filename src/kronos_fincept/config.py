@@ -9,7 +9,6 @@ Supports three tiers of configuration:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -249,6 +248,7 @@ class KronosRuntimeConfig:
     temperature: float = field(default_factory=lambda: _get_float("KRONOS_TEMPERATURE", 0.5))
     top_p: float = field(default_factory=lambda: _get_float("KRONOS_TOP_P", 0.9))
     sample_count: int = field(default_factory=lambda: _get_int("KRONOS_SAMPLE_COUNT", 8))
+    adjust: str = field(default_factory=lambda: _get("KRONOS_ADJUST", "qfq"))
     agent_sample_count_single: int = field(
         default_factory=lambda: _get_int("KRONOS_AGENT_SAMPLE_COUNT_SINGLE", 16)
     )

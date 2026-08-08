@@ -25,6 +25,7 @@ from kronos_fincept.logging_config import get_request_id, log_event, log_perf, r
 
 from kronos_fincept.macro import MacroDataManager, MacroGatherResult, MacroQuery
 from kronos_fincept.methodology import compute_methodology, compact_methodology_for_llm
+from kronos_fincept.full_history import get_full_history_rows
 from kronos_fincept.schemas import (
     DEFAULT_MODEL_ID,
     ForecastRequest,
@@ -2570,12 +2571,19 @@ def _build_asset_context(
             summary = "已尝试获取财务摘要。" if data else "当前数据源未返回可用财务摘要。"
         return (data, summary)
 
+    def _fetch_full_history_wrapper() -> list[dict[str, Any]]:
+        try:
+            return _call_quietly(get_full_history_rows, item.symbol, item.market, settings.runtime.adjust)
+        except Exception:
+            return []
+
     def _fetch_review_wrapper() -> Any:
         return _call_quietly(_build_local_market_review_context, item.symbol, item.market)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kronos-asset") as pool:
         f_price = pool.submit(_fetch_price_wrapper)
         f_fin = pool.submit(_fetch_financial_wrapper)
+        f_full = pool.submit(_fetch_full_history_wrapper)
         f_review = pool.submit(_fetch_review_wrapper)
         f_research = pool.submit(_build_online_research, item, question=question, query_limit=search_query_limit)
         # Keep the inner pool scoped until all started work has ended. Python
@@ -2584,6 +2592,7 @@ def _build_asset_context(
         wave1 = {
             "price": f_price.result(),
             "financial": f_fin.result(),
+            "full": f_full.result(),
             "review": f_review.result(),
             "research": f_research.result(),
         }
@@ -2591,6 +2600,9 @@ def _build_asset_context(
     rows = wave1["price"]
     if rows:
         asset["market_data"] = _build_market_data(rows)
+    full_rows = wave1["full"]
+    if isinstance(full_rows, list) and len(full_rows) >= 30:
+        asset["full_rows"] = full_rows
 
     fin_result = wave1["financial"]
     if isinstance(fin_result, tuple) and len(fin_result) == 2:
@@ -2653,7 +2665,7 @@ def _build_asset_context(
     # ── Wave 2: Compute rows-dependent items in parallel ──
     if rows:
         def _build_tech_wrapper() -> Any:
-            return _call_quietly(_build_technical_indicators, rows)
+            return _call_quietly(_build_technical_indicators, full_rows if full_rows else rows)
 
         def _build_risk_wrapper() -> Any:
             return _call_quietly(_build_risk_metrics, item.symbol, rows)
@@ -3716,7 +3728,7 @@ def _fetch_price_data(symbol: str, market: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _fetch_hk_ohlcv_akshare(symbol: str) -> list[dict[str, Any]]:
+def _fetch_hk_ohlcv_akshare(symbol: str, lookback_days: int | None = 540) -> list[dict[str, Any]]:
     """Fallback HK daily OHLCV via AkShare/Sina when the primary source is unavailable."""
     try:
         import akshare as ak
@@ -3733,11 +3745,11 @@ def _fetch_hk_ohlcv_akshare(symbol: str) -> list[dict[str, Any]]:
         return []
     frame = frame.reset_index(drop=True)
     timestamps = pd.to_datetime(frame["date"], errors="coerce")
-    cutoff = (datetime.now() - timedelta(days=540)).date()
+    cutoff = (datetime.now() - timedelta(days=lookback_days)).date() if lookback_days is not None else None
     rows: list[dict[str, Any]] = []
     for idx in range(len(frame)):
         ts = timestamps.iloc[idx]
-        if pd.isna(ts) or ts.date() < cutoff:
+        if pd.isna(ts) or (cutoff is not None and ts.date() < cutoff):
             continue
         close = _safe_float(frame.at[idx, "close"])
         volume = _safe_float(frame.at[idx, "volume"])

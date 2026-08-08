@@ -713,6 +713,16 @@ function MethodologyEvidenceCard({ methodology, language }: { methodology?: Meth
         {prBadge}
       </summary>
       <div className="border-t border-border px-3 py-3">
+        {methodology.data_scope && (
+          <p className="mb-3 text-xs text-muted-foreground">
+            {tx(language, "数据口径", "Data scope")}:{" "}
+            {methodology.data_scope.adjust === "qfq"
+              ? tx(language, "前复权 qfq", "qfq adjusted")
+              : methodology.data_scope.adjust}{" "}
+            · {tx(language, "全量历史", "Full history")} {methodology.data_scope.full_bars}{" "}
+            {tx(language, "根", "bars")}
+          </p>
+        )}
         {rules.length > 0 && (
           <div className="table-scroll overflow-x-auto">
             <table className="min-w-full text-xs">
