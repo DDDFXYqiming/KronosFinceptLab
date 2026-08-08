@@ -64,6 +64,13 @@ type ActiveMacroRun = {
   turnIndex: number;
   startedAt: number;
 };
+
+interface LastRunInfo {
+  queryKey: QueryKey;
+  question: string;
+  timestamp: string;
+}
+
 const _HARDCODED_EXAMPLES = [
   "现在适合买黄金吗",
   "美联储下一步会加息还是降息",
@@ -794,6 +801,7 @@ function MacroContent() {
   const [history, setHistory] = useState<AgentAnalyzeResponse[]>([]);
   const [historySummary, setHistorySummary] = useSessionState<MacroRunSummary[]>("kronos-macro-history-summary", []);
   const [activeRun, setActiveRun] = useSessionState<ActiveMacroRun | null>("kronos-macro-active-run", null);
+  const [lastRun, setLastRun] = useSessionState<LastRunInfo | null>("kronos-macro-last-run", null);
   const [examples, setExamples] = useState<string[]>(() => fallbackMacroExamples(language));
   const activeRunFetching = useIsFetching({
     queryKey: activeRun?.queryKey ?? ["kronos-macro-no-active-run"],
@@ -865,20 +873,23 @@ function MacroContent() {
     language,
   }), [language]);
 
-  const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse) => {
+  const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse, runKey?: QueryKey) => {
     setResult(entry);
     appendHistory(entry);
     setQuestion(entry.question);
     setError("");
     setActiveRun(null);
-  }, [appendHistory, setActiveRun, setError, setQuestion, setResult]);
+    if (runKey) {
+      setLastRun({ queryKey: [...runKey], question: entry.question, timestamp: entry.timestamp });
+    }
+  }, [appendHistory, setActiveRun, setError, setQuestion, setResult, setLastRun]);
 
   const resumeActiveRun = useCallback(async (run: ActiveMacroRun) => {
     if (inFlightRef.current) return;
     const key = run.queryKey;
     const cached = queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
-      applyCompletedRun(cached);
+      applyCompletedRun(cached, key);
       setLoading(false);
       return;
     }
@@ -899,7 +910,7 @@ function MacroContent() {
         queryKey: key,
         queryFn: ({ signal }) => api.macroAnalyze(buildRequest(run), { signal }),
       });
-      applyCompletedRun(res);
+      applyCompletedRun(res, key);
     } catch (e) {
       setError(formatApiError(e, tx(language, "宏观分析请求失败", "Macro analysis request failed")));
       setActiveRun(null);
@@ -918,7 +929,7 @@ function MacroContent() {
     const key = queryKeys.macro({ question: prompt, language, providers: providerIds, rssFeeds: rssFeeds.map((feed) => feed.url) });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
-      applyCompletedRun(cached);
+      applyCompletedRun(cached, key);
       return;
     }
 
@@ -944,7 +955,7 @@ function MacroContent() {
         queryKey: key,
         queryFn: ({ signal }) => api.macroAnalyze(buildRequest(run), { signal }),
       });
-      applyCompletedRun(res);
+      applyCompletedRun(res, key);
     } catch (e) {
       setError(formatApiError(e, tx(language, "宏观分析请求失败", "Macro analysis request failed")));
       setActiveRun(null);
@@ -966,6 +977,7 @@ function MacroContent() {
     setHistory([]);
     setHistorySummary([]);
     setActiveRun(null);
+    setLastRun(null);
     setError("");
   };
 
@@ -983,6 +995,14 @@ function MacroContent() {
     }
     void resumeActiveRun(activeRun);
   }, [activeRun, language, result, resumeActiveRun, setActiveRun, setError, setResult]);
+
+  useEffect(() => {
+    if (!lastRun || activeRun || result) return;
+    const cached = queryClient.getQueryData<AgentAnalyzeResponse>(lastRun.queryKey);
+    if (cached) {
+      applyCompletedRun(cached);
+    }
+  }, [activeRun, applyCompletedRun, lastRun, queryClient, result]);
 
   useEffect(() => {
     if (!demoMode) return;

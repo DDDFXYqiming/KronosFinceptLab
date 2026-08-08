@@ -855,6 +855,12 @@ interface AnalysisRunSummary {
   symbols: string[];
 }
 
+interface LastRunInfo {
+  queryKey: QueryKey;
+  question: string;
+  timestamp: string;
+}
+
 function toAnalysisRunSummary(entry: AgentAnalyzeResponse): AnalysisRunSummary {
   return {
     question: entry.question,
@@ -888,6 +894,7 @@ function AnalysisContent() {
   const [history, setHistory] = useState<AgentAnalyzeResponse[]>([]);
   const [historySummary, setHistorySummary] = useSessionState<AnalysisRunSummary[]>("kronos-analysis-history-summary", []);
   const [activeRun, setActiveRun] = useSessionState<ActiveAnalysisRun | null>("kronos-analysis-active-run", null);
+  const [lastRun, setLastRun] = useSessionState<LastRunInfo | null>("kronos-analysis-last-run", null);
   const [examples, setExamples] = useState<string[]>(() => fallbackAnalysisExamples(language));
   const activeRunFetching = useIsFetching({
     queryKey: activeRun?.queryKey ?? ["kronos-analysis-no-active-run"],
@@ -948,7 +955,7 @@ function AnalysisContent() {
     language,
   }), [language]);
 
-  const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse) => {
+  const applyCompletedRun = useCallback((entry: AgentAnalyzeResponse, runKey?: QueryKey) => {
     setResult(entry);
     appendHistory(entry);
     setQuestion(entry.question);
@@ -965,14 +972,17 @@ function AnalysisContent() {
     }
     setError("");
     setActiveRun(null);
-  }, [appendHistory, setActiveRun, setError, setQuestion, setResult]);
+    if (runKey) {
+      setLastRun({ queryKey: [...runKey], question: entry.question, timestamp: entry.timestamp });
+    }
+  }, [appendHistory, setActiveRun, setError, setQuestion, setResult, setLastRun]);
 
   const resumeActiveRun = useCallback(async (run: ActiveAnalysisRun) => {
     if (inFlightRef.current) return;
     const key = run.queryKey;
     const cached = queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
-      applyCompletedRun(cached);
+      applyCompletedRun(cached, key);
       setLoading(false);
       return;
     }
@@ -993,7 +1003,7 @@ function AnalysisContent() {
         queryKey: key,
         queryFn: ({ signal }) => api.agentAnalyze(buildRequest(run), { signal }),
       });
-      applyCompletedRun(res);
+      applyCompletedRun(res, key);
     } catch (e: any) {
       setError(formatApiError(e, tx(language, "分析请求失败", "Analysis request failed")));
       setActiveRun(null);
@@ -1015,7 +1025,7 @@ function AnalysisContent() {
     });
     const cached = forceRefresh ? undefined : queryClient.getQueryData<AgentAnalyzeResponse>(key);
     if (cached) {
-      applyCompletedRun(cached);
+      applyCompletedRun(cached, key);
       return;
     }
 
@@ -1041,7 +1051,7 @@ function AnalysisContent() {
         queryKey: key,
         queryFn: ({ signal }) => api.agentAnalyze(buildRequest(run), { signal }),
       });
-      applyCompletedRun(res);
+      applyCompletedRun(res, key);
     } catch (e: any) {
       setError(formatApiError(e, tx(language, "分析请求失败", "Analysis request failed")));
       setActiveRun(null);
@@ -1063,6 +1073,7 @@ function AnalysisContent() {
     setHistory([]);
     setHistorySummary([]);
     setActiveRun(null);
+    setLastRun(null);
     setError("");
   };
 
@@ -1073,6 +1084,14 @@ function AnalysisContent() {
     }
     void resumeActiveRun(activeRun);
   }, [activeRun, result, resumeActiveRun, setResult]);
+
+  useEffect(() => {
+    if (!lastRun || activeRun || result) return;
+    const cached = queryClient.getQueryData<AgentAnalyzeResponse>(lastRun.queryKey);
+    if (cached) {
+      applyCompletedRun(cached);
+    }
+  }, [activeRun, applyCompletedRun, lastRun, queryClient, result]);
 
   useEffect(() => {
     if (symbolParam) {
