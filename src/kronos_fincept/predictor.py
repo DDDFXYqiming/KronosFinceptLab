@@ -509,10 +509,21 @@ class KronosPredictorWrapper:
         # torch_directml.device() returns an opaque device object (not a str),
         # so keep a string label for metadata while using the object for tensors.
         device_obj = device
-        if isinstance(device, str) and device.lower() in ("dml", "directml"):
+        dml_kind = str(device).lower().split(":")[0] if isinstance(device, str) else ""
+        if dml_kind in ("dml", "directml"):
             try:
                 import torch_directml
-                device_obj = torch_directml.device()
+                adapter_index: int | None = None
+                if ":" in str(device):
+                    try:
+                        adapter_index = int(str(device).rsplit(":", 1)[1])
+                    except ValueError:
+                        adapter_index = None
+                device_obj = (
+                    torch_directml.device(adapter_index)
+                    if adapter_index is not None
+                    else torch_directml.device()
+                )
                 _install_dml_sampling_compatibility()
             except ImportError:
                 device_obj = "cpu"
