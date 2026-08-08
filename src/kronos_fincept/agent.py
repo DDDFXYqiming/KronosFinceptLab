@@ -2555,76 +2555,86 @@ def _build_asset_context(
     # ── Wave 1: Fetch all independent data in parallel ──
     wave1: dict[str, Any] = {}
 
-    def _fetch_price_wrapper() -> list[dict[str, Any]]:
+    def _fetch_price_wrapper() -> tuple[list[dict[str, Any]], int]:
+        started = time.perf_counter()
         try:
-            return _call_quietly(_fetch_price_data, item.symbol, item.market)
+            rows = _call_quietly(_fetch_price_data, item.symbol, item.market)
         except Exception:
-            return []
+            rows = []
+        return rows, _elapsed_ms(started)
 
-    def _fetch_financial_wrapper() -> Any:
+    def _fetch_financial_wrapper() -> tuple[tuple[Any, str], int]:
+        started = time.perf_counter()
         if asset["asset_class"] == "commodity_future":
-            return (None, "商品期货不适用公司财务摘要，后续使用行情、风险、Kronos 与宏观信号。")
+            return (None, "商品期货不适用公司财务摘要，后续使用行情、风险、Kronos 与宏观信号。"), _elapsed_ms(started)
         data = _call_quietly(_fetch_financial_summary, item.symbol, item.market)
         if asset["asset_class"] == "etf":
             summary = "已尝试获取 ETF/基金资料；没有公司三表时不按个股基本面解释。"
         else:
             summary = "已尝试获取财务摘要。" if data else "当前数据源未返回可用财务摘要。"
-        return (data, summary)
+        return (data, summary), _elapsed_ms(started)
 
-    def _fetch_full_history_wrapper() -> list[dict[str, Any]]:
+    def _fetch_full_history_wrapper() -> tuple[list[dict[str, Any]], int]:
+        started = time.perf_counter()
         try:
-            return _call_quietly(get_full_history_rows, item.symbol, item.market, settings.runtime.adjust)
+            rows = _call_quietly(get_full_history_rows, item.symbol, item.market, settings.runtime.adjust)
         except Exception:
-            return []
+            rows = []
+        return rows, _elapsed_ms(started)
 
-    def _fetch_review_wrapper() -> Any:
-        return _call_quietly(_build_local_market_review_context, item.symbol, item.market)
+    def _fetch_review_wrapper() -> tuple[Any, int]:
+        started = time.perf_counter()
+        result = _call_quietly(_build_local_market_review_context, item.symbol, item.market)
+        return result, _elapsed_ms(started)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kronos-asset") as pool:
-        f_price = pool.submit(_fetch_price_wrapper)
-        f_fin = pool.submit(_fetch_financial_wrapper)
-        f_full = pool.submit(_fetch_full_history_wrapper)
-        f_review = pool.submit(_fetch_review_wrapper)
-        f_research = pool.submit(_build_online_research, item, question=question, query_limit=search_query_limit)
-        # Keep the inner pool scoped until all started work has ended. Python
-        # threads cannot be force-cancelled once running; returning at a shared
-        # deadline left orphaned network calls that corrupted later analyses.
+    wave_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kronos-asset")
+    try:
+        f_price = wave_pool.submit(_fetch_price_wrapper)
+        f_fin = wave_pool.submit(_fetch_financial_wrapper)
+        f_full = wave_pool.submit(_fetch_full_history_wrapper)
+        f_review = wave_pool.submit(_fetch_review_wrapper)
+        f_research = wave_pool.submit(_build_online_research, item, question=question, query_limit=search_query_limit)
         wave1 = {
             "price": f_price.result(),
             "financial": f_fin.result(),
             "full": f_full.result(),
             "review": f_review.result(),
-            "research": f_research.result(),
         }
+    finally:
+        # Online research only feeds the LLM synthesis; let it finish in the
+        # background while wave 2 / Kronos run. It is awaited before this asset
+        # context returns, so no work is orphaned.
+        wave_pool.shutdown(wait=False)
 
-    rows = wave1["price"]
+    price_payload, price_elapsed_ms = wave1["price"]
+    fin_payload, financial_elapsed_ms = wave1["financial"]
+    full_payload, full_elapsed_ms = wave1["full"]
+    review_payload, review_elapsed_ms = wave1["review"]
+
+    rows = price_payload
     if rows:
         asset["market_data"] = _build_market_data(rows)
-    full_rows = wave1["full"]
+    full_rows = full_payload
     if isinstance(full_rows, list) and len(full_rows) >= 30:
         asset["full_rows"] = full_rows
 
-    fin_result = wave1["financial"]
+    fin_result = fin_payload
     if isinstance(fin_result, tuple) and len(fin_result) == 2:
         asset["financial_data"], financial_summary = fin_result
     else:
         asset["financial_data"] = None
         financial_summary = "财务摘要获取失败。"
 
-    local_market_review = wave1["review"]
+    local_market_review = review_payload
     asset["local_market_review"] = local_market_review
 
-    research, research_call = wave1["research"]
-    asset["online_research"] = research
-
     # Build tool calls for wave 1 results
-    started_price = time.perf_counter()
     calls.append(
         AgentToolCall(
             name="market_data",
             status="completed" if rows else "failed",
             summary=f"{item.symbol} 行情数据 {len(rows)} 条。" if rows else f"{item.symbol} 行情获取失败。",
-            elapsed_ms=_elapsed_ms(started_price),
+            elapsed_ms=price_elapsed_ms,
             metadata=_tool_metadata(symbol=item.symbol, market=item.market, source=_market_source_name(item.market)),
         )
     )
@@ -2634,7 +2644,7 @@ def _build_asset_context(
             name="financial_data",
             status="completed" if asset.get("financial_data") else "skipped",
             summary=financial_summary,
-            elapsed_ms=_elapsed_ms(started_price),
+            elapsed_ms=financial_elapsed_ms,
             metadata=_tool_metadata(symbol=item.symbol, market=item.market, asset_class=asset["asset_class"]),
         )
     )
@@ -2651,7 +2661,7 @@ def _build_asset_context(
                 if local_available
                 else "本地市场复盘缓存不可用或不适用于该市场。"
             ),
-            elapsed_ms=_elapsed_ms(started_price),
+            elapsed_ms=review_elapsed_ms,
             metadata=_tool_metadata(
                 symbol=item.symbol, market=item.market,
                 date=local_market_review.get("date") if isinstance(local_market_review, dict) else None,
@@ -2660,31 +2670,35 @@ def _build_asset_context(
             ),
         )
     )
-    calls.append(research_call)
-
     # ── Wave 2: Compute rows-dependent items in parallel ──
     if rows:
-        def _build_tech_wrapper() -> Any:
-            return _call_quietly(_build_technical_indicators, full_rows if full_rows else rows)
+        def _build_tech_wrapper() -> tuple[Any, int]:
+            started = time.perf_counter()
+            result = _call_quietly(_build_technical_indicators, full_rows if full_rows else rows)
+            return result, _elapsed_ms(started)
 
-        def _build_risk_wrapper() -> Any:
-            return _call_quietly(_build_risk_metrics, item.symbol, rows)
+        def _build_risk_wrapper() -> tuple[Any, int]:
+            started = time.perf_counter()
+            result = _call_quietly(_build_risk_metrics, item.symbol, rows)
+            return result, _elapsed_ms(started)
 
-        def _build_methodology_wrapper() -> Any:
+        def _build_methodology_wrapper() -> tuple[Any, int]:
+            started = time.perf_counter()
             try:
-                return _call_quietly(compute_methodology, asset)
+                result = _call_quietly(compute_methodology, asset)
             except Exception as exc:
                 logger.debug("Methodology computation failed for %s: %s", item.symbol, _short_error(exc))
-                return None
+                result = None
+            return result, _elapsed_ms(started)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="kronos-compute") as pool:
             f_tech = pool.submit(_build_tech_wrapper)
             f_risk = pool.submit(_build_risk_wrapper)
             f_method = pool.submit(_build_methodology_wrapper)
 
-            asset["technical_indicators"] = f_tech.result()
-            asset["risk_metrics"] = f_risk.result()
-            asset["methodology"] = f_method.result()
+            asset["technical_indicators"], tech_elapsed_ms = f_tech.result()
+            asset["risk_metrics"], risk_elapsed_ms = f_risk.result()
+            asset["methodology"], methodology_elapsed_ms = f_method.result()
 
     if not asset.get("methodology"):
         try:
@@ -2707,18 +2721,22 @@ def _build_asset_context(
         # share with the concurrent indicator/risk workers. Keep the evaluated
         # model parameters unchanged; only restore the serialized call boundary.
         pred_result: Any = None
+        pred_elapsed_ms = 0
         if include_prediction:
+            pred_started = time.perf_counter()
             try:
                 pred_result = _build_prediction(item.symbol, rows, dry_run=dry_run)
             except Exception as exc:
                 pred_result = exc
+            finally:
+                pred_elapsed_ms = _elapsed_ms(pred_started)
 
         calls.append(
             AgentToolCall(
                 name="technical_indicators",
                 status="completed" if asset["technical_indicators"] else "skipped",
                 summary="已计算技术指标。" if asset["technical_indicators"] else "K线数量不足，跳过技术指标。",
-                elapsed_ms=0,
+                elapsed_ms=tech_elapsed_ms,
                 metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
@@ -2728,7 +2746,7 @@ def _build_asset_context(
                 name="risk_metrics",
                 status="completed" if asset["risk_metrics"] else "failed",
                 summary="已计算风险指标。" if asset["risk_metrics"] else "风险指标计算失败或数据不足。",
-                elapsed_ms=0,
+                elapsed_ms=risk_elapsed_ms,
                 metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
@@ -2738,7 +2756,7 @@ def _build_asset_context(
                 name="methodology_rules",
                 status="completed" if asset.get("methodology") else "skipped",
                 summary="已计算财道技术规则与市赚率估值。" if asset.get("methodology") else "方法论规则计算跳过。",
-                elapsed_ms=0,
+                elapsed_ms=methodology_elapsed_ms,
                 metadata=_tool_metadata(symbol=item.symbol, market=item.market),
             )
         )
@@ -2752,7 +2770,7 @@ def _build_asset_context(
                         name="kronos_prediction",
                         status="failed",
                         summary=f"Kronos 真实预测失败：{error_summary}",
-                        elapsed_ms=0,
+                        elapsed_ms=pred_elapsed_ms,
                         metadata=_tool_metadata(symbol=item.symbol, market=item.market, model=_active_kronos_model_id(),
                                                 error_type=type(pred_result).__name__),
                     )
@@ -2764,13 +2782,19 @@ def _build_asset_context(
                         name="kronos_prediction",
                         status="completed",
                         summary=f"已调用 {_active_kronos_model_id()} 生成真实短期预测。",
-                        elapsed_ms=0,
+                        elapsed_ms=pred_elapsed_ms,
                         metadata=_tool_metadata(symbol=item.symbol, market=item.market, model=_active_kronos_model_id(),
                                                 metadata=pred_result.get("metadata")),
                     )
                 )
         else:
             asset["kronos_prediction_deferred"] = True
+
+    # Await the background online-research future now that wave 2 and the
+    # Kronos prediction have already run (research is only needed by the LLM).
+    research, research_call = f_research.result()
+    asset["online_research"] = research
+    calls.append(research_call)
 
     log_event(
         logger,
